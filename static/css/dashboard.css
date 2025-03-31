@@ -1,0 +1,95 @@
+/* Dashboard styles */
+.dashboard-container {
+    padding: 20px;
+}
+
+.dashboard-header {
+    background-color: white;
+    border-radius: var(--border-radius);
+    padding: 24px;
+    margin-bottom: 24px;
+    box-shadow: var(--shadow);
+}
+
+.app-logo {
+    color: var(--sidebar-bg);
+    margin-right: 16px;
+}
+
+.dashboard-cards {
+    margin-top: 20px;
+}
+
+.feature-card {
+    background-color: white;
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow);
+    padding: 30px;
+    height: 100%;
+    min-height: 300px;
+    display: flex;
+    flex-direction: column;
+    transition: transform 0.3s;
+    margin-bottom: 20px;
+}
+
+.feature-card:hover {
+    transform: translateY(-5px);
+}
+
+.card-blue .card-icon {
+    color: var(--card-blue);
+}
+
+.card-orange .card-icon {
+    color: var(--card-orange);
+}
+
+.card-green .card-icon {
+    color: var(--card-green);
+}
+
+.card-icon {
+    margin-bottom: 20px;
+}
+
+.feature-card h3 {
+    font-size: 1.5rem;
+    margin-bottom: 15px;
+    font-weight: 600;
+}
+
+.feature-card p {
+    margin-bottom: 20px;
+    flex: 1;
+}
+
+.btn-card {
+    background-color: #f8f9fa;
+    border: none;
+    color: #333;
+    padding: 10px 20px;
+    border-radius: var(--border-radius);
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    transition: background-color 0.3s;
+    font-weight: 500;
+    align-self: flex-start;
+    margin-top: auto;
+}
+
+.card-blue .btn-card:hover {
+    background-color: var(--card-blue);
+    color: white;
+}
+
+.card-orange .btn-card:hover {
+    background-color: var(--card-orange);
+    color: white;
+}
+
+.card-green .btn-card:hover {
+    background-color: var(--card-green);
+    color: white;
+}

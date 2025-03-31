@@ -1,0 +1,380 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="validacion-container">
+    <div class="section-header">
+        <div class="d-flex align-items-center">
+            <div class="app-icon">
+                <svg viewBox="0 0 24 24" width="28" height="28" stroke="currentColor" stroke-width="2" fill="none">
+                    <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"></polygon>
+                    <line x1="8" y1="2" x2="8" y2="18"></line>
+                    <line x1="16" y1="6" x2="16" y2="22"></line>
+                </svg>
+            </div>
+            <div>
+                <h1 class="mb-0">Validación de Polígonos</h1>
+                <p class="text-muted mb-0">Gestione, valide y genere fichas técnicas para sus polígonos</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pestañas de navegación -->
+    <div class="tabs-container">
+        <div class="nav-tabs">
+            <a href="{{ url_for('validacion_poligonos', tab='cargar') }}" class="tab-item {% if tab == 'cargar' %}active{% endif %}">
+                Cargar Datos
+            </a>
+            <a href="{{ url_for('validacion_poligonos', tab='lista') }}" class="tab-item {% if tab == 'lista' %}active{% endif %}">
+                Lista de Polígonos
+            </a>
+            <a href="{{ url_for('validacion_poligonos', tab='editar') }}" class="tab-item {% if tab == 'editar' %}active{% endif %}">
+                Editar Polígono
+            </a>
+            <a href="{{ url_for('validacion_poligonos', tab='generar') }}" class="tab-item {% if tab == 'generar' %}active{% endif %}">
+                Generar Fichas
+            </a>
+        </div>
+    </div>
+
+    <!-- Mensajes flash -->
+    {% with messages = get_flashed_messages() %}
+        {% if messages %}
+            <div class="flash-messages">
+                {% for message in messages %}
+                <div class="alert alert-info alert-dismissible fade show">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <!-- Contenido de las pestañas -->
+    <div class="tab-content">
+        {% if tab == 'cargar' %}
+        <!-- Pestaña de Cargar Datos -->
+        <div class="card">
+            <div class="card-body">
+                <h3 class="mb-4">Cargar archivo Excel</h3>
+                
+                {% if filename %}
+                <div class="alert alert-success mb-3">
+                    Archivo actual: <strong>{{ filename }}</strong>
+                    {% if uploaded_columns %}
+                    <br>Columnas detectadas: {{ uploaded_columns|join(', ') }}
+                    {% endif %}
+                </div>
+                {% endif %}
+                
+                <form action="{{ url_for('cargar_excel') }}" method="post" enctype="multipart/form-data">
+                    <div class="input-group mb-3">
+                        <input type="file" class="form-control" id="archivo" name="archivo" accept=".xlsx,.xls" required>
+                        <button class="btn btn-primary" type="submit">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="17 8 12 3 7 8"></polyline>
+                                <line x1="12" y1="3" x2="12" y2="15"></line>
+                            </svg>
+                            Cargar
+                        </button>
+                    </div>
+                </form>
+                
+                <div class="formato-info mt-4">
+                    <h4>Instrucciones:</h4>
+                    <ul>
+                        <li>Puede subir cualquier archivo Excel (.xlsx o .xls)</li>
+                        <li>El sistema detectará automáticamente las columnas</li>
+                        <li>No es necesario un formato específico</li>
+                        <li>Los datos se mantendrán en memoria mientras la aplicación esté en ejecución</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        
+        {% elif tab == 'lista' %}
+        <!-- Pestaña de Lista de Polígonos -->
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h3 class="mb-0">Datos del archivo: {{ filename }}</h3>
+                    <span class="badge bg-primary">{{ data|length }} registros</span>
+                </div>
+                
+                {% if data and columns %}
+                <div class="table-responsive">
+                    <table class="table table-hover table-striped">
+                        <thead class="table-light">
+                            <tr>
+                                <th>#</th>
+                                {% for col in columns %}
+                                    {% if col in ['COORDENADAS_DECIMALES', 'COORDENADAS_DECIMALES_CORREGIDAS'] %}
+                                        <th class="bg-success text-white">{{ col }}</th>
+                                    {% else %}
+                                        <th>{{ col }}</th>
+                                    {% endif %}
+                                {% endfor %}
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in data %}
+                            <tr>
+                                <td>{{ loop.index }}</td>
+                                {% for col in columns %}
+                                    <td>
+                                        {% if col in ['COORDENADAS_DECIMALES', 'COORDENADAS_DECIMALES_CORREGIDAS'] %}
+                                            <span class="text-success fw-bold">
+                                                {{ row[col] if row[col] is not none else '' }}
+                                            </span>
+                                        {% else %}
+                                            {{ row[col] if row[col] is not none else '' }}
+                                        {% endif %}
+                                    </td>
+                                {% endfor %}
+                                <td>
+                                    <!-- Ícono que envía a la pestaña de editar junto con el índice de fila -->
+                                    <a href="{{ url_for('validacion_poligonos', tab='editar', id=loop.index0) }}" title="Editar Polígono">
+                                        <i class="bi bi-geo-alt" style="font-size: 1.2rem; cursor: pointer;"></i>
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                        
+                    </table>
+                </div>
+                {% else %}
+                <div class="alert alert-warning">
+                    No hay datos disponibles.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+
+        {% elif tab == 'editar' %}
+        <!-- Pestaña de Editar Polígono -->
+        <div class="card">
+            <div class="card-body">
+                <h3 class="mb-4">Editar Polígono: polygon-{{ row_index if row_index is defined else '0' }}</h3>
+                
+                {% if row_data %}
+                <form action="{{ url_for('actualizar_fila') }}" method="post" id="formEditarPoligono">
+                    <input type="hidden" name="row_index" value="{{ row_index }}">
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <label for="areaReportada" class="form-label">Área Reportada</label>
+                                    <input type="text" class="form-control" id="areaReportada" name="areaReportada" 
+                                           value="{{ row_data.get('area_reportada', '0') }}">
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="areaDigitalizada" class="form-label">Área Digitalizada</label>
+                                    <input type="text" class="form-control" id="areaDigitalizada" name="areaDigitalizada" 
+                                           value="{{ row_data.get('area_digitalizada', '0.0') }}">
+                                </div>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="estado" class="form-label">Estado</label>
+                                <input type="text" class="form-control" id="estado" name="estado" 
+                                       value="{{ row_data.get('estado', '') }}">
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="municipio" class="form-label">Municipio</label>
+                                <input type="text" class="form-control" id="municipio" name="municipio" 
+                                       value="{{ row_data.get('municipio', '') }}">
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="comentarios" class="form-label">Comentarios</label>
+                                <textarea class="form-control" id="comentarios" name="comentarios" rows="3">{{ row_data.get('comentarios', '') }}</textarea>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="coordenadasCorregidas" class="form-label">Coordenadas Corregidas</label>
+                                <textarea class="form-control" id="coordenadasCorregidas" name="coordenadasCorregidas" rows="3" readonly>{{ row_data.get('COORDENADAS_DECIMALES_CORREGIDAS', '') }}</textarea>
+                            </div>
+                            
+                            <div class="mt-4 d-flex">
+                                <button type="button" id="btnCancelar" class="btn btn-outline-secondary me-2">
+                                    <i class="bi bi-x"></i> Cancelar
+                                </button>
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="bi bi-save"></i> Guardar Cambios
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <div id="map" style="height: 550px; width: 100%; border-radius: 4px;"></div>
+                        </div>
+                    </div>
+                </form>
+                {% else %}
+                <div class="alert alert-danger">
+                    No se encontró el registro solicitado.
+                </div>
+                <a href="{{ url_for('validacion_poligonos', tab='lista') }}" class="btn btn-outline-primary">
+                    Volver a la lista
+                </a>
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- Scripts para Leaflet -->
+        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+        
+        <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            var map = L.map('map').setView([19.4326, -99.1332], 13);
+            L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community',
+    maxZoom: 19
+}).addTo(map);
+
+            
+            var coordenadasTexto = document.getElementById('coordenadasCorregidas').value;
+            if (coordenadasTexto.trim() !== '') {
+                var coordenadas = coordenadasTexto.split('|').map(function(coord) {
+                    var partes = coord.trim().split(',');
+                    return [parseFloat(partes[0]), parseFloat(partes[1])];
+                });
+                
+                var polygon = L.polygon(coordenadas, {color: 'red'}).addTo(map);
+                map.fitBounds(polygon.getBounds());
+            }
+            
+            document.getElementById('btnCancelar').addEventListener('click', function() {
+                window.location.href = "{{ url_for('validacion_poligonos', tab='lista') }}";
+            });
+        });
+        </script>
+        
+
+
+
+
+
+
+        {% elif tab == 'generar' %}
+
+        <!-- Pestaña de Generar Fichas -->
+        <div class="card">
+            <div class="card-body">
+                <h3 class="mb-4">Generar Fichas Técnicas</h3>
+                
+                {% if not data or not columns %}
+                <div class="alert alert-warning">
+                    No hay datos disponibles para generar fichas. Por favor, cargue un archivo Excel primero.
+                </div>
+                {% else %}
+                <div class="alert alert-info">
+                    Seleccione los registros para los que desea generar fichas técnicas.
+                </div>
+                
+                <form method="post" action="{{ url_for('validacion_poligonos', tab='generar') }}">
+                    <div class="table-responsive mb-4">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th width="50px">
+                                        <input type="checkbox" id="select-all" class="form-check-input">
+                                    </th>
+                                    {% for col in columns|slice(0, 4) %}
+                                    <th>{{ col }}</th>
+                                    {% endfor %}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in data %}
+                                <tr>
+                                    <td>
+                                        <input type="checkbox" name="selected_rows" 
+                                               value="{{ loop.index0 }}" 
+                                               class="form-check-input row-checkbox">
+                                    </td>
+                                    {% for col in columns|slice(0, 4) %}
+                                    <td>{{ row[col] if row[col] is not none else '' }}</td>
+                                    {% endfor %}
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <div class="row mb-4">
+                        <div class="col-md-4">
+                            <label for="formato" class="form-label">Formato de salida</label>
+                            <select class="form-select" id="formato" name="formato">
+                                <option value="pdf">PDF</option>
+                                <option value="excel">Excel</option>
+                                <option value="csv">CSV</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="d-flex justify-content-end">
+                        <button type="submit" class="btn btn-primary">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="7 10 12 15 17 10"></polyline>
+                                <line x1="12" y1="15" x2="12" y2="3"></line>
+                            </svg>
+                            Generar Fichas
+                        </button>
+                    </div>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Scripts -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Actualizar nombre de archivo seleccionado
+    const fileInput = document.getElementById('archivo');
+    if (fileInput) {
+        fileInput.addEventListener('change', function() {
+            const label = this.nextElementSibling;
+            if (this.files.length > 0) {
+                label.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="17 8 12 3 7 8"></polyline>
+                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                </svg> ${this.files[0].name}`;
+            }
+        });
+    }
+    
+    // Seleccionar/deseleccionar todos los checkboxes
+    const selectAll = document.getElementById('select-all');
+    if (selectAll) {
+        selectAll.addEventListener('change', function() {
+            const checkboxes = document.querySelectorAll('.row-checkbox');
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = this.checked;
+            });
+        });
+    }
+    
+    // Cerrar mensajes flash automáticamente después de 5 segundos
+    setTimeout(() => {
+        const alerts = document.querySelectorAll('.alert');
+        alerts.forEach(alert => {
+            const bsAlert = new bootstrap.Alert(alert);
+            bsAlert.close();
+        });
+    }, 5000);
+});
+</script>
+{% endblock %}

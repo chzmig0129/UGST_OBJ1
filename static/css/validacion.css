@@ -1,0 +1,94 @@
+/* Estilos para la página de validación de polígonos */
+.validacion-container {
+    padding: 20px;
+}
+
+.section-header {
+    background-color: white;
+    border-radius: var(--border-radius);
+    padding: 24px;
+    margin-bottom: 24px;
+    box-shadow: var(--shadow);
+}
+
+.app-icon {
+    color: var(--card-blue);
+    margin-right: 16px;
+}
+
+.tabs-container {
+    margin-bottom: 24px;
+}
+
+.nav-tabs {
+    display: flex;
+    background-color: white;
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+}
+
+.tab-item {
+    flex: 1;
+    text-align: center;
+    padding: 15px;
+    color: #333;
+    text-decoration: none;
+    border-bottom: 3px solid transparent;
+    transition: all 0.3s;
+}
+
+.tab-item:hover {
+    color: var(--card-blue);
+    background-color: rgba(54, 162, 235, 0.05);
+}
+
+.tab-item.active {
+    color: var(--card-blue);
+    border-bottom-color: var(--card-blue);
+    background-color: rgba(54, 162, 235, 0.1);
+}
+
+.tab-content {
+    background-color: white;
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow);
+    min-height: 400px;
+}
+
+.card {
+    border: none;
+    box-shadow: none;
+}
+
+.formato-info {
+    margin-top: 30px;
+    padding: 20px;
+    background-color: #f8f9fa;
+    border-radius: var(--border-radius);
+}
+
+.formato-info h4 {
+    margin-bottom: 15px;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.formato-info ul {
+    padding-left: 20px;
+    columns: 2;
+}
+
+.formato-info li {
+    margin-bottom: 5px;
+}
+
+@media (max-width: 768px) {
+    .nav-tabs {
+        flex-direction: column;
+    }
+    
+    .formato-info ul {
+        columns: 1;
+    }
+}
