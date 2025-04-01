@@ -175,7 +175,7 @@
                                 <div class="col-md-6">
                                     <label for="areaDigitalizada" class="form-label">Área Digitalizada</label>
                                     <input type="text" class="form-control" id="areaDigitalizada" name="areaDigitalizada" 
-                                           value="{{ row_data.get('area_digitalizada', '0.0') }}">
+                                           value="{{ row_data.get('area_digitalizada', '0.0') }}" readonly>
                                 </div>
                             </div>
                             
@@ -231,15 +231,259 @@
         <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
         <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
         
+        <!-- Leaflet.draw para edición de polígonos -->
+        <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
+        <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+        
+        <!-- Leaflet.GeometryUtil para calcular áreas -->
+        <script src="https://unpkg.com/leaflet-geometryutil@0.10.1/src/leaflet.geometryutil.js"></script>
+        
+        <style>
+            .edit-control-container {
+                margin-bottom: 5px;
+            }
+            .editing-mode-indicator {
+                position: absolute;
+                top: 10px;
+                left: 50px;
+                z-index: 1000;
+                background-color: rgba(255, 255, 255, 0.8);
+                padding: 5px 10px;
+                border-radius: 4px;
+                box-shadow: 0 1px 5px rgba(0,0,0,0.4);
+                display: none;
+                font-weight: bold;
+                color: #ff4500;
+            }
+            .custom-leaflet-btn {
+                margin-bottom: 5px;
+                display: block;
+            }
+            .edit-instructions {
+                position: absolute;
+                bottom: 20px;
+                left: 10px;
+                z-index: 1000;
+                background-color: rgba(255, 255, 255, 0.9);
+                padding: 10px;
+                border-radius: 4px;
+                box-shadow: 0 1px 5px rgba(0,0,0,0.4);
+                max-width: 300px;
+                font-size: 12px;
+                display: none;
+            }
+            .edit-instructions h5 {
+                margin-top: 0;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            .edit-instructions ul {
+                padding-left: 20px;
+                margin-bottom: 0;
+            }
+            .vertex-marker {
+                cursor: move;
+            }
+            .vertex-marker div {
+                transition: background-color 0.2s, border-color 0.2s, transform 0.2s;
+            }
+            .vertex-marker div:hover {
+                background-color: #ff4500;
+                border-color: white;
+                transform: scale(1.2);
+            }
+            /* Ocultar los controles de edición nativos de Leaflet.Draw */
+            .leaflet-draw-toolbar {
+                display: none !important;
+            }
+            .leaflet-draw-edit-edit, .leaflet-draw-edit-remove {
+                display: none !important;
+            }
+            .leaflet-draw {
+                display: none !important;
+            }
+        </style>
+        
         <script>
         document.addEventListener('DOMContentLoaded', function() {
+            // Indicador para saber si estamos en modo de edición
+            var editingInProgress = false;
+            
             var map = L.map('map').setView([19.4326, -99.1332], 13);
             L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-    attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community',
-    maxZoom: 19
-}).addTo(map);
+                attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community',
+                maxZoom: 19
+            }).addTo(map);
 
+            // Crear grupo de edición
+            var editableLayers = new L.FeatureGroup();
+            map.addLayer(editableLayers);
             
+            // Variables para guardar el polígono
+            var polygon;
+            var originalCoords = [];
+            var editingMode = false;
+            
+            // Configurar opciones de edición pero NO inicializar el control
+            var drawOptions = {
+                draw: false, // Desactivar todas las opciones de dibujo
+                edit: {
+                    featureGroup: editableLayers,
+                    poly: {
+                        allowIntersection: false
+                    },
+                    edit: {
+                        selectedPathOptions: {
+                            maintainColor: true,
+                            opacity: 0.6,
+                            fillOpacity: 0.3
+                        }
+                    },
+                    remove: false
+                }
+            };
+            
+            // Ya no inicializamos el control de edición nativo
+            // var drawControl = new L.Control.Draw(drawOptions);
+            // map.addControl(drawControl);
+            
+            // Función para limpiar los controles no deseados de Leaflet.Draw
+            function cleanupLeafletDrawControls() {
+                // Ocultar cualquier control de edición nativo que pueda haber aparecido
+                var leafletDrawControls = document.querySelectorAll('.leaflet-draw');
+                leafletDrawControls.forEach(function(control) {
+                    control.style.display = 'none';
+                });
+                
+                // Asegurarse de que nuestros controles personalizados están visibles
+                var editPolygonBtn = document.getElementById('editPolygon');
+                if (editPolygonBtn && !editingMode) {
+                    editPolygonBtn.style.display = 'block';
+                }
+                
+                // Ocultar cualquier otro control de edición que pueda aparecer
+                document.querySelectorAll('.leaflet-draw-edit-edit, .leaflet-draw-edit-remove').forEach(function(el) {
+                    el.style.display = 'none';
+                });
+            }
+            
+            // Función para asegurar que el botón de edición funciona correctamente
+            function reiniciarBotonEdicion() {
+                // Obtener referencia al botón
+                var editPolygonBtn = document.getElementById('editPolygon');
+                
+                if (editPolygonBtn) {
+                    // Remover cualquier evento click existente para evitar duplicados
+                    var nuevoBoton = editPolygonBtn.cloneNode(true);
+                    editPolygonBtn.parentNode.replaceChild(nuevoBoton, editPolygonBtn);
+                    
+                    // Añadir el evento click de nuevo
+                    nuevoBoton.addEventListener('click', function(e) {
+                        // Detener inmediatamente cualquier comportamiento predeterminado
+                        if (e && e.preventDefault) e.preventDefault();
+                        if (e && e.stopPropagation) e.stopPropagation();
+                        
+                        editingMode = true;
+                        
+                        // Mostrar botones de guardar y cancelar
+                        document.getElementById('savePolygonChanges').style.display = 'block';
+                        document.getElementById('cancelPolygonChanges').style.display = 'block';
+                        document.getElementById('editPolygon').style.display = 'none';
+                        
+                        // Mostrar indicador de modo de edición e instrucciones
+                        document.querySelector('.editing-mode-indicator').style.display = 'block';
+                        document.querySelector('.edit-instructions').style.display = 'block';
+                        
+                        // Desactivar el formulario completamente durante la edición
+                        var formInputs = document.querySelectorAll('#formEditarPoligono input, #formEditarPoligono textarea, #formEditarPoligono select');
+                        formInputs.forEach(function(input) {
+                            if (input.id !== 'coordenadasCorregidas' && input.id !== 'areaDigitalizada') {
+                                input.setAttribute('disabled', 'disabled');
+                            }
+                        });
+                        
+                        // Desactivar botón de envío del formulario
+                        var submitButton = document.querySelector('#formEditarPoligono button[type="submit"]');
+                        if (submitButton) {
+                            submitButton.setAttribute('disabled', 'disabled');
+                        }
+                        
+                        // Activar edición personalizada del polígono
+                        editableLayers.eachLayer(function(layer) {
+                            if (layer instanceof L.Polygon) {
+                                // Cambiar estilo
+                                layer.setStyle({color: '#ff4500', weight: 3, fillOpacity: 0.3});
+                                
+                                // Desactivar cualquier edición existente
+                                if (layer.editing && layer.editing.enabled()) {
+                                    layer.editing.disable();
+                                }
+                                
+                                // Crear y activar editor personalizado
+                                customEditor = createCustomVertexEditor(map, layer).enable();
+                            }
+                        });
+                        
+                        // Desactivar botones del formulario durante la edición
+                        var formButtons = document.querySelectorAll('#formEditarPoligono button');
+                        formButtons.forEach(function(btn) {
+                            if (btn.id !== 'savePolygonChanges' && btn.id !== 'cancelPolygonChanges') {
+                                btn.setAttribute('disabled', 'disabled');
+                            }
+                        });
+                        
+                        // Mostrar mensaje al usuario
+                        var instructionToast = `
+                        <div class="toast-container position-fixed bottom-0 end-0 p-3">
+                          <div class="toast show" role="alert" aria-live="assertive" aria-atomic="true">
+                            <div class="toast-header">
+                              <strong class="me-auto">Modo Edición</strong>
+                              <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+                            </div>
+                            <div class="toast-body">
+                              Ahora puedes mover los vértices existentes del polígono arrastrando los puntos blancos.
+                            </div>
+                          </div>
+                        </div>`;
+                        
+                        var toastDiv = document.createElement('div');
+                        toastDiv.innerHTML = instructionToast;
+                        document.body.appendChild(toastDiv);
+                        
+                        // Eliminar el toast después de 5 segundos
+                        setTimeout(function() {
+                            toastDiv.remove();
+                        }, 5000);
+                        
+                        // Limpiar cualquier control de edición nativo
+                        cleanupLeafletDrawControls();
+                        
+                        return false; // Evitar cualquier comportamiento adicional
+                    });
+                    
+                    // Asegurarse de que el botón es visible
+                    nuevoBoton.style.display = 'block';
+                    nuevoBoton.disabled = false;
+                }
+            }
+            
+            // Ejecutar limpieza inicial y configurar intervalos regulares para limpiar controles no deseados
+            setTimeout(cleanupLeafletDrawControls, 500);
+            setInterval(cleanupLeafletDrawControls, 1000); // Ejecutar cada segundo para asegurar que los controles no deseados permanecen ocultos
+            
+            // Prevenir que el formulario se envíe mientras se edita
+            var formEl = document.getElementById('formEditarPoligono');
+            if (formEl) {
+                formEl.addEventListener('submit', function(e) {
+                    if (editingMode) {
+                        e.preventDefault();
+                        alert('Por favor guarde o cancele la edición del polígono antes de guardar los cambios del formulario.');
+                        return false;
+                    }
+                });
+            }
+            
+            // Cargar las coordenadas
             var coordenadasTexto = document.getElementById('coordenadasCorregidas').value;
             if (coordenadasTexto.trim() !== '') {
                 var coordenadas = coordenadasTexto.split('|').map(function(coord) {
@@ -247,15 +491,337 @@
                     return [parseFloat(partes[0]), parseFloat(partes[1])];
                 });
                 
-                var polygon = L.polygon(coordenadas, {color: 'red'}).addTo(map);
+                // Guardar las coordenadas originales
+                originalCoords = [...coordenadas];
+                
+                // Crear el polígono y añadirlo al grupo editable
+                polygon = L.polygon(coordenadas, {color: 'red'});
+                editableLayers.addLayer(polygon);
                 map.fitBounds(polygon.getBounds());
+                
+                // Calcular y mostrar el área inicialmente
+                var areaSqMeters = L.GeometryUtil.geodesicArea(polygon.getLatLngs()[0]);
+                var areaHectares = areaSqMeters / 10000; // Convertir a hectáreas
+                document.getElementById('areaDigitalizada').value = areaHectares.toFixed(4);
+                
+                // Indicador de modo de edición
+                var editingIndicator = L.control({position: 'topleft'});
+                editingIndicator.onAdd = function(map) {
+                    var div = L.DomUtil.create('div', 'editing-mode-indicator');
+                    div.innerHTML = 'MODO EDICIÓN ACTIVO';
+                    return div;
+                };
+                editingIndicator.addTo(map);
+                
+                // Instrucciones de edición
+                var editInstructions = L.control({position: 'bottomleft'});
+                editInstructions.onAdd = function(map) {
+                    var div = L.DomUtil.create('div', 'edit-instructions');
+                    div.innerHTML = `
+                        <h5>Cómo editar el polígono:</h5>
+                        <ul>
+                            <li><strong>Mover vértice:</strong> Haz clic y arrastra cualquier punto blanco</li>
+                            <li><strong>Eliminar vértice:</strong> Haz clic en un vértice mientras mantienes presionada la tecla Ctrl</li>
+                        </ul>
+                    `;
+                    return div;
+                };
+                editInstructions.addTo(map);
+                
+                // Boton personalizado para activar edición
+                var editButton = L.control({position: 'topright'});
+                editButton.onAdd = function(map) {
+                    var div = L.DomUtil.create('div', 'edit-polygon-btn custom-leaflet-btn');
+                    div.innerHTML = '<button type="button" class="btn btn-primary btn-sm" id="editPolygon"><i class="bi bi-pencil"></i> Editar Polígono</button>';
+                    return div;
+                };
+                editButton.addTo(map);
+                
+                // Botón para guardar cambios
+                var saveChangesBtn = L.control({position: 'topright'});
+                saveChangesBtn.onAdd = function(map) {
+                    var div = L.DomUtil.create('div', 'save-changes-btn custom-leaflet-btn');
+                    div.innerHTML = '<button type="button" class="btn btn-success btn-sm" id="savePolygonChanges" style="display:none;"><i class="bi bi-check-lg"></i> Guardar</button>';
+                    return div;
+                };
+                saveChangesBtn.addTo(map);
+                
+                // Botón para cancelar cambios
+                var cancelChangesBtn = L.control({position: 'topright'});
+                cancelChangesBtn.onAdd = function(map) {
+                    var div = L.DomUtil.create('div', 'cancel-changes-btn custom-leaflet-btn');
+                    div.innerHTML = '<button type="button" class="btn btn-danger btn-sm" id="cancelPolygonChanges" style="display:none;"><i class="bi bi-x-lg"></i> Cancelar</button>';
+                    return div;
+                };
+                cancelChangesBtn.addTo(map);
+                
+                // Función para deshabilitar los marcadores medios
+                function disableMiddleMarkers(layer) {
+                    if (layer && layer.editing && layer.editing._verticesHandlers) {
+                        layer.editing._verticesHandlers.forEach(function(handler) {
+                            // Guardar referencia a la función original
+                            handler._origCreateMiddleMarker = handler._createMiddleMarker;
+                            
+                            // Reemplazar con función vacía
+                            handler._createMiddleMarker = function() { return null; };
+                            
+                            // Eliminar marcadores medios existentes
+                            if (handler._middleMarkers) {
+                                handler._middleMarkers.forEach(function(marker) {
+                                    if (marker._map) marker._map.removeLayer(marker);
+                                });
+                                handler._middleMarkers = [];
+                            }
+                        });
+                    }
+                }
+                
+                // Crear un editor personalizado que solo permita mover vértices existentes
+                function createCustomVertexEditor(map, polygon) {
+                    // Desactivar edición nativa
+                    if (polygon.editing && polygon.editing.enabled()) {
+                        polygon.editing.disable();
+                    }
+                    
+                    var markerGroup = new L.LayerGroup().addTo(map);
+                    var vertexMarkers = [];
+                    var vertices = polygon.getLatLngs()[0];
+                    
+                    // Crear un marcador para cada vértice del polígono
+                    vertices.forEach(function(latlng, index) {
+                        var marker = L.marker(latlng, {
+                            draggable: true,
+                            icon: L.divIcon({
+                                className: 'vertex-marker',
+                                html: '<div style="width: 12px; height: 12px; background-color: white; border: 2px solid #333; border-radius: 50%;"></div>',
+                                iconSize: [12, 12],
+                                iconAnchor: [6, 6]
+                            })
+                        }).addTo(markerGroup);
+                        
+                        // Al arrastrar un marcador, actualizar el polígono
+                        marker.on('drag', function(e) {
+                            updatePolygon();
+                        });
+                        
+                        // Al empezar a arrastrar, cambiar el estilo
+                        marker.on('dragstart', function(e) {
+                            var markerElement = e.target._icon.querySelector('div');
+                            markerElement.style.backgroundColor = '#ff4500';
+                            markerElement.style.borderColor = 'white';
+                            markerElement.style.transform = 'scale(1.3)';
+                        });
+                        
+                        // Al terminar de arrastrar, restaurar estilo
+                        marker.on('dragend', function(e) {
+                            var markerElement = e.target._icon.querySelector('div');
+                            markerElement.style.backgroundColor = 'white';
+                            markerElement.style.borderColor = '#333';
+                            markerElement.style.transform = 'scale(1)';
+                            updatePolygon();
+                        });
+                        
+                        vertexMarkers.push(marker);
+                    });
+                    
+                    // Función para actualizar el polígono basado en las posiciones actuales de los marcadores
+                    function updatePolygon() {
+                        var newLatLngs = vertexMarkers.map(function(marker) {
+                            return marker.getLatLng();
+                        });
+                        polygon.setLatLngs(newLatLngs);
+                        
+                        // Calcular y actualizar el área digitalizada en tiempo real
+                        var areaSqMeters = L.GeometryUtil.geodesicArea(newLatLngs);
+                        var areaHectares = areaSqMeters / 10000; // Convertir a hectáreas
+                        document.getElementById('areaDigitalizada').value = areaHectares.toFixed(4);
+                    }
+                    
+                    return {
+                        enable: function() {
+                            markerGroup.addTo(map);
+                            return this;
+                        },
+                        disable: function() {
+                            markerGroup.clearLayers();
+                            map.removeLayer(markerGroup);
+                            return this;
+                        },
+                        getMarkers: function() {
+                            return vertexMarkers;
+                        },
+                        updatePolygon: updatePolygon
+                    };
+                }
+                
+                // Variable para guardar la referencia al editor personalizado
+                var customEditor = null;
+                
+                // Inicializar el botón de edición
+                reiniciarBotonEdicion();
+                
+                // Manejar el evento de guardar cambios
+                document.getElementById('savePolygonChanges').addEventListener('click', function(e) {
+                    // Detener inmediatamente cualquier comportamiento predeterminado
+                    if (e && e.preventDefault) e.preventDefault();
+                    if (e && e.stopPropagation) e.stopPropagation();
+                    
+                    // Obtener las coordenadas actualizadas del polígono
+                    var updatedLatLngs = [];
+                    
+                    if (customEditor) {
+                        // Asegurar que el polígono tiene los datos más recientes
+                        customEditor.updatePolygon();
+                    }
+                    
+                    // Obtener coordenadas del polígono
+                    editableLayers.eachLayer(function(layer) {
+                        if (layer instanceof L.Polygon) {
+                            updatedLatLngs = layer.getLatLngs()[0];
+                        }
+                    });
+                    
+                    // Formatear las coordenadas para guardarlas
+                    var updatedCoords = updatedLatLngs.map(function(latLng) {
+                        return latLng.lat + ',' + latLng.lng;
+                    }).join('|');
+                    
+                    // Actualizar el campo de texto con las nuevas coordenadas
+                    document.getElementById('coordenadasCorregidas').value = updatedCoords;
+                    
+                    // Nota: Ya no necesitamos calcular el área aquí, ya que se actualiza en tiempo real
+                    
+                    // Desactivar editor personalizado
+                    if (customEditor) {
+                        customEditor.disable();
+                        customEditor = null;
+                    }
+                    
+                    // Ocultar botones de guardar y cancelar, mostrar botón de editar
+                    document.getElementById('savePolygonChanges').style.display = 'none';
+                    document.getElementById('cancelPolygonChanges').style.display = 'none';
+                    document.getElementById('editPolygon').style.display = 'block';
+                    
+                    // Ocultar indicador de modo de edición e instrucciones
+                    document.querySelector('.editing-mode-indicator').style.display = 'none';
+                    document.querySelector('.edit-instructions').style.display = 'none';
+                    editingMode = false;
+                    
+                    // Restaurar el estilo original del polígono
+                    editableLayers.eachLayer(function(layer) {
+                        if (layer instanceof L.Polygon) {
+                            layer.setStyle({color: 'red', weight: 3, fillOpacity: 0.2});
+                        }
+                    });
+                    
+                    // Reactivar botones del formulario
+                    var formInputs = document.querySelectorAll('#formEditarPoligono input, #formEditarPoligono textarea, #formEditarPoligono select');
+                    formInputs.forEach(function(input) {
+                        input.removeAttribute('disabled');
+                    });
+                    
+                    // Reactivar botón de envío del formulario
+                    var submitButton = document.querySelector('#formEditarPoligono button[type="submit"]');
+                    if (submitButton) {
+                        submitButton.removeAttribute('disabled');
+                    }
+                    
+                    // Actualizar coordenadas originales para futuras ediciones
+                    originalCoords = [...updatedLatLngs];
+                    
+                    // Limpiar e inicializar para preparar una nueva edición
+                    cleanupLeafletDrawControls();
+                    
+                    // Reiniciar el botón de edición para asegurarnos que funciona correctamente
+                    reiniciarBotonEdicion();
+                    
+                    alert('Geometría actualizada correctamente');
+                    
+                    // Limpiar cualquier control de edición nativo que pueda haber aparecido
+                    setTimeout(cleanupLeafletDrawControls, 100);
+                    setTimeout(cleanupLeafletDrawControls, 500);
+                    setTimeout(cleanupLeafletDrawControls, 1000);
+                    setTimeout(reiniciarBotonEdicion, 1200);
+                    
+                    return false; // Evitar cualquier comportamiento adicional
+                });
+                
+                // Manejar el evento de cancelar cambios
+                document.getElementById('cancelPolygonChanges').addEventListener('click', function(e) {
+                    // Detener inmediatamente cualquier comportamiento predeterminado
+                    if (e && e.preventDefault) e.preventDefault();
+                    if (e && e.stopPropagation) e.stopPropagation();
+                    
+                    // Desactivar editor personalizado
+                    if (customEditor) {
+                        customEditor.disable();
+                        customEditor = null;
+                    }
+                    
+                    // Eliminar el polígono actual
+                    editableLayers.clearLayers();
+                    
+                    // Recrear el polígono con las coordenadas originales
+                    polygon = L.polygon(originalCoords, {color: 'red'});
+                    editableLayers.addLayer(polygon);
+                    
+                    // Ocultar botones de guardar y cancelar, mostrar botón de editar
+                    document.getElementById('savePolygonChanges').style.display = 'none';
+                    document.getElementById('cancelPolygonChanges').style.display = 'none';
+                    document.getElementById('editPolygon').style.display = 'block';
+                    
+                    // Ocultar indicador de modo de edición e instrucciones
+                    document.querySelector('.editing-mode-indicator').style.display = 'none';
+                    document.querySelector('.edit-instructions').style.display = 'none';
+                    editingMode = false;
+                    
+                    // Reactivar botones del formulario
+                    var formInputs = document.querySelectorAll('#formEditarPoligono input, #formEditarPoligono textarea, #formEditarPoligono select');
+                    formInputs.forEach(function(input) {
+                        input.removeAttribute('disabled');
+                    });
+                    
+                    // Reactivar botón de envío del formulario
+                    var submitButton = document.querySelector('#formEditarPoligono button[type="submit"]');
+                    if (submitButton) {
+                        submitButton.removeAttribute('disabled');
+                    }
+                    
+                    // Limpiar e inicializar para preparar una nueva edición
+                    cleanupLeafletDrawControls();
+                    
+                    // Reiniciar el botón de edición para asegurarnos que funciona correctamente
+                    reiniciarBotonEdicion();
+                    
+                    alert('Cambios cancelados');
+                    
+                    // Limpiar cualquier control de edición nativo que pueda haber aparecido
+                    setTimeout(cleanupLeafletDrawControls, 100);
+                    setTimeout(cleanupLeafletDrawControls, 500);
+                    setTimeout(cleanupLeafletDrawControls, 1000);
+                    setTimeout(reiniciarBotonEdicion, 1200);
+                    
+                    return false; // Evitar cualquier comportamiento adicional
+                });
+                
+                // Remover los manejadores de eventos de Leaflet.Draw para evitar comportamientos inesperados
+                map.off('draw:edited');
+                
+                // Establecer un manejador para el evento resize para garantizar que el mapa siempre se muestre correctamente
+                window.addEventListener('resize', function() {
+                    map.invalidateSize();
+                });
+                
+                // Inicializar el botón de edición al cargar la página
+                setTimeout(reiniciarBotonEdicion, 300);
             }
             
-            document.getElementById('btnCancelar').addEventListener('click', function() {
+            document.getElementById('btnCancelar').addEventListener('click', function(e) {
+                e.preventDefault(); // Prevenir comportamiento por defecto
                 window.location.href = "{{ url_for('validacion_poligonos', tab='lista') }}";
             });
         });
-        </script>
+    </script>
         
 
 

@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 import re
 from werkzeug.utils import secure_filename
+from flask import jsonify
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
@@ -14,7 +15,8 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB límite
 excel_data = {
     'data': [],
     'columns': [],
-    'filename': ''
+    'filename': '',
+    'original_coords': []  # Nuevo: almacenar coordenadas originales
 }
 
 # Asegurar que exista el directorio de uploads
@@ -47,7 +49,7 @@ def corregir_longitud(coord_decimales):
             if lon > 0:
                 lon *= -1
 
-            corrected_coords.append(f"{lat:.4f}, {lon:.4f}")
+            corrected_coords.append(f"{lat:.6f},{lon:.6f}")  # Más precisión
         except:
             continue
 
@@ -74,7 +76,7 @@ def dms_a_decimal(coord):
         decimal = grados + minutos/60 + segundos/3600
         if direccion in ['S', 'W']:
             decimal *= -1
-        return round(decimal, 4)
+        return round(decimal, 6)  # Más precisión
     except:
         return np.nan
 
@@ -148,7 +150,7 @@ def procesar_coordenadas_dms(fila):
                         lat, lon = nums[0], nums[1]
                         if lon > 0 and lon > 90:
                             lon *= -1
-                        coords_decimales.append(f"{lat:.4f}, {lon:.4f}")
+                        coords_decimales.append(f"{lat:.6f},{lon:.6f}")
                 except:
                     pass
             continue
@@ -185,9 +187,30 @@ def procesar_coordenadas_dms(fila):
             continue
 
         if not np.isnan(lat) and not np.isnan(lon):
-            coords_decimales.append(f"{lat:.4f}, {lon:.4f}")
+            coords_decimales.append(f"{lat:.6f},{lon:.6f}")
 
     return ' | '.join(coords_decimales)
+
+def calcular_area_poligono(coordenadas_str):
+    """Calcula el área de un polígono en hectáreas"""
+    if not coordenadas_str:
+        return 0.0
+    
+    try:
+        from shapely.geometry import Polygon
+        coords = []
+        for pair in coordenadas_str.split('|'):
+            lat, lon = map(float, pair.strip().split(','))
+            coords.append((lon, lat))  # Shapely usa (x,y) = (lon,lat)
+        
+        if len(coords) < 3:
+            return 0.0
+            
+        polygon = Polygon(coords)
+        return polygon.area / 10000  # Convertir m² a hectáreas
+    
+    except:
+        return 0.0
 
 # ==============================================
 # Rutas de la aplicación
@@ -215,25 +238,34 @@ def validacion_poligonos(tab):
     
     if tab == 'lista':
         return render_template('validacion_poligonos.html', 
-                            tab=tab, 
-                            data=excel_data['data'],
-                            columns=excel_data['columns'],
-                            filename=excel_data['filename'])
+                           tab=tab, 
+                           data=excel_data['data'],
+                           columns=excel_data['columns'],
+                           filename=excel_data['filename'])
     
     elif tab == 'editar':
         row_index = request.args.get('id', type=int)
-        row_data = excel_data['data'][row_index] if row_index is not None and row_index < len(excel_data['data']) else None
+        if row_index is None or row_index >= len(excel_data['data']):
+            flash('Índice de fila inválido', 'error')
+            return redirect(url_for('validacion_poligonos', tab='lista'))
+        
+        row_data = excel_data['data'][row_index]
+        
+        # Calcular área
+        area_ha = calcular_area_poligono(row_data.get('COORDENADAS_DECIMALES_CORREGIDAS', ''))
+        row_data['area_digitalizada'] = f"{area_ha:.2f}"
+        
         return render_template('validacion_poligonos.html', 
-                            tab=tab, 
-                            row_data=row_data,
-                            row_index=row_index,
-                            columns=excel_data['columns'])
+                           tab=tab, 
+                           row_data=row_data,
+                           row_index=row_index,
+                           columns=excel_data['columns'])
     
     elif tab == 'generar':
         return render_template('validacion_poligonos.html', 
-                            tab=tab,
-                            data=excel_data['data'],
-                            columns=excel_data['columns'])
+                           tab=tab,
+                           data=excel_data['data'],
+                           columns=excel_data['columns'])
     
     else:  # tab == 'cargar'
         columnas_ejemplo = [
@@ -242,10 +274,10 @@ def validacion_poligonos(tab):
             'Nombre_IF', 'Observaciones', 'Comentarios'
         ]
         return render_template('validacion_poligonos.html', 
-                            tab=tab,
-                            columnas=columnas_ejemplo,
-                            uploaded_columns=excel_data['columns'],
-                            filename=excel_data['filename'])
+                           tab=tab,
+                           columnas=columnas_ejemplo,
+                           uploaded_columns=excel_data['columns'],
+                           filename=excel_data['filename'])
 
 @app.route('/cargar-excel', methods=['POST'])
 def cargar_excel():
@@ -277,11 +309,15 @@ def cargar_excel():
             df['COORDENADAS_DECIMALES'] = df.apply(procesar_coordenadas_dms, axis=1)
             df['COORDENADAS_DECIMALES_CORREGIDAS'] = df['COORDENADAS_DECIMALES'].apply(corregir_longitud)
             
+            # Guardar copia de las coordenadas originales
+            original_coords = df['COORDENADAS_DECIMALES_CORREGIDAS'].copy()
+            
             # Convertir a diccionario
             excel_data = {
                 'data': df.replace({pd.NA: None}).to_dict('records'),
                 'columns': list(df.columns),
-                'filename': filename
+                'filename': filename,
+                'original_coords': original_coords.tolist()
             }
             
             flash('Archivo cargado y coordenadas procesadas correctamente', 'success')
@@ -304,12 +340,29 @@ def actualizar_fila():
         flash('Índice de fila inválido', 'error')
         return redirect(url_for('validacion_poligonos', tab='lista'))
     
+    # Actualizar todos los campos editables
     for col in excel_data['columns']:
         if col in request.form:
             excel_data['data'][row_index][col] = request.form[col]
     
+    # Actualizar área digitalizada si se modificaron las coordenadas
+    if 'COORDENADAS_DECIMALES_CORREGIDAS' in request.form:
+        nuevas_coords = request.form['COORDENADAS_DECIMALES_CORREGIDAS']
+        area_ha = calcular_area_poligono(nuevas_coords)
+        excel_data['data'][row_index]['Area_digitalizada'] = f"{area_ha:.2f}"
+    
     flash('Cambios guardados correctamente', 'success')
     return redirect(url_for('validacion_poligonos', tab='lista'))
+
+@app.route('/get-original-coords/<int:row_index>')
+def get_original_coords(row_index):
+    """Endpoint para obtener coordenadas originales (AJAX)"""
+    if row_index < 0 or row_index >= len(excel_data.get('original_coords', [])):
+        return jsonify({'error': 'Índice inválido'}), 404
+    
+    return jsonify({
+        'coordenadas': excel_data['original_coords'][row_index]
+    })
 
 def allowed_file(filename):
     return '.' in filename and \
