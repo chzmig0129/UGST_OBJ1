@@ -9,8 +9,9 @@ from flask import jsonify
 import sqlite3
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
-from shapely.geometry import Polygon
+from shapely.geometry import Polygon, Point
 from geopy.distance import geodesic
+import geopandas as gpd
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
@@ -18,6 +19,36 @@ app.secret_key = 'tu_clave_secreta_aqui'  # Cambia esto en producción
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB límite
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///poligonos.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# Cargar shapefile de municipios de México
+try:
+    municipios_gdf = gpd.read_file("data/mun22gw.shp")
+    # Verificar/convertir CRS a WGS84 (EPSG:4326)
+    if municipios_gdf.crs != "EPSG:4326":
+        municipios_gdf = municipios_gdf.to_crs(epsg=4326)
+    # Filtrar solo columnas necesarias para optimizar
+    municipios_gdf = municipios_gdf[["NOMGEO", "NOM_ENT", "geometry"]]
+    print("Shapefile de municipios cargado correctamente. Columnas:", municipios_gdf.columns.tolist())
+except Exception as e:
+    print(f"Error cargando shapefile: {e}")
+    municipios_gdf = None
+
+# Función para obtener municipio y estado desde coordenadas
+def obtener_ubicacion(lat, lon):
+    if municipios_gdf is None:
+        return None
+    try:
+        punto = Point(lon, lat)  # Shapely usa (x=lon, y=lat)
+        mask = municipios_gdf.contains(punto)
+        resultados = municipios_gdf[mask]
+        if not resultados.empty:
+            return {
+                "municipio": resultados.iloc[0]["NOMGEO"],
+                "estado": resultados.iloc[0]["NOM_ENT"]
+            }
+    except Exception as e:
+        print(f"Error al obtener ubicación: {e}")
+    return None
 
 db = SQLAlchemy(app)
 
@@ -581,9 +612,7 @@ def validacion_poligonos(tab):
                     'COMENTARIOS': poligono.comentarios, # Campo editable
                     'db_id': poligono.id
                 }
-                # Otros campos que podrían venir del Excel original (si se decide mantenerlos en el modelo)
-                # ... añadir aquí si se agregan más campos al modelo ...
-
+                
                 # Calcular área
                 area_ha = calcular_area_poligono(poligono.coordenadas_corregidas)
                 
@@ -601,6 +630,33 @@ def validacion_poligonos(tab):
                 if not row_data['ESTADO']: row_data['ESTADO'] = ''
                 if not row_data['MUNICIPIO']: row_data['MUNICIPIO'] = ''
                 if not row_data['COMENTARIOS']: row_data['COMENTARIOS'] = ''
+                
+                # NUEVO: Obtener municipio y estado desde coordenadas si no están definidos
+                if (not row_data['ESTADO'] or not row_data['MUNICIPIO']) and poligono.coordenadas_corregidas:
+                    ubicacion = obtener_ubicacion_desde_poligono(poligono.coordenadas_corregidas)
+                    if ubicacion:
+                        # Solo actualizar si no están definidos
+                        if not row_data['MUNICIPIO']:
+                            row_data['MUNICIPIO'] = ubicacion['municipio']
+                        if not row_data['ESTADO']:
+                            row_data['ESTADO'] = ubicacion['estado']
+                        
+                        # Agregar una bandera para indicar que se determinó automáticamente
+                        row_data['UBICACION_AUTO'] = True
+                
+                # Preprocesar coordenadas para el mapa
+                coords_para_mapa = []
+                if poligono.coordenadas_corregidas:
+                    try:
+                        coord_pairs = poligono.coordenadas_corregidas.split(' | ')
+                        for pair in coord_pairs:
+                            if ',' in pair:
+                                lat_str, lon_str = pair.split(',')
+                                lat = float(lat_str.strip())
+                                lon = float(lon_str.strip())
+                                coords_para_mapa.append([lat, lon])
+                    except Exception as e:
+                        print(f"Error al procesar coordenadas para mapa: {e}")
 
                 # Determinar columnas para edición (basado en lo que ahora está en row_data)
                 edit_columns = list(row_data.keys()) # Simplificado: mostrar todos los campos cargados
@@ -610,6 +666,7 @@ def validacion_poligonos(tab):
                                    row_data=row_data,
                                    row_index=row_index, # Mantener por compatibilidad si se necesita
                                    db_id=db_id,
+                                   coords_para_mapa=coords_para_mapa,
                                    columns=edit_columns) # Mostrar todas las columnas recuperadas
             
             # Compatibilidad con el código anterior (se podría eliminar si ya no se usa)
@@ -1033,6 +1090,47 @@ def diagnostico_poligono(db_id):
     }
     
     return jsonify(datos)
+
+@app.route('/obtener_ubicacion', methods=['POST'])
+def get_ubicacion():
+    """Endpoint para obtener municipio y estado desde coordenadas"""
+    try:
+        data = request.get_json()
+        lat = float(data.get('lat'))
+        lon = float(data.get('lon'))
+        
+        # Usar la función para obtener el municipio y estado
+        ubicacion = obtener_ubicacion(lat, lon)
+        
+        if ubicacion:
+            return jsonify(ubicacion)
+        return jsonify({"error": "Ubicación no encontrada"}), 404
+    except Exception as e:
+        return jsonify({"error": f"Datos inválidos: {str(e)}"}), 400
+
+# Función para obtener ubicación desde las coordenadas de un polígono
+def obtener_ubicacion_desde_poligono(coordenadas_str):
+    """Obtiene el municipio y estado desde las coordenadas de un polígono"""
+    if not coordenadas_str:
+        return None
+    
+    try:
+        # Usar el primer punto del polígono para determinar ubicación
+        coords_list = coordenadas_str.split(' | ')
+        if not coords_list:
+            return None
+            
+        first_point = coords_list[0].split(',')
+        if len(first_point) < 2:
+            return None
+            
+        lat = float(first_point[0])
+        lon = float(first_point[1])
+        
+        return obtener_ubicacion(lat, lon)
+    except Exception as e:
+        print(f"Error al obtener ubicación desde polígono: {e}")
+        return None
 
 def allowed_file(filename):
     return '.' in filename and \
