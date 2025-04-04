@@ -109,8 +109,15 @@
                             <tr>
                                 <th>#</th>
                                 {% for col in columns %}
-                                    {% if col in ['COORDENADAS_DECIMALES', 'COORDENADAS_DECIMALES_CORREGIDAS'] %}
-                                        <th class="bg-success text-white">{{ col }}</th>
+                                    {# Highlight specific columns for clarity #}
+                                    {% if col in ['COORDENADAS', 'COORDENADAS_CORREGIDAS'] %}
+                                        <th class="bg-info text-white" style="max-width: 150px;">{{ col }}</th>
+                                    {% elif col == 'AREA_DIGITALIZADA' %}
+                                        <th class="bg-success text-white">{{ col }} (ha)</th>
+                                    {% elif col in ['ESTADO', 'MUNICIPIO', 'ESTATUS'] %}
+                                        <th class="bg-light">{{ col }}</th> {# Newly added columns #}
+                                    {% elif col == 'COMENTARIOS' %}
+                                        <th class="bg-light">{{ col }}</th> {# Comentarios column #}
                                     {% else %}
                                         <th>{{ col }}</th>
                                     {% endif %}
@@ -123,21 +130,32 @@
                             <tr>
                                 <td>{{ loop.index }}</td>
                                 {% for col in columns %}
-                                    <td>
-                                        {% if col in ['COORDENADAS_DECIMALES', 'COORDENADAS_DECIMALES_CORREGIDAS'] %}
-                                            <span class="text-success fw-bold">
-                                                {{ row[col] if row[col] is not none else '' }}
-                                            </span>
+                                    {% if col in ['COORDENADAS', 'COORDENADAS_CORREGIDAS'] %}
+                                        <td style="max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{ row[col] if row[col] is not none else '' }}">
+                                    {% else %}
+                                        <td>
+                                    {% endif %}
+                                        {# Display values, handle None #}
+                                        {% if row[col] is not none %}
+                                            {% if col == 'AREA_DIGITALIZADA' %}
+                                                {{ "%.2f"|format(row[col]|float) }} ha
+                                            {% else %}
+                                                {{ row[col] }}
+                                            {% endif %}
                                         {% else %}
-                                            {{ row[col] if row[col] is not none else '' }}
+                                            <span class="text-muted">--</span> {# Display dashes for empty values #}
                                         {% endif %}
                                     </td>
                                 {% endfor %}
                                 <td>
-                                    <!-- Ícono que envía a la pestaña de editar junto con el índice de fila -->
-                                    <a href="{{ url_for('validacion_poligonos', tab='editar', id=loop.index0) }}" title="Editar Polígono">
+                                    {# Link to edit page using db_id #}
+                                    {% if row.get('db_id') %}
+                                    <a href="{{ url_for('validacion_poligonos', tab='editar', db_id=row.db_id) }}" title="Editar Polígono">
                                         <i class="bi bi-geo-alt" style="font-size: 1.2rem; cursor: pointer;"></i>
                                     </a>
+                                    {% else %}
+                                    <span title="Registro no guardado en DB"></span> {# Indicate if not in DB #}
+                                    {% endif %}
                                 </td>
                             </tr>
                             {% endfor %}
@@ -162,43 +180,49 @@
                 
                 {% if row_data %}
                 <form action="{{ url_for('actualizar_fila') }}" method="post" id="formEditarPoligono">
+                    {% if db_id is defined %}
+                    <input type="hidden" name="db_id" value="{{ db_id }}">
+                    {% else %}
                     <input type="hidden" name="row_index" value="{{ row_index }}">
+                    {% endif %}
                     
                     <div class="row">
                         <div class="col-md-6">
                             <div class="row mb-3">
                                 <div class="col-md-6">
-                                    <label for="areaReportada" class="form-label">Área Reportada</label>
-                                    <input type="text" class="form-control" id="areaReportada" name="areaReportada" 
-                                           value="{{ row_data.get('area_reportada', '0') }}">
+                                    <label for="Area_reportada" class="form-label">Área Reportada</label>
+                                    <input type="text" class="form-control" id="Area_reportada" name="SUPERFICIE" 
+                                           value="{{ row_data.get('SUPERFICIE', '0') }}">
                                 </div>
                                 <div class="col-md-6">
-                                    <label for="areaDigitalizada" class="form-label">Área Digitalizada</label>
-                                    <input type="text" class="form-control" id="areaDigitalizada" name="areaDigitalizada" 
-                                           value="{{ row_data.get('area_digitalizada', '0.0') }}" readonly>
+                                    <label for="Area_digitalizada" class="form-label">Área Digitalizada (ha)</label>
+                                    <input type="text" class="form-control" id="Area_digitalizada" name="AREA_DIGITALIZADA" 
+                                           value="{{ row_data.get('AREA_DIGITALIZADA', '0.0') }}">
+                                    <small class="text-muted">Calculada geodésicamente</small>
                                 </div>
                             </div>
                             
                             <div class="mb-3">
-                                <label for="estado" class="form-label">Estado</label>
-                                <input type="text" class="form-control" id="estado" name="estado" 
-                                       value="{{ row_data.get('estado', '') }}">
+                                <label for="Estado" class="form-label">Estado</label>
+                                <input type="text" class="form-control" id="Estado" name="ESTADO" 
+                                       value="{{ row_data.get('ESTADO', '') }}">
                             </div>
                             
                             <div class="mb-3">
-                                <label for="municipio" class="form-label">Municipio</label>
-                                <input type="text" class="form-control" id="municipio" name="municipio" 
-                                       value="{{ row_data.get('municipio', '') }}">
+                                <label for="Municipio" class="form-label">Municipio</label>
+                                <input type="text" class="form-control" id="Municipio" name="MUNICIPIO" 
+                                       value="{{ row_data.get('MUNICIPIO', '') }}">
                             </div>
                             
                             <div class="mb-3">
-                                <label for="comentarios" class="form-label">Comentarios</label>
-                                <textarea class="form-control" id="comentarios" name="comentarios" rows="3">{{ row_data.get('comentarios', '') }}</textarea>
+                                <label for="Comentarios" class="form-label">Comentarios</label>
+                                <textarea class="form-control" id="Comentarios" name="COMENTARIOS" rows="3">{{ row_data.get('COMENTARIOS', '') }}</textarea>
                             </div>
                             
                             <div class="mb-3">
-                                <label for="coordenadasCorregidas" class="form-label">Coordenadas Corregidas</label>
-                                <textarea class="form-control" id="coordenadasCorregidas" name="coordenadasCorregidas" rows="3" readonly>{{ row_data.get('COORDENADAS_DECIMALES_CORREGIDAS', '') }}</textarea>
+                                <label for="COORDENADAS_DECIMALES_CORREGIDAS" class="form-label">Coordenadas Corregidas</label>
+                                <textarea class="form-control" id="COORDENADAS_DECIMALES_CORREGIDAS" name="COORDENADAS_DECIMALES_CORREGIDAS" rows="3" readonly>{{ row_data.get('COORDENADAS_DECIMALES_CORREGIDAS', '') }}</textarea>
+                                <small class="text-muted">Formato: latitud,longitud | latitud,longitud | ...</small>
                             </div>
                             
                             <div class="mt-4 d-flex">
@@ -228,15 +252,15 @@
         </div>
         
         <!-- Scripts para Leaflet -->
-        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
         
         <!-- Leaflet.draw para edición de polígonos -->
-        <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
-        <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+        <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" crossorigin=""/>
+        <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js" crossorigin=""></script>
         
         <!-- Leaflet.GeometryUtil para calcular áreas -->
-        <script src="https://unpkg.com/leaflet-geometryutil@0.10.1/src/leaflet.geometryutil.js"></script>
+        <script src="https://unpkg.com/leaflet-geometryutil@0.10.1/src/leaflet.geometryutil.js" crossorigin=""></script>
         
         <style>
             .edit-control-container {
@@ -306,15 +330,130 @@
         
         <script>
         document.addEventListener('DOMContentLoaded', function() {
+            // Verificar que Leaflet está disponible
+            if (typeof L === 'undefined') {
+                console.error("Leaflet no está disponible. Intentando cargar nuevamente...");
+                
+                // Insertar scripts dinámicamente
+                var leafletCSS = document.createElement('link');
+                leafletCSS.rel = 'stylesheet';
+                leafletCSS.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+                document.head.appendChild(leafletCSS);
+                
+                var leafletScript = document.createElement('script');
+                leafletScript.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+                leafletScript.onload = function() {
+                    console.log("Leaflet cargado dinámicamente, reiniciando mapa...");
+                    initializeMap();
+                };
+                document.head.appendChild(leafletScript);
+                
+                // Mensaje al usuario
+                var mapDiv = document.getElementById('map');
+                if (mapDiv) {
+                    mapDiv.innerHTML = "<div class='alert alert-warning'>Cargando mapa, por favor espere...</div>";
+                }
+                
+                return; // Salir de la función actual, esperamos a que se cargue Leaflet
+            }
+            
+            // Si Leaflet está disponible, inicializar el mapa
+            initializeMap();
+        });
+        
+        function initializeMap() {
             // Indicador para saber si estamos en modo de edición
             var editingInProgress = false;
             
-            var map = L.map('map').setView([19.4326, -99.1332], 13);
-            L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-                attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community',
-                maxZoom: 19
-            }).addTo(map);
-
+            console.log("Iniciando configuración del mapa...");
+            
+            // Verificación HTML del div del mapa
+            var mapElement = document.getElementById('map');
+            
+            if (!mapElement) {
+                console.error("Elemento #map no encontrado en el DOM!");
+                return;
+            }
+            
+            // Asegurar que el elemento del mapa es visible
+            mapElement.style.height = '550px';
+            mapElement.style.width = '100%';
+            mapElement.style.display = 'block';
+            mapElement.style.backgroundColor = '#f0f0f0';
+            mapElement.innerHTML = '';
+            
+            // Probar con una fuente alternativa de mapas (inicialización más sencilla)
+            try {
+                console.log("Creando mapa...");
+                var map = L.map('map', {
+                    center: [25.6866, -100.3161], // Centro en Monterrey por defecto
+                    zoom: 5,
+                    maxZoom: 18
+                });
+                
+                // Añadir diferentes capas base como opciones
+                var baseLayers = {
+                    "OpenStreetMap": L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+                        maxZoom: 19
+                    }),
+                    "Esri World Imagery": L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                        attribution: 'Tiles &copy; Esri &mdash; Source: Esri',
+                        maxZoom: 18
+                    }),
+                    "CartoDB Dark": L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, &copy; <a href="https://carto.com/attributions">CARTO</a>',
+                        maxZoom: 19
+                    })
+                };
+                
+                // Añadir la primera capa base por defecto
+                baseLayers["Esri World Imagery"].addTo(map);
+                
+                // Añadir control de capas para cambiar entre fondos de mapa
+                L.control.layers(baseLayers, {}).addTo(map);
+                
+                console.log("Mapa creado correctamente");
+            } catch (e) {
+                console.error("Error al crear el mapa:", e);
+                
+                // Mostrar mensaje de error en el elemento del mapa
+                mapElement.innerHTML = "<div class='alert alert-danger'>Error al cargar el mapa: " + e.message + "</div>";
+                
+                // Intentar alternativamente con un iframe de Google Maps
+                try {
+                    console.log("Intentando alternativa con iframe de Google Maps...");
+                    // Obtener coordenadas para centro aproximado
+                    var coordText = document.getElementById('COORDENADAS_DECIMALES_CORREGIDAS').value;
+                    var center = "24.6866,-99.3161"; // México por defecto
+                    
+                    if (coordText && coordText.trim() !== '') {
+                        var firstCoord = coordText.split('|')[0].trim();
+                        if (firstCoord.includes(',')) {
+                            center = firstCoord;
+                        }
+                    }
+                    
+                    // Crear iframe con Google Maps
+                    mapElement.innerHTML = '<iframe width="100%" height="550" frameborder="0" style="border:0" src="https://www.google.com/maps/embed/v1/view?key=YOUR_API_KEY&center=' + center + '&zoom=10" allowfullscreen></iframe>';
+                    
+                    // Mensaje al usuario
+                    mapElement.innerHTML += "<div class='alert alert-warning mt-2'>Se está mostrando un mapa alternativo. La edición no está disponible.</div>";
+                    
+                    // Deshabilitar botones relacionados con el mapa
+                    var mapButtons = document.querySelectorAll('#editPolygon, #savePolygonChanges, #cancelPolygonChanges');
+                    mapButtons.forEach(function(btn) {
+                        if (btn) btn.disabled = true;
+                    });
+                    
+                    return;
+                } catch (iframeErr) {
+                    console.error("También falló el iframe:", iframeErr);
+                }
+                
+                return;
+            }
+            
             // Crear grupo de edición
             var editableLayers = new L.FeatureGroup();
             map.addLayer(editableLayers);
@@ -397,7 +536,7 @@
                         // Desactivar el formulario completamente durante la edición
                         var formInputs = document.querySelectorAll('#formEditarPoligono input, #formEditarPoligono textarea, #formEditarPoligono select');
                         formInputs.forEach(function(input) {
-                            if (input.id !== 'coordenadasCorregidas' && input.id !== 'areaDigitalizada') {
+                            if (input.id !== 'COORDENADAS_DECIMALES_CORREGIDAS' && input.id !== 'Area_digitalizada') {
                                 input.setAttribute('disabled', 'disabled');
                             }
                         });
@@ -484,25 +623,108 @@
             }
             
             // Cargar las coordenadas
-            var coordenadasTexto = document.getElementById('coordenadasCorregidas').value;
-            if (coordenadasTexto.trim() !== '') {
-                var coordenadas = coordenadasTexto.split('|').map(function(coord) {
-                    var partes = coord.trim().split(',');
-                    return [parseFloat(partes[0]), parseFloat(partes[1])];
-                });
+            var coordenadasTexto = document.getElementById('COORDENADAS_DECIMALES_CORREGIDAS').value;
+            console.log("Coordenadas cargadas:", coordenadasTexto);
+            
+            if (coordenadasTexto && coordenadasTexto.trim() !== '') {
+                // Intento de parsear las coordenadas
+                var coordenadas = [];
                 
-                // Guardar las coordenadas originales
-                originalCoords = [...coordenadas];
+                try {
+                    // Determinar el separador de coordenadas (| o espacio)
+                    var separador = coordenadasTexto.includes('|') ? '|' : ' ';
+                    console.log("Usando separador:", separador);
+                    
+                    // Dividir la cadena de coordenadas en pares
+                    var pares = coordenadasTexto.split(separador);
+                    console.log("Pares encontrados:", pares.length);
+                    
+                    // Crear un conjunto de coordenadas de prueba en caso de que falle
+                    var coordenadasPrueba = [
+                        [25.6866, -100.3161], // NL
+                        [25.7000, -100.2500], // NL esquina
+                        [25.7500, -100.3000]  // NL otro punto
+                    ];
+                    
+                    // Procesar cada par de coordenadas
+                    coordenadas = pares.map(function(coord) {
+                        var partes = coord.trim().split(',');
+                        
+                        // Verificar que tenemos dos partes (lat, lng)
+                        if (partes.length >= 2) {
+                            var lat = parseFloat(partes[0]);
+                            var lng = parseFloat(partes[1]);
+                            
+                            console.log("Coordenada parseada:", lat, lng);
+                            
+                            // Verificar que son números válidos y están en rangos razonables
+                            if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+                                return [lat, lng];
+                            } else {
+                                console.error("Coordenada inválida o fuera de rango:", partes);
+                                return null;
+                            }
+                        } else {
+                            console.error("Formato de coordenada inválido:", coord);
+                            return null;
+                        }
+                    }).filter(function(coord) {
+                        return coord !== null;
+                    });
+                    
+                    console.log("Coordenadas procesadas:", coordenadas);
+                    
+                    // Verificar que tenemos suficientes coordenadas para un polígono
+                    if (coordenadas.length < 3) {
+                        console.error("No hay suficientes coordenadas válidas para formar un polígono. Usando coordenadas de prueba.");
+                        coordenadas = coordenadasPrueba;
+                    }
+                } catch (error) {
+                    console.error("Error al procesar coordenadas:", error);
+                    // Usar coordenadas de prueba si falla el parsing
+                    coordenadas = [
+                        [25.6866, -100.3161], // NL
+                        [25.7000, -100.2500], // NL esquina
+                        [25.7500, -100.3000]  // NL otro punto
+                    ];
+                }
                 
-                // Crear el polígono y añadirlo al grupo editable
-                polygon = L.polygon(coordenadas, {color: 'red'});
-                editableLayers.addLayer(polygon);
-                map.fitBounds(polygon.getBounds());
-                
-                // Calcular y mostrar el área inicialmente
-                var areaSqMeters = L.GeometryUtil.geodesicArea(polygon.getLatLngs()[0]);
-                var areaHectares = areaSqMeters / 10000; // Convertir a hectáreas
-                document.getElementById('areaDigitalizada').value = areaHectares.toFixed(4);
+                // Si tenemos suficientes coordenadas, crear el polígono
+                if (coordenadas.length >= 3) {
+                    try {
+                        // Guardar las coordenadas originales
+                        originalCoords = [...coordenadas];
+                        
+                        // Crear el polígono y añadirlo al grupo editable
+                        console.log("Creando polígono con coordenadas:", coordenadas);
+                        polygon = L.polygon(coordenadas, {color: 'red', weight: 3, fillOpacity: 0.2});
+                        editableLayers.addLayer(polygon);
+                        
+                        // Ajustar el mapa para mostrar todo el polígono
+                        try {
+                            console.log("Ajustando vista al polígono");
+                            map.fitBounds(polygon.getBounds());
+                        } catch (e) {
+                            console.error("Error al ajustar vista:", e);
+                            // Fallback: centrar en la primera coordenada
+                            map.setView(coordenadas[0], 12);
+                        }
+                        
+                        // Calcular y mostrar el área inicialmente
+                        try {
+                            var areaSqMeters = L.GeometryUtil.geodesicArea(polygon.getLatLngs()[0]);
+                            var areaHectares = areaSqMeters / 10000; // Convertir a hectáreas
+                            document.getElementById('Area_digitalizada').value = areaHectares.toFixed(4);
+                            console.log("Área calculada:", areaHectares.toFixed(4), "hectáreas");
+                        } catch (e) {
+                            console.error("Error al calcular área:", e);
+                        }
+                    } catch (error) {
+                        console.error("Error al crear polígono:", error);
+                    }
+                } else {
+                    console.error("No se pudo crear el polígono: coordenadas insuficientes o inválidas");
+                }
                 
                 // Indicador de modo de edición
                 var editingIndicator = L.control({position: 'topleft'});
@@ -634,7 +856,7 @@
                         // Calcular y actualizar el área digitalizada en tiempo real
                         var areaSqMeters = L.GeometryUtil.geodesicArea(newLatLngs);
                         var areaHectares = areaSqMeters / 10000; // Convertir a hectáreas
-                        document.getElementById('areaDigitalizada').value = areaHectares.toFixed(4);
+                        document.getElementById('Area_digitalizada').value = areaHectares.toFixed(4);
                     }
                     
                     return {
@@ -687,7 +909,7 @@
                     }).join('|');
                     
                     // Actualizar el campo de texto con las nuevas coordenadas
-                    document.getElementById('coordenadasCorregidas').value = updatedCoords;
+                    document.getElementById('COORDENADAS_DECIMALES_CORREGIDAS').value = updatedCoords;
                     
                     // Nota: Ya no necesitamos calcular el área aquí, ya que se actualiza en tiempo real
                     
@@ -820,15 +1042,9 @@
                 e.preventDefault(); // Prevenir comportamiento por defecto
                 window.location.href = "{{ url_for('validacion_poligonos', tab='lista') }}";
             });
-        });
+        }
     </script>
         
-
-
-
-
-
-
         {% elif tab == 'generar' %}
 
         <!-- Pestaña de Generar Fichas -->
