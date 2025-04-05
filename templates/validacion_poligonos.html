@@ -254,6 +254,7 @@
                                             Estatus 7
                                         </label>
                                     </div>
+                                    <small class="text-muted">Nota: Estatus 7 se selecciona automáticamente si la diferencia entre áreas es ≤11%</small>
                                 </div>
                             </div>
                             
@@ -321,6 +322,18 @@
             .custom-leaflet-btn {
                 margin-bottom: 5px;
                 display: block;
+            }
+            .custom-leaflet-btn button {
+                width: 100%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 6px 10px;
+                font-weight: 500;
+                box-shadow: 0 1px 5px rgba(0,0,0,0.4);
+            }
+            .custom-leaflet-btn button i {
+                margin-right: 5px;
             }
             .edit-instructions {
                 position: absolute;
@@ -397,6 +410,7 @@
             }
             
             // Si Leaflet está disponible, inicializar el mapa
+            console.log("Iniciando mapa con Leaflet disponible");
             initializeMap();
         });
         
@@ -586,6 +600,8 @@
                         var areaHectares = areaSqMeters / 10000; // Convertir a hectáreas
                         document.getElementById('Area_digitalizada').value = areaHectares.toFixed(4);
                         console.log("Área calculada:", areaHectares.toFixed(4), "hectáreas");
+                        // Calcular estatus automáticamente
+                        if (typeof calcularEstatus === 'function') calcularEstatus();
                     } catch (e) {
                         console.error("Error al calcular área:", e);
                     }
@@ -713,8 +729,12 @@
                 
                 // Asegurarse de que nuestros controles personalizados están visibles
                 var editPolygonBtn = document.getElementById('editPolygon');
+                var drawNewPolygonBtn = document.getElementById('drawNewPolygon');
                 if (editPolygonBtn && !editingMode) {
                     editPolygonBtn.style.display = 'block';
+                }
+                if (drawNewPolygonBtn && !editingMode) {
+                    drawNewPolygonBtn.style.display = 'block';
                 }
                 
                 // Ocultar cualquier otro control de edición que pueda aparecer
@@ -727,6 +747,7 @@
             function reiniciarBotonEdicion() {
                 // Obtener referencia al botón
                 var editPolygonBtn = document.getElementById('editPolygon');
+                var drawNewPolygonBtn = document.getElementById('drawNewPolygon');
                 
                 if (editPolygonBtn) {
                     // Remover cualquier evento click existente para evitar duplicados
@@ -745,6 +766,7 @@
                         document.getElementById('savePolygonChanges').style.display = 'block';
                         document.getElementById('cancelPolygonChanges').style.display = 'block';
                         document.getElementById('editPolygon').style.display = 'none';
+                        document.getElementById('drawNewPolygon').style.display = 'none';
                         
                         // Mostrar indicador de modo de edición e instrucciones
                         document.querySelector('.editing-mode-indicator').style.display = 'block';
@@ -821,6 +843,104 @@
                     nuevoBoton.style.display = 'block';
                     nuevoBoton.disabled = false;
                 }
+                
+                // Reiniciar el botón de dibujar nuevo polígono
+                if (drawNewPolygonBtn) {
+                    // Remover cualquier evento click existente
+                    var nuevoBotonDibujo = drawNewPolygonBtn.cloneNode(true);
+                    drawNewPolygonBtn.parentNode.replaceChild(nuevoBotonDibujo, drawNewPolygonBtn);
+                    
+                    // Añadir el evento click de nuevo
+                    nuevoBotonDibujo.addEventListener('click', function(e) {
+                        // Detener comportamiento predeterminado
+                        if (e && e.preventDefault) e.preventDefault();
+                        if (e && e.stopPropagation) e.stopPropagation();
+                        
+                        // Cambiar modo
+                        editingMode = true;
+                        drawingMode = true;
+                        
+                        // Ocultar botones de edición y dibujo nuevo, mostrar guardar y cancelar
+                        document.getElementById('editPolygon').style.display = 'none';
+                        document.getElementById('drawNewPolygon').style.display = 'none';
+                        document.getElementById('savePolygonChanges').style.display = 'block';
+                        document.getElementById('cancelPolygonChanges').style.display = 'block';
+                        
+                        // Mostrar indicadores
+                        document.querySelector('.editing-mode-indicator').style.display = 'block';
+                        document.querySelector('.editing-mode-indicator').innerHTML = 'DIBUJANDO NUEVO POLÍGONO';
+                        document.querySelector('.edit-instructions').style.display = 'block';
+                        document.querySelector('.edit-instructions').innerHTML = `
+                            <h5>Cómo dibujar un nuevo polígono:</h5>
+                            <ul>
+                                <li><strong>Añadir vértice:</strong> Haz clic en el mapa para añadir puntos</li>
+                                <li><strong>Finalizar polígono:</strong> Haz clic en el primer punto o doble clic en el último punto</li>
+                            </ul>
+                        `;
+                        
+                        // Desactivar campos del formulario durante el dibujo
+                        var formInputs = document.querySelectorAll('#formEditarPoligono input, #formEditarPoligono textarea, #formEditarPoligono select');
+                        formInputs.forEach(function(input) {
+                            if (input.id !== 'COORDENADAS_DECIMALES_CORREGIDAS' && input.id !== 'Area_digitalizada') {
+                                input.setAttribute('disabled', 'disabled');
+                            }
+                        });
+                        
+                        // Desactivar botón de envío del formulario
+                        var submitButton = document.querySelector('#formEditarPoligono button[type="submit"]');
+                        if (submitButton) {
+                            submitButton.setAttribute('disabled', 'disabled');
+                        }
+                        
+                        // Guardar el polígono actual como referencia (no eliminarlo)
+                        editableLayers.eachLayer(function(layer) {
+                            if (layer instanceof L.Polygon) {
+                                layer.setStyle({color: '#aaaaaa', weight: 2, fillOpacity: 0.1, dashArray: '5, 5'});
+                            }
+                        });
+                        
+                        // Crear control de dibujo
+                        drawControl = new L.Draw.Polygon(map, {
+                            shapeOptions: {
+                                color: '#ff4500',
+                                weight: 3,
+                                fillOpacity: 0.3
+                            }
+                        });
+                        
+                        // Iniciar dibujo
+                        drawControl.enable();
+                        
+                        // Mostrar mensaje al usuario
+                        var instructionToast = `
+                        <div class="toast-container position-fixed bottom-0 end-0 p-3">
+                          <div class="toast show" role="alert" aria-live="assertive" aria-atomic="true">
+                            <div class="toast-header">
+                              <strong class="me-auto">Dibujando Nuevo Polígono</strong>
+                              <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+                            </div>
+                            <div class="toast-body">
+                              Haz clic en el mapa para añadir puntos. Cierra el polígono haciendo clic en el primer punto o doble clic.
+                            </div>
+                          </div>
+                        </div>`;
+                        
+                        var toastDiv = document.createElement('div');
+                        toastDiv.innerHTML = instructionToast;
+                        document.body.appendChild(toastDiv);
+                        
+                        // Eliminar el toast después de 5 segundos
+                        setTimeout(function() {
+                            toastDiv.remove();
+                        }, 5000);
+                        
+                        return false;
+                    });
+                    
+                    // Asegurarse de que el botón es visible
+                    nuevoBotonDibujo.style.display = 'block';
+                    nuevoBotonDibujo.disabled = false;
+                }
             }
             
             // Ejecutar limpieza inicial y configurar intervalos regulares para limpiar controles no deseados
@@ -871,6 +991,15 @@
                 return div;
             };
             editButton.addTo(map);
+            
+            // Botón para dibujar nuevo polígono
+            var drawNewButton = L.control({position: 'topright'});
+            drawNewButton.onAdd = function(map) {
+                var div = L.DomUtil.create('div', 'draw-new-btn custom-leaflet-btn');
+                div.innerHTML = '<button type="button" class="btn btn-warning btn-sm" id="drawNewPolygon"><i class="bi bi-pencil-square"></i> Dibujar Nuevo Polígono</button>';
+                return div;
+            };
+            drawNewButton.addTo(map);
             
             // Botón para guardar cambios
             var saveChangesBtn = L.control({position: 'topright'});
@@ -970,6 +1099,9 @@
                     var areaSqMeters = L.GeometryUtil.geodesicArea(newLatLngs);
                     var areaHectares = areaSqMeters / 10000; // Convertir a hectáreas
                     document.getElementById('Area_digitalizada').value = areaHectares.toFixed(4);
+                    
+                    // Calcular estatus automáticamente
+                    if (typeof calcularEstatus === 'function') calcularEstatus();
                 }
                 
                 return {
@@ -992,14 +1124,214 @@
             // Variable para guardar la referencia al editor personalizado
             var customEditor = null;
             
+            // Función para resaltar visualmente un campo cuando se actualiza
+            function highlightField(fieldId) {
+                var field = document.getElementById(fieldId);
+                if (field) {
+                    field.style.transition = 'background-color 0.5s';
+                    field.style.backgroundColor = '#ffffcc';
+                    setTimeout(function() {
+                        field.style.backgroundColor = '';
+                    }, 1000);
+                }
+            }
+            
             // Inicializar el botón de edición
             reiniciarBotonEdicion();
             
-            // Manejar el evento de guardar cambios
+            // Variable para control de dibujo nuevo
+            var drawControl = null;
+            var drawingMode = false;
+            
+            // Manejar el botón de dibujar nuevo polígono
+            document.getElementById('drawNewPolygon').addEventListener('click', function(e) {
+                // Detener comportamiento predeterminado
+                if (e && e.preventDefault) e.preventDefault();
+                if (e && e.stopPropagation) e.stopPropagation();
+                
+                console.log("Iniciando modo de dibujo de nuevo polígono");
+                
+                // Cambiar modo
+                editingMode = true;
+                drawingMode = true;
+                
+                // Ocultar botones de edición y dibujo nuevo, mostrar guardar y cancelar
+                document.getElementById('editPolygon').style.display = 'none';
+                document.getElementById('drawNewPolygon').style.display = 'none';
+                document.getElementById('savePolygonChanges').style.display = 'block';
+                document.getElementById('cancelPolygonChanges').style.display = 'block';
+                
+                // Mostrar indicadores
+                document.querySelector('.editing-mode-indicator').style.display = 'block';
+                document.querySelector('.editing-mode-indicator').innerHTML = 'DIBUJANDO NUEVO POLÍGONO';
+                document.querySelector('.edit-instructions').style.display = 'block';
+                document.querySelector('.edit-instructions').innerHTML = `
+                    <h5>Cómo dibujar un nuevo polígono:</h5>
+                    <ul>
+                        <li><strong>Añadir vértice:</strong> Haz clic en el mapa para añadir puntos</li>
+                        <li><strong>Finalizar polígono:</strong> Haz clic en el primer punto o doble clic en el último punto</li>
+                    </ul>
+                `;
+                
+                // Desactivar campos del formulario durante el dibujo
+                var formInputs = document.querySelectorAll('#formEditarPoligono input, #formEditarPoligono textarea, #formEditarPoligono select');
+                formInputs.forEach(function(input) {
+                    if (input.id !== 'COORDENADAS_DECIMALES_CORREGIDAS' && input.id !== 'Area_digitalizada') {
+                        input.setAttribute('disabled', 'disabled');
+                    }
+                });
+                
+                // Desactivar botón de envío del formulario
+                var submitButton = document.querySelector('#formEditarPoligono button[type="submit"]');
+                if (submitButton) {
+                    submitButton.setAttribute('disabled', 'disabled');
+                }
+                
+                // Guardar el polígono actual como referencia (no eliminarlo)
+                editableLayers.eachLayer(function(layer) {
+                    if (layer instanceof L.Polygon) {
+                        layer.setStyle({color: '#aaaaaa', weight: 2, fillOpacity: 0.1, dashArray: '5, 5'});
+                    }
+                });
+                
+                // Crear control de dibujo
+                drawControl = new L.Draw.Polygon(map, {
+                    shapeOptions: {
+                        color: '#ff4500',
+                        weight: 3,
+                        fillOpacity: 0.3
+                    }
+                });
+                
+                // Iniciar dibujo
+                drawControl.enable();
+                
+                // Mostrar mensaje al usuario
+                var instructionToast = `
+                <div class="toast-container position-fixed bottom-0 end-0 p-3">
+                  <div class="toast show" role="alert" aria-live="assertive" aria-atomic="true">
+                    <div class="toast-header">
+                      <strong class="me-auto">Dibujando Nuevo Polígono</strong>
+                      <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+                    </div>
+                    <div class="toast-body">
+                      Haz clic en el mapa para añadir puntos. Cierra el polígono haciendo clic en el primer punto o doble clic.
+                    </div>
+                  </div>
+                </div>`;
+                
+                var toastDiv = document.createElement('div');
+                toastDiv.innerHTML = instructionToast;
+                document.body.appendChild(toastDiv);
+                
+                // Eliminar el toast después de 5 segundos
+                setTimeout(function() {
+                    toastDiv.remove();
+                }, 5000);
+                
+                return false;
+            });
+            
+            // Configurar un único evento draw:created para todo el mapa
+            map.off('draw:created'); // Eliminar cualquier manejador previo
+            map.on('draw:created', function(e) {
+                console.log("Evento draw:created detectado:", e.layerType);
+                if (e.layerType === 'polygon') {
+                    console.log("Procesando nuevo polígono dibujado");
+                    
+                    // Obtener el nuevo polígono
+                    var newPolygon = e.layer;
+                    
+                    // Mostrar información sobre el polígono
+                    console.log("Puntos del polígono:", newPolygon.getLatLngs()[0].length);
+                    
+                    // Eliminar el polígono de referencia (gris) y añadir el nuevo
+                    editableLayers.clearLayers();
+                    editableLayers.addLayer(newPolygon);
+                    
+                    // Calcular y actualizar el área
+                    var areaSqMeters = L.GeometryUtil.geodesicArea(newPolygon.getLatLngs()[0]);
+                    var areaHectares = areaSqMeters / 10000;
+                    var areaFormateada = areaHectares.toFixed(4);
+                    console.log("Área calculada:", areaFormateada, "hectáreas");
+                    
+                    // Actualizar campos del formulario
+                    var areaField = document.getElementById('Area_digitalizada');
+                    if(areaField) {
+                        areaField.value = areaFormateada;
+                        highlightField('Area_digitalizada');
+                        console.log("Campo de área actualizado a:", areaFormateada);
+                        
+                        // Guardar el valor como atributo de datos para asegurar que no se pierda
+                        areaField.setAttribute('data-polygon-area', areaFormateada);
+                        
+                        // Calcular estatus automáticamente
+                        if (typeof calcularEstatus === 'function') calcularEstatus();
+                    } else {
+                        console.error("No se encontró el campo Area_digitalizada");
+                    }
+                    
+                    // Actualizar el campo de coordenadas corregidas con las nuevas coordenadas
+                    var newLatLngs = newPolygon.getLatLngs()[0];
+                    var newCoords = newLatLngs.map(function(latLng) {
+                        return latLng.lat.toFixed(6) + ',' + latLng.lng.toFixed(6);
+                    }).join(' | ');
+                    console.log("Nuevas coordenadas:", newCoords);
+                    
+                    var coordsField = document.getElementById('COORDENADAS_DECIMALES_CORREGIDAS');
+                    if(coordsField) {
+                        coordsField.value = newCoords;
+                        highlightField('COORDENADAS_DECIMALES_CORREGIDAS');
+                        console.log("Campo de coordenadas actualizado:", newCoords);
+                        
+                        // Guardar el valor como atributo de datos para asegurar que no se pierda
+                        coordsField.setAttribute('data-polygon-coords', newCoords);
+                    } else {
+                        console.error("No se encontró el campo COORDENADAS_DECIMALES_CORREGIDAS");
+                    }
+                    
+                    // Preparar para edición de vértices una vez dibujado
+                    customEditor = createCustomVertexEditor(map, newPolygon).enable();
+                    
+                    // Actualizar mensaje de instrucciones
+                    document.querySelector('.edit-instructions').innerHTML = `
+                        <h5>Polígono dibujado:</h5>
+                        <ul>
+                            <li><strong>Ajustar vértices:</strong> Ahora puedes mover los puntos blancos</li>
+                            <li><strong>Guardar cambios:</strong> Haz clic en el botón Guardar</li>
+                        </ul>
+                    `;
+                    
+                    // Desactivar modo de dibujo pero mantener en modo de edición
+                    drawingMode = false;
+                    if (drawControl) {
+                        drawControl.disable();
+                        drawControl = null;
+                    }
+                    
+                    // Notificar al usuario de la actualización
+                    alert("Polígono dibujado. Se han actualizado las coordenadas y el área digitalizada.");
+                    
+                    // Mantener actualizados los campos - evitar que se restauren valores previos
+                    setTimeout(function() {
+                        // Verificar y restaurar los valores si fueron cambiados
+                        verifyAndRestoreFields();
+                    }, 500);
+                }
+            });
+            
+            // Funcionalidad para guardar cambios
             document.getElementById('savePolygonChanges').addEventListener('click', function(e) {
                 // Detener inmediatamente cualquier comportamiento predeterminado
                 if (e && e.preventDefault) e.preventDefault();
                 if (e && e.stopPropagation) e.stopPropagation();
+                
+                // Si estamos en modo dibujo, desactivarlo
+                if (drawControl && drawingMode) {
+                    drawControl.disable();
+                    drawControl = null;
+                    drawingMode = false;
+                }
                 
                 // Obtener las coordenadas actualizadas del polígono
                 var updatedLatLngs = [];
@@ -1018,13 +1350,33 @@
                 
                 // Formatear las coordenadas para guardarlas
                 var updatedCoords = updatedLatLngs.map(function(latLng) {
-                    return latLng.lat + ',' + latLng.lng;
-                }).join('|');
+                    return latLng.lat.toFixed(6) + ',' + latLng.lng.toFixed(6);
+                }).join(' | ');
                 
                 // Actualizar el campo de texto con las nuevas coordenadas
-                document.getElementById('COORDENADAS_DECIMALES_CORREGIDAS').value = updatedCoords;
+                var coordsField = document.getElementById('COORDENADAS_DECIMALES_CORREGIDAS');
+                coordsField.value = updatedCoords;
                 
-                // Nota: Ya no necesitamos calcular el área aquí, ya que se actualiza en tiempo real
+                // Guardar el valor como atributo de datos para asegurar que no se pierda
+                coordsField.setAttribute('data-polygon-coords', updatedCoords);
+                
+                // Asegurar que el área también esté actualizada
+                var areaSqMeters = L.GeometryUtil.geodesicArea(updatedLatLngs);
+                var areaHectares = areaSqMeters / 10000;
+                var areaFormateada = areaHectares.toFixed(4);
+                
+                var areaField = document.getElementById('Area_digitalizada');
+                areaField.value = areaFormateada;
+                
+                // Calcular estatus automáticamente con el nuevo valor del área
+                if (typeof calcularEstatus === 'function') calcularEstatus();
+                
+                // Guardar el valor como atributo de datos para asegurar que no se pierda
+                areaField.setAttribute('data-polygon-area', areaFormateada);
+                
+                // Añadir un efecto visual de actualización a los campos
+                highlightField('COORDENADAS_DECIMALES_CORREGIDAS');
+                highlightField('Area_digitalizada');
                 
                 // Desactivar editor personalizado
                 if (customEditor) {
@@ -1032,10 +1384,11 @@
                     customEditor = null;
                 }
                 
-                // Ocultar botones de guardar y cancelar, mostrar botón de editar
+                // Ocultar botones de guardar y cancelar, mostrar botones de editar y dibujar nuevo
                 document.getElementById('savePolygonChanges').style.display = 'none';
                 document.getElementById('cancelPolygonChanges').style.display = 'none';
                 document.getElementById('editPolygon').style.display = 'block';
+                document.getElementById('drawNewPolygon').style.display = 'block';
                 
                 // Ocultar indicador de modo de edición e instrucciones
                 document.querySelector('.editing-mode-indicator').style.display = 'none';
@@ -1070,6 +1423,12 @@
                 // Reiniciar el botón de edición para asegurarnos que funciona correctamente
                 reiniciarBotonEdicion();
                 
+                // Mantener actualizados los campos - evitar que se restauren valores previos
+                setTimeout(function() {
+                    // Verificar y restaurar los valores si fueron cambiados
+                    verifyAndRestoreFields();
+                }, 100);
+                
                 alert('Geometría actualizada correctamente');
                 
                 // Limpiar cualquier control de edición nativo que pueda haber aparecido
@@ -1087,6 +1446,13 @@
                 if (e && e.preventDefault) e.preventDefault();
                 if (e && e.stopPropagation) e.stopPropagation();
                 
+                // Si estamos en modo dibujo, desactivarlo
+                if (drawControl && drawingMode) {
+                    drawControl.disable();
+                    drawControl = null;
+                    drawingMode = false;
+                }
+                
                 // Desactivar editor personalizado
                 if (customEditor) {
                     customEditor.disable();
@@ -1100,10 +1466,11 @@
                 polygon = L.polygon(originalCoords, {color: 'red'});
                 editableLayers.addLayer(polygon);
                 
-                // Ocultar botones de guardar y cancelar, mostrar botón de editar
+                // Ocultar botones de guardar y cancelar, mostrar botones de editar y dibujar nuevo
                 document.getElementById('savePolygonChanges').style.display = 'none';
                 document.getElementById('cancelPolygonChanges').style.display = 'none';
                 document.getElementById('editPolygon').style.display = 'block';
+                document.getElementById('drawNewPolygon').style.display = 'block';
                 
                 // Ocultar indicador de modo de edición e instrucciones
                 document.querySelector('.editing-mode-indicator').style.display = 'none';
@@ -1155,6 +1522,111 @@
             e.preventDefault(); // Prevenir comportamiento por defecto
             window.location.href = "{{ url_for('validacion_poligonos', tab='lista') }}";
         });
+
+        // Función para calcular y actualizar automáticamente el Estatus basado en la diferencia de áreas
+        function calcularEstatus() {
+            var areaReportada = parseFloat(document.getElementById('Area_reportada').value) || 0;
+            var areaDigitalizada = parseFloat(document.getElementById('Area_digitalizada').value) || 0;
+            
+            // Si alguna de las áreas es 0, no hacer nada (probablemente datos incompletos)
+            if (areaReportada === 0 || areaDigitalizada === 0) return;
+            
+            // Calcular la diferencia porcentual relativa entre las áreas
+            var diferencia = Math.abs(areaReportada - areaDigitalizada);
+            var porcentajeDiferencia = (diferencia / areaReportada) * 100;
+            
+            // Seleccionar el radio button basado en la diferencia
+            if (porcentajeDiferencia <= 11) {
+                document.getElementById('Estatus7').checked = true;
+            } else {
+                document.getElementById('Estatus6').checked = true;
+            }
+            
+            // Buscar el contenedor de Estatus de manera confiable
+            var estatusContainer = null;
+            
+            // Buscar todas las etiquetas form-label y encontrar la que contiene "Estatus"
+            var labels = document.querySelectorAll('.form-label');
+            for (var i = 0; i < labels.length; i++) {
+                if (labels[i].textContent.trim() === 'Estatus') {
+                    estatusContainer = labels[i].closest('.col-12');
+                    break;
+                }
+            }
+            
+            // Si no se encontró, intentar con el segundo método
+            if (!estatusContainer) {
+                var estatusInputs = document.querySelectorAll('input[name="ESTATUS"]');
+                if (estatusInputs.length > 0) {
+                    estatusContainer = estatusInputs[0].closest('.col-12');
+                }
+            }
+            
+            if (estatusContainer) {
+                // Buscar o crear el elemento para mostrar el porcentaje
+                var infoSpan = document.getElementById('diferenciaPorcentaje');
+                if (!infoSpan) {
+                    infoSpan = document.createElement('span');
+                    infoSpan.id = 'diferenciaPorcentaje';
+                    infoSpan.className = 'ms-2 badge bg-info';
+                    
+                    // Insertar después de la primera etiqueta del formulario dentro del contenedor
+                    var firstLabel = estatusContainer.querySelector('label.form-label');
+                    if (firstLabel) {
+                        firstLabel.parentNode.insertBefore(infoSpan, firstLabel.nextSibling);
+                    } else {
+                        // Si no hay etiqueta, añadir al inicio del contenedor
+                        estatusContainer.insertBefore(infoSpan, estatusContainer.firstChild);
+                    }
+                }
+                
+                // Actualizar siempre el contenido independientemente de si se creó o ya existía
+                infoSpan.textContent = 'Diferencia: ' + porcentajeDiferencia.toFixed(2) + '%';
+                
+                // Actualizar el color de la insignia según el estado
+                if (porcentajeDiferencia <= 11) {
+                    infoSpan.className = 'ms-2 badge bg-success';
+                } else {
+                    infoSpan.className = 'ms-2 badge bg-warning text-dark';
+                }
+            } else {
+                console.warn("No se pudo encontrar el contenedor de Estatus para mostrar la diferencia");
+            }
+        }
+        
+        // Ejecutar el cálculo cuando la página carga
+        calcularEstatus();
+        
+        // Calcular el Estatus cuando cambian los valores de las áreas
+        document.getElementById('Area_reportada').addEventListener('input', calcularEstatus);
+        document.getElementById('Area_digitalizada').addEventListener('input', calcularEstatus);
+
+        // Función para verificar y restaurar campos si fueron modificados
+        function verifyAndRestoreFields() {
+            var areaField = document.getElementById('Area_digitalizada');
+            var coordsField = document.getElementById('COORDENADAS_DECIMALES_CORREGIDAS');
+            
+            // Restaurar valor de área si fue cambiado
+            if (areaField && areaField.hasAttribute('data-polygon-area')) {
+                var savedArea = areaField.getAttribute('data-polygon-area');
+                if (areaField.value !== savedArea) {
+                    console.log("Restaurando valor del área digitalizada:", savedArea);
+                    areaField.value = savedArea;
+                }
+            }
+            
+            // Restaurar valor de coordenadas si fue cambiado
+            if (coordsField && coordsField.hasAttribute('data-polygon-coords')) {
+                var savedCoords = coordsField.getAttribute('data-polygon-coords');
+                if (coordsField.value !== savedCoords) {
+                    console.log("Restaurando valor de coordenadas:", savedCoords);
+                    coordsField.value = savedCoords;
+                }
+            }
+        }
+        
+        // Comprobar periódicamente que los valores no se pierdan
+        setInterval(verifyAndRestoreFields, 1000);
     </script>
         
         {% elif tab == 'generar' %}
