@@ -1,13 +1,29 @@
+# Flask y extensiones
 Flask==2.3.3
-Werkzeug==2.3.7
-Jinja2==3.1.2
-MarkupSafe==2.1.3
-itsdangerous==2.1.2
-click==8.1.7
-pandas==2.1.0
-numpy==1.25.2
-openpyxl==3.1.2
-xlrd==2.0.1
-shapely==2.0.7
-geopy==2.4.1
-flask_sqlalchemy==3.1.1
+Flask-SQLAlchemy==3.1.1
+Werkzeug==3.0.1
+
+# Análisis de datos
+pandas==2.1.1
+numpy==1.26.0
+
+# Procesamiento geoespacial
+shapely==2.0.1
+geopy==2.4.0
+geopandas==0.13.2
+pyshp==2.3.1
+
+# Visualización
+matplotlib==3.8.0
+matplotlib-scalebar==0.8.1
+contextily==1.3.0
+
+# Generación de PDF
+reportlab==4.0.4
+
+# Utilitarios
+tqdm==4.66.1
+
+# Dependencias del sistema (asegúrate de tenerlas instaladas en tu sistema)
+# Las bibliotecas de GDAL/PROJ generalmente deben instalarse a nivel de sistema operativo
+# y pueden variar según el SO. En algunos casos es mejor instalarlas a través de conda.

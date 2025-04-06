@@ -1,0 +1,2 @@
+Este archivo es un placeholder para el logo FIRA.
+El archivo real debe ser un archivo PNG con el nombre logo_fira.png 

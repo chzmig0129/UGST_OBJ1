@@ -19,6 +19,7 @@ import io
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
+from shapefile_utils import plot_shapefile_to_png
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
@@ -1278,6 +1279,8 @@ def generar_paquete_completo():
             zf.writestr('fichas_tecnicas/', '')
             # Crear carpeta para shapefiles
             zf.writestr('shapefiles/', '')
+            # Crear carpeta para mapas
+            zf.writestr('mapas/', '')
             
             # Para cada polígono seleccionado
             for row_id in selected_rows:
@@ -1304,15 +1307,34 @@ def generar_paquete_completo():
                     # Si no es un ID válido, continuar con el siguiente
                     continue
                 
-                # Generar ficha técnica PDF para este polígono
-                pdf_buffer = generar_ficha_tecnica(poligono, f'polygon-{row_id}')
-                if pdf_buffer:
-                    zf.writestr(f'fichas_tecnicas/ficha_polygon-{row_id}.pdf', pdf_buffer.getvalue())
-                
                 # Generar shapefile para este polígono
                 shapefile_buffer = generar_shapefile_individual(poligono, f'polygon-{row_id}')
                 if shapefile_buffer:
                     zf.writestr(f'shapefiles/polygon-{row_id}.zip', shapefile_buffer.getvalue())
+                    
+                    # Generar mapas PNG a partir del shapefile
+                    try:
+                        # Crear un directorio temporal para guardar los PNG
+                        with tempfile.TemporaryDirectory() as temp_png_dir:
+                            # Generar PNG a partir del shapefile
+                            png_dir = plot_shapefile_to_png(shapefile_buffer, temp_png_dir)
+                            
+                            # Añadir todos los archivos PNG al ZIP
+                            if png_dir:
+                                for png_filename in os.listdir(png_dir):
+                                    if png_filename.endswith('.png'):
+                                        png_path = os.path.join(png_dir, png_filename)
+                                        with open(png_path, 'rb') as png_file:
+                                            zf.writestr(f'mapas/{png_filename}', png_file.read())
+                    except Exception as e:
+                        print(f"Error al generar mapa PNG para polígono {row_id}: {e}")
+                        import traceback
+                        traceback.print_exc()
+                
+                # Generar ficha técnica PDF para este polígono (incluirá automáticamente el mapa)
+                pdf_buffer = generar_ficha_tecnica(poligono, f'polygon-{row_id}')
+                if pdf_buffer:
+                    zf.writestr(f'fichas_tecnicas/ficha_polygon-{row_id}.pdf', pdf_buffer.getvalue())
         
         # Regresar al inicio del archivo en memoria
         memory_file.seek(0)
@@ -1446,43 +1468,203 @@ def generar_ficha_tecnica(poligono, nombre_archivo):
         c = canvas.Canvas(buffer, pagesize=letter)
         width, height = letter
         
+        # Agregar logos
+        try:
+            # Logo FIRA (izquierda)
+            logo_fira_path = "static/images/logo_fira.png"
+            if os.path.exists(logo_fira_path):
+                c.drawImage(logo_fira_path, 1*inch, 9.5*inch, width=2*inch, height=0.75*inch, preserveAspectRatio=True)
+            
+            # Logo secundario (derecha)
+            logo_sec_path = "static/images/logo_sec.png"
+            if os.path.exists(logo_sec_path):
+                c.drawImage(logo_sec_path, 6.5*inch, 9.5*inch, width=1*inch, height=1*inch, preserveAspectRatio=True)
+        except Exception as e:
+            print(f"Error al cargar logos: {e}")
+        
         # Título
-        c.setFont("Helvetica-Bold", 18)
-        c.drawString(1*inch, 10*inch, f"Ficha Técnica: {nombre_archivo}")
+        c.setFont("Helvetica-Bold", 14)
+        c.drawCentredString(width/2, 9.25*inch, "FICHA TÉCNICA")
         
-        # Detalles del polígono
-        c.setFont("Helvetica", 12)
+        # Línea separadora
+        c.line(1*inch, 9.15*inch, width-1*inch, 9.15*inch)
         
-        y = 9*inch
-        c.drawString(1*inch, y, f"ID Polígono: {poligono.id_poligono or 'N/A'}")
-        y -= 0.3*inch
-        c.drawString(1*inch, y, f"IF: {poligono.if_val or 'N/A'}")
-        y -= 0.3*inch
-        c.drawString(1*inch, y, f"ID Crédito: {poligono.id_credito or 'N/A'}")
-        y -= 0.3*inch
-        c.drawString(1*inch, y, f"ID Persona: {poligono.id_persona or 'N/A'}")
-        y -= 0.3*inch
-        c.drawString(1*inch, y, f"Superficie Reportada: {poligono.superficie or 0} ha")
-        y -= 0.3*inch
-        c.drawString(1*inch, y, f"Área Digitalizada: {poligono.area_digitalizada or 0} ha")
-        y -= 0.3*inch
-        c.drawString(1*inch, y, f"Estado: {corregir_codificacion(poligono.estado) or 'N/A'}")
-        y -= 0.3*inch
-        c.drawString(1*inch, y, f"Municipio: {corregir_codificacion(poligono.municipio) or 'N/A'}")
-        y -= 0.3*inch
-        c.drawString(1*inch, y, f"Estatus: {poligono.estatus or 'N/A'}")
+        # Detalles del polígono en formato tabular
+        c.setFont("Helvetica-Bold", 10)
+        y_start = 8.9*inch
         
-        # Comentarios
-        y -= 0.5*inch
-        c.drawString(1*inch, y, "Comentarios:")
-        y -= 0.3*inch
+        # Primera columna (etiquetas)
+        c.drawString(1*inch, y_start, "Nombre del IF:")
+        c.drawString(1*inch, y_start - 0.3*inch, "ID Polígono:")
+        c.drawString(1*inch, y_start - 0.6*inch, "ID Crédito FIRA:")
+        c.drawString(1*inch, y_start - 0.9*inch, "ID Persona:")
+        c.drawString(1*inch, y_start - 1.2*inch, "Superficie (reportada):")
+        c.drawString(1*inch, y_start - 1.5*inch, "Superficie (digitalizada):")
+        
+        # Segunda columna (valores) - Desplazado para alinear mejor
         c.setFont("Helvetica", 10)
-        comentarios = poligono.comentarios or "Sin comentarios"
-        # Dividir comentarios en líneas si es muy largo
+        c.drawString(2.5*inch, y_start, f"{poligono.if_val or 'N/A'}")
+        c.drawString(2.5*inch, y_start - 0.3*inch, f"{poligono.id_poligono or 'N/A'}")
+        c.drawString(2.5*inch, y_start - 0.6*inch, f"{poligono.id_credito or 'N/A'}")
+        c.drawString(2.5*inch, y_start - 0.9*inch, f"{poligono.id_persona or 'N/A'}")
+        c.drawString(2.5*inch, y_start - 1.2*inch, f"{poligono.superficie or 0} ha")
+        c.drawString(2.5*inch, y_start - 1.5*inch, f"{poligono.area_digitalizada or 0} ha")
+        
+        # Tercera columna (etiquetas) - Mayor separación horizontal
+        c.setFont("Helvetica-Bold", 10)
+        c.drawString(5*inch, y_start, "Estado:")
+        c.drawString(5*inch, y_start - 0.3*inch, "Municipio:")
+        
+        # Cuarta columna (valores) - Desplazado para alinear mejor
+        c.setFont("Helvetica", 10)
+        c.drawString(5.8*inch, y_start, f"{corregir_codificacion(poligono.estado) or 'N/A'}")
+        c.drawString(5.8*inch, y_start - 0.3*inch, f"{corregir_codificacion(poligono.municipio) or 'N/A'}")
+        
+        # Ajustar posición del mapa
+        mapa_y_pos = 4.3*inch
+        
+        # Añadir borde para el mapa
+        c.rect(1*inch, mapa_y_pos, 6.5*inch, 3*inch, stroke=1, fill=0)
+        
+        # Generar el mapa para este polígono
+        mapa_image_path = None
+        try:
+            # Generar shapefile para este polígono
+            shapefile_buffer = generar_shapefile_individual(poligono, f'temp-{nombre_archivo}')
+            
+            if shapefile_buffer:
+                # Crear un directorio temporal para guardar el PNG
+                with tempfile.TemporaryDirectory() as temp_png_dir:
+                    # Generar PNG a partir del shapefile
+                    png_dir = plot_shapefile_to_png(shapefile_buffer, temp_png_dir)
+                    
+                    # Buscar el archivo PNG generado
+                    if png_dir:
+                        for png_filename in os.listdir(png_dir):
+                            if png_filename.endswith('.png'):
+                                mapa_image_path = os.path.join(png_dir, png_filename)
+                                break
+                        
+                        # Insertar el mapa si se encontró
+                        if mapa_image_path and os.path.exists(mapa_image_path):
+                            # Ajustar dimensiones para mantener el aspecto pero ajustarse al espacio disponible
+                            map_width = 6.3*inch
+                            map_height = 2.8*inch
+                            # Centrar el mapa en el recuadro
+                            c.drawImage(mapa_image_path, 1.1*inch, mapa_y_pos + 0.1*inch, 
+                                       width=map_width, height=map_height, preserveAspectRatio=True)
+        except Exception as map_error:
+            print(f"Error al generar o insertar el mapa: {map_error}")
+            import traceback
+            traceback.print_exc()
+        
+        # Información del metadata (parte inferior)
+        y_metadata = 3.9*inch
+        c.setFont("Helvetica-Bold", 10)
+        c.drawString(1*inch, y_metadata, "Información del metadato:")
+        
+        # Crear recuadros para los metadatos
+        # Primero dibujamos los recuadros - Ajustar altura para evitar superposición
+        c.setFillColorRGB(0.9, 0.9, 0.9)  # Gris claro
+        c.rect(1*inch, y_metadata - 2.4*inch, 3.5*inch, 2.2*inch, fill=1, stroke=1)  # Recuadro izquierdo
+        c.rect(5*inch, y_metadata - 2.4*inch, 2.5*inch, 2.2*inch, fill=1, stroke=1)  # Recuadro derecho
+        
+        # Texto metadatos (izquierda)
+        c.setFillColorRGB(0, 0, 0)  # Negro
+        c.setFont("Helvetica-Bold", 9)
+        # Aumentar espacio entre etiquetas
+        metadata_y = y_metadata - 0.2*inch
+        
+        # Calcular espaciados más uniformes
+        meta_spacing = 0.27*inch
+        
+        # Etiquetas de metadatos izquierda
+        c.drawString(1.1*inch, metadata_y, "1.- Polígono")
+        c.drawString(1.1*inch, metadata_y - meta_spacing, "2.- Fecha de referencia del conjunto de datos")
+        c.drawString(1.1*inch, metadata_y - (meta_spacing*1.7), "    espaciales o producto:")
+        c.drawString(1.1*inch, metadata_y - (meta_spacing*2.7), "3.- Unidad del estado responsable del conjunto")
+        c.drawString(1.1*inch, metadata_y - (meta_spacing*3.4), "    de datos espaciales o producto:")
+        c.drawString(1.1*inch, metadata_y - (meta_spacing*4.4), "4.- Calidad de la información, alcance o ámbito;")
+        c.drawString(1.1*inch, metadata_y - (meta_spacing*5.1), "    nivel: Atributo:")
+        
+        # Valores metadatos (izquierda) - Alineados horizontalmente con las etiquetas
+        c.setFont("Helvetica", 9)
+        # ID de polígono alineado
+        c.drawString(2.5*inch, metadata_y, f"{poligono.id_poligono or 'N/A'}")
+        
+        # Fecha actual
+        from datetime import datetime
+        fecha_actual = datetime.now().strftime("%d de %B de %Y")
+        c.drawString(2.5*inch, metadata_y - (meta_spacing*1.7), fecha_actual)
+        
+        # Texto de "Instituto vinculados..." alineado
+        c.drawString(1.5*inch, metadata_y - (meta_spacing*3.4), "Institutos vinculados en Relación con la")
+        c.drawString(1.5*inch, metadata_y - (meta_spacing*4.0), "Agricultura (FIRA).")
+        
+        # Información aplicada al valor...
+        c.drawString(1.5*inch, metadata_y - (meta_spacing*5.1), "Información aplicada al valor de atributo")
+        
+        # Información adicional - Observaciones (derecha)
+        c.setFillColorRGB(0, 0, 0)  # Negro
+        c.setFont("Helvetica-Bold", 9)
+        c.drawString(5.1*inch, metadata_y, "Observaciones:")
+        
+        # Comentarios con mejor espaciado
+        c.setFont("Helvetica", 9)
+        comentarios = poligono.comentarios or "NO CUMPLE CON LA SUPERFICIE."
+        # Ajustar comentarios al espacio disponible
         import textwrap
-        for line in textwrap.wrap(comentarios, width=70):
-            c.drawString(1*inch, y, line)
-            y -= 0.2*inch
+        comentario_lines = textwrap.wrap(comentarios, width=30)
+        for i, line in enumerate(comentario_lines[:5]):  # Limitar a 5 líneas
+            c.drawString(5.1*inch, metadata_y - 0.3*inch - (i * 0.2*inch), line)
+        
+        # Información SRC mejor espaciada
+        c.setFont("Helvetica-Bold", 9)
+        
+        # Ajustar la posición vertical del sistema de coordenadas
+        src_y = metadata_y - (meta_spacing*3.5)
+        c.drawString(5.1*inch, src_y, "Sistema de coordenadas")
+        c.drawString(5.1*inch, src_y - 0.2*inch, "geográficas:")
+        c.drawString(5.1*inch, src_y - 0.6*inch, "Dato:")
+        c.drawString(5.1*inch, src_y - 1*inch, "Unidad:")
+        
+        # Valores SRC alineados con etiquetas
+        c.setFont("Helvetica", 9)
+        c.drawString(6.3*inch, src_y - 0.1*inch, "GCS WGS 1984")
+        c.drawString(5.6*inch, src_y - 0.6*inch, "D WGS 1984")
+        c.drawString(5.6*inch, src_y - 1*inch, "Grados")
+        
+        # Metadata adicional
+        c.setFont("Helvetica-Bold", 9)
+        c.drawString(1*inch, y_metadata - 2.6*inch, "5.- Información del contexto para los metadatos: FIRA -")
+        c.drawString(1*inch, y_metadata - 2.9*inch, "    Subdirector Técnico y de Redes de Valor")
+        
+        # Línea divisoria
+        c.line(1*inch, 1.2*inch, width-1*inch, 1.2*inch)
+        
+        # Firmas
+        firma_y = 0.9*inch
+        c.setFont("Helvetica-Bold", 10)
+        nombre1 = "José Renato Navarrete Pérez"
+        nombre2 = "Oswaldo Rahmses Castro Martínez"
+        
+        # Firma 1 (izquierda)
+        c.drawCentredString(width/4, firma_y, nombre1)
+        c.line(width/8, firma_y - 0.1*inch, 3*width/8, firma_y - 0.1*inch)
+        c.setFont("Helvetica", 9)
+        c.drawCentredString(width/4, firma_y - 0.3*inch, "Subdirector en Innovación Tecnológica")
+        
+        # Firma 2 (derecha)
+        c.setFont("Helvetica-Bold", 10)
+        c.drawCentredString(3*width/4, firma_y, nombre2)
+        c.line(5*width/8, firma_y - 0.1*inch, 7*width/8, firma_y - 0.1*inch)
+        c.setFont("Helvetica", 9)
+        c.drawCentredString(3*width/4, firma_y - 0.3*inch, "Responsable Operativo del Proyecto")
+        
+        # Fecha
+        c.setFont("Helvetica", 9)
+        today = datetime.now().strftime("%d de %B de %Y")
+        c.drawString(width/8, 0.3*inch, f"FECHA: {today}")
         
         # Guardar el PDF
         c.save()
@@ -1510,6 +1692,92 @@ def corregir_codificacion(texto):
     except Exception as e:
         print(f"Error al corregir codificación: {e}")
         return texto
+
+@app.route('/generar_shapefiles_y_mapas', methods=['POST'])
+def generar_shapefiles_y_mapas():
+    """Ruta para generar archivos shapefile y mapas PNG de polígonos seleccionados"""
+    # Obtener los índices de polígonos seleccionados
+    selected_rows = request.json.get('selected_rows', [])
+    
+    if not selected_rows:
+        return jsonify({'error': 'No se seleccionaron polígonos'}), 400
+    
+    try:
+        # Preparar un archivo ZIP en memoria para contener todos los shapefiles y mapas
+        memory_file = io.BytesIO()
+        with zipfile.ZipFile(memory_file, 'w') as zf:
+            # Crear carpetas dentro del ZIP
+            zf.writestr('shapefiles/', '')
+            zf.writestr('mapas/', '')
+            
+            # Para cada polígono seleccionado
+            for row_id in selected_rows:
+                try:
+                    row_id = int(row_id)
+                    # Primero intentar buscar por ID exacto
+                    poligono = Poligono.query.get(row_id)
+                    
+                    if poligono is None:
+                        # Si no se encuentra, imprimir para depuración
+                        print(f"No se encontró polígono con ID {row_id}, buscando en posición")
+                        
+                        # Intentar buscar por posición como fallback
+                        poligonos = Poligono.query.all()
+                        if 0 <= row_id < len(poligonos):
+                            poligono = poligonos[row_id]
+                        else:
+                            print(f"Índice {row_id} fuera de rango, hay {len(poligonos)} polígonos")
+                            continue
+                    
+                    print(f"Generando shapefile para polígono ID={poligono.id}, ID_POLIGONO={poligono.id_poligono}")
+                except Exception as e:
+                    print(f"Error al recuperar polígono {row_id}: {e}")
+                    # Si no es un índice válido, continuar con el siguiente
+                    continue
+                
+                # Generar shapefile para este polígono
+                shapefile_buffer = generar_shapefile_individual(poligono, f'polygon-{row_id}')
+                
+                if shapefile_buffer:
+                    # Añadir el shapefile al archivo ZIP
+                    shapefile_filename = f'polygon-{row_id}.zip'
+                    zf.writestr(f'shapefiles/{shapefile_filename}', shapefile_buffer.getvalue())
+                    
+                    # Generar y añadir el mapa PNG
+                    try:
+                        # Crear un directorio temporal para guardar los PNG
+                        with tempfile.TemporaryDirectory() as temp_png_dir:
+                            # Generar PNG a partir del shapefile
+                            png_dir = plot_shapefile_to_png(shapefile_buffer, temp_png_dir)
+                            
+                            # Añadir todos los archivos PNG al ZIP
+                            if png_dir:
+                                for png_filename in os.listdir(png_dir):
+                                    if png_filename.endswith('.png'):
+                                        png_path = os.path.join(png_dir, png_filename)
+                                        with open(png_path, 'rb') as png_file:
+                                            zf.writestr(f'mapas/{png_filename}', png_file.read())
+                    except Exception as e:
+                        print(f"Error al generar mapa PNG para polígono {row_id}: {e}")
+                        import traceback
+                        traceback.print_exc()
+        
+        # Regresar al inicio del archivo en memoria
+        memory_file.seek(0)
+        
+        # Enviar el archivo ZIP como respuesta
+        return send_file(
+            memory_file,
+            mimetype='application/zip',
+            as_attachment=True,
+            download_name='poligonos_shapefiles_y_mapas.zip'
+        )
+    
+    except Exception as e:
+        print(f"Error al generar shapefiles y mapas: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True)

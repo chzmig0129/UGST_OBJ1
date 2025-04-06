@@ -1676,6 +1676,7 @@
                                         <option value="excel">Excel</option>
                                         <option value="csv">CSV</option>
                                         <option value="shp">Shapefile (SHP)</option>
+                                        <option value="shp_with_map">Shapefile con Mapas PNG</option>
                                     </select>
                                 </div>
                             </div>
@@ -1907,6 +1908,8 @@
                         
                         if (formato === 'shp') {
                             generarShapefiles(selectedRows);
+                        } else if (formato === 'shp_with_map') {
+                            generarShapefilesConMapas(selectedRows);
                         } else {
                             // Enviar formato original (pdf, excel, csv)
                             const form = document.createElement('form');
@@ -1989,6 +1992,47 @@
                         console.error('Error:', error);
                         ocultarCargando(loadingToast);
                         mostrarError('Error al generar shapefiles: ' + error.message);
+                    });
+                }
+                
+                // Función para generar shapefiles con mapas PNG
+                function generarShapefilesConMapas(selectedRows) {
+                    // Mostrar cargando
+                    const loadingToast = mostrarCargando('Generando Shapefiles y Mapas PNG...');
+                    
+                    fetch('/generar_shapefiles_y_mapas', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ selected_rows: selectedRows })
+                    })
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('Error al generar shapefiles y mapas');
+                        }
+                        return response.blob();
+                    })
+                    .then(blob => {
+                        // Ocultar cargando
+                        ocultarCargando(loadingToast);
+                        
+                        // Descargar el archivo ZIP
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = 'poligonos_shapefiles_y_mapas.zip';
+                        document.body.appendChild(a);
+                        a.click();
+                        window.URL.revokeObjectURL(url);
+                        document.body.removeChild(a);
+                        
+                        mostrarMensajeExito('Shapefiles y mapas PNG generados correctamente');
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        ocultarCargando(loadingToast);
+                        mostrarError('Error al generar shapefiles y mapas: ' + error.message);
                     });
                 }
                 
