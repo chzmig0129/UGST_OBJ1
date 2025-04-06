@@ -535,45 +535,19 @@
                 }
             };
             
-            // Cargar polígono desde coordenadas (si existen)
+            // Inicializar variables
             var coordenadas = [];
-            var coordenadasInput = document.getElementById('COORDENADAS_DECIMALES_CORREGIDAS');
             
-            if (coordenadasInput && coordenadasInput.value) {
-                try {
-                    console.log("Cargando coordenadas:", coordenadasInput.value);
-                    var pares = coordenadasInput.value.split('|');
-                    
-                    pares.forEach(function(par) {
-                        par = par.trim();
-                        if (par && par.includes(',')) {
-                            var partes = par.split(',');
-                            var lat = parseFloat(partes[0]);
-                            var lng = parseFloat(partes[1]);
-                            if (!isNaN(lat) && !isNaN(lng)) {
-                                coordenadas.push([lat, lng]);
-                            }
-                        }
-                    });
-                    
-                    console.log("Coordenadas procesadas:", coordenadas);
-                } catch (e) {
-                    console.error("Error procesando coordenadas:", e);
-                }
-            }
-            
-            // Usar las coordenadas pasadas desde el backend si están disponibles
-            {% if coords_para_mapa %}
-            try {
-                coordenadas = {{ coords_para_mapa|tojson }};
-                console.log("Coordenadas cargadas desde el backend:", coordenadas);
-            } catch (e) {
-                console.error("Error cargando coordenadas desde el backend:", e);
-            }
-            {% endif %}
+            // Cargar coordenadas desde el backend (if present)
+{% if coords_para_mapa %}
+            coordenadas = {{ coords_para_mapa|tojson }};
+            console.log("Coordenadas cargadas desde el backend:", coordenadas);
+{% else %}
+            console.log("No hay coordenadas disponibles desde el backend");
+{% endif %}
             
             // Crear polígono si hay suficientes coordenadas
-            if (coordenadas.length >= 3) {
+            if (coordenadas && coordenadas.length >= 3) {
                 try {
                     console.log("Creando polígono con coordenadas:", coordenadas);
                     
@@ -1642,105 +1616,493 @@
                 </div>
                 {% else %}
                 <div class="alert alert-info">
-                    Seleccione los registros para los que desea generar fichas técnicas.
+                    Seleccione los registros para los que desea generar fichas técnicas y shapefiles.
                 </div>
                 
-                <form method="post" action="{{ url_for('validacion_poligonos', tab='generar') }}">
-                    <div class="table-responsive mb-4">
-                        <table class="table table-hover">
-                            <thead>
-                                <tr>
-                                    <th width="50px">
-                                        <input type="checkbox" id="select-all" class="form-check-input">
-                                    </th>
-                                    {% for col in columns|slice(0, 4) %}
-                                    <th>{{ col }}</th>
-                                    {% endfor %}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for row in data %}
-                                <tr>
-                                    <td>
-                                        <input type="checkbox" name="selected_rows" 
-                                               value="{{ loop.index0 }}" 
-                                               class="form-check-input row-checkbox">
-                                    </td>
-                                    {% for col in columns|slice(0, 4) %}
-                                    <td>{{ row[col] if row[col] is not none else '' }}</td>
-                                    {% endfor %}
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                    
-                    <div class="row mb-4">
-                        <div class="col-md-4">
-                            <label for="formato" class="form-label">Formato de salida</label>
-                            <select class="form-select" id="formato" name="formato">
-                                <option value="pdf">PDF</option>
-                                <option value="excel">Excel</option>
-                                <option value="csv">CSV</option>
-                            </select>
+                <!-- Pestañas de visualización -->
+                <div class="mb-4">
+                    <ul class="nav nav-tabs">
+                        <li class="nav-item">
+                            <a class="nav-link active" id="vista-individual-tab" data-bs-toggle="tab" href="#vista-individual">Vista Individual</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" id="vista-lote-tab" data-bs-toggle="tab" href="#vista-lote">Generación en Lote</a>
+                        </li>
+                    </ul>
+                </div>
+                
+                <div class="tab-content">
+                    <div class="tab-pane fade show active" id="vista-individual">
+                        <!-- Tabla para seleccionar polígonos -->
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h5>Seleccionar Polígonos</h5>
+                                <button type="button" id="seleccionar-todos" class="btn btn-sm btn-outline-primary">Seleccionar Todos</button>
+                            </div>
+                            <div class="table-responsive mb-4">
+                                <table class="table table-hover">
+                                    <thead>
+                                        <tr>
+                                            <th width="50px">
+                                                <input type="checkbox" id="select-all" class="form-check-input">
+                                            </th>
+                                            {% for col in columns[:4] if columns %}
+                                            <th>{{ col }}</th>
+                                            {% endfor %}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for row in data %}
+                                        <tr>
+                                            <td>
+                                                <input type="checkbox" name="selected_rows" 
+                                                       value="{{ row.db_id }}" 
+                                                       class="form-check-input row-checkbox">
+                                            </td>
+                                            {% for col in columns[:4] if columns %}
+                                            <td>{{ row[col] if row[col] is not none else '' }}</td>
+                                            {% endfor %}
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                            
+                            <div class="row mb-4">
+                                <div class="col-md-4">
+                                    <label for="formato" class="form-label">Formato de salida</label>
+                                    <select class="form-select" id="formato" name="formato">
+                                        <option value="pdf">PDF</option>
+                                        <option value="excel">Excel</option>
+                                        <option value="csv">CSV</option>
+                                        <option value="shp">Shapefile (SHP)</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div id="seleccion-contador" class="mb-3">0 polígonos seleccionados</div>
+                        
+                        <div class="d-flex justify-content-end">
+                            <button type="button" id="btn-generar-individual" class="btn btn-primary">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                    <polyline points="7 10 12 15 17 10"></polyline>
+                                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                                </svg>
+                                Generar Fichas
+                            </button>
                         </div>
                     </div>
                     
-                    <div class="d-flex justify-content-end">
-                        <button type="submit" class="btn btn-primary">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                                <polyline points="7 10 12 15 17 10"></polyline>
-                                <line x1="12" y1="15" x2="12" y2="3"></line>
-                            </svg>
-                            Generar Fichas
-                        </button>
+                    <div class="tab-pane fade" id="vista-lote">
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="card mb-3">
+                                    <div class="card-header">
+                                        <h5 class="mb-0">Seleccionar Polígonos</h5>
+                                        <button type="button" class="btn btn-sm btn-outline-primary mt-2" id="seleccionar-todos-lote">Seleccionar Todos</button>
+                                    </div>
+                                    <div class="card-body polygon-selector" style="max-height: 400px; overflow-y: auto;">
+                                        {% for row in data %}
+                                        <div class="form-check mb-2">
+                                            <input class="form-check-input lote-checkbox" type="checkbox" value="{{ row.db_id }}" id="polygon-{{ row.db_id }}">
+                                            <label class="form-check-label" for="polygon-{{ row.db_id }}">
+                                                polygon-{{ row.db_id }}
+                                                {% if row.get('MUNICIPIO') and row.get('ESTADO') %}
+                                                <small class="text-muted d-block">{{ row.get('MUNICIPIO') }}, {{ row.get('ESTADO') }}</small>
+                                                {% endif %}
+                                            </label>
+                                        </div>
+                                        {% endfor %}
+                                    </div>
+                                    <div class="card-footer">
+                                        <div id="lote-seleccion-contador">1 polígonos seleccionados</div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="col-md-8">
+                                <div class="card">
+                                    <div class="card-body">
+                                        <div class="d-flex align-items-center mb-3">
+                                            <div class="check-circle bg-primary text-white">
+                                                <i class="bi bi-check"></i>
+                                            </div>
+                                            <h5 class="ms-2 mb-0">Previsualización de Lote</h5>
+                                        </div>
+                                        
+                                        <p>Se generarán <span id="count-fichas">1</span> fichas técnicas y archivos SHP. El resultado se organizará en:</p>
+                                        
+                                        <div class="row mb-4">
+                                            <div class="col-md-6">
+                                                <div class="export-preview p-3 border rounded">
+                                                    <div class="d-flex align-items-center mb-2">
+                                                        <i class="bi bi-folder text-primary me-2" style="font-size: 1.2rem;"></i>
+                                                        <h6 class="mb-0">Carpeta de Fichas Técnicas</h6>
+                                                    </div>
+                                                    <p class="small text-muted mb-2">Contiene todas las fichas técnicas en formato PDF para cada polígono seleccionado.</p>
+                                                    <ul class="list-unstyled small ms-4 mb-0">
+                                                        <li class="mb-1"><i class="bi bi-file-pdf text-danger me-1"></i> ficha_polygon-0.pdf</li>
+                                                        <li class="mb-1"><i class="bi bi-file-pdf text-danger me-1"></i> ficha_polygon-2.pdf</li>
+                                                        <li class="mb-1"><i class="bi bi-three-dots me-1"></i> ...</li>
+                                                    </ul>
+                                                </div>
+                                            </div>
+                                            
+                                            <div class="col-md-6">
+                                                <div class="export-preview p-3 border rounded">
+                                                    <div class="d-flex align-items-center mb-2">
+                                                        <i class="bi bi-folder text-success me-2" style="font-size: 1.2rem;"></i>
+                                                        <h6 class="mb-0">Carpeta de Archivos SHP</h6>
+                                                    </div>
+                                                    <p class="small text-muted mb-2">Contiene los archivos SHP y sus correspondientes archivos comprimidos en ZIP para cada polígono.</p>
+                                                    <ul class="list-unstyled small ms-4 mb-0">
+                                                        <li class="mb-1"><i class="bi bi-file-earmark me-1 text-success"></i> polygon-0.shp</li>
+                                                        <li class="mb-1"><i class="bi bi-file-earmark-zip me-1 text-primary"></i> polygon-0.zip</li>
+                                                        <li class="mb-1"><i class="bi bi-three-dots me-1"></i> ...</li>
+                                                    </ul>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="alert alert-info">
+                                            <div class="d-flex">
+                                                <i class="bi bi-info-circle me-2" style="font-size: 1.2rem;"></i>
+                                                <div>
+                                                    <h6 class="mb-1">Información sobre archivos SHP</h6>
+                                                    <p class="small mb-0">Los archivos SHP (Shapefile) son un formato estándar para datos geoespaciales. Cada polígono se exportará como un archivo SHP con sus correspondientes archivos auxiliares (.shx, .dbf, .prj) comprimidos en un ZIP para facilitar su distribución.</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="d-flex justify-content-end mt-3">
+                                            <button type="button" id="btn-generar-lote" class="btn btn-primary">
+                                                <i class="bi bi-file-earmark-zip me-1"></i> Generar Fichas en Lote
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                </form>
+                </div>
                 {% endif %}
             </div>
         </div>
-        {% endif %}
-    </div>
-</div>
 
-<!-- Scripts -->
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    // Actualizar nombre de archivo seleccionado
-    const fileInput = document.getElementById('archivo');
-    if (fileInput) {
-        fileInput.addEventListener('change', function() {
-            const label = this.nextElementSibling;
-            if (this.files.length > 0) {
-                label.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                    <polyline points="17 8 12 3 7 8"></polyline>
-                    <line x1="12" y1="3" x2="12" y2="15"></line>
-                </svg> ${this.files[0].name}`;
+        <style>
+            .check-circle {
+                width: 24px;
+                height: 24px;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
             }
-        });
-    }
-    
-    // Seleccionar/deseleccionar todos los checkboxes
-    const selectAll = document.getElementById('select-all');
-    if (selectAll) {
-        selectAll.addEventListener('change', function() {
-            const checkboxes = document.querySelectorAll('.row-checkbox');
-            checkboxes.forEach(checkbox => {
-                checkbox.checked = this.checked;
+            .export-preview {
+                height: 100%;
+                background-color: #f8f9fa;
+            }
+            .polygon-selector {
+                border-top: 1px solid #dee2e6;
+                border-bottom: 1px solid #dee2e6;
+            }
+        </style>
+
+        <!-- Importar shpjs para generar shapefiles -->
+        <script src="https://unpkg.com/shpjs@latest/dist/shp.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+
+        <script>
+            document.addEventListener('DOMContentLoaded', function() {
+                // Seleccionar/deseleccionar todos los checkboxes en vista individual
+                const selectAll = document.getElementById('select-all');
+                if (selectAll) {
+                    selectAll.addEventListener('change', function() {
+                        const checkboxes = document.querySelectorAll('.row-checkbox');
+                        checkboxes.forEach(checkbox => {
+                            checkbox.checked = this.checked;
+                        });
+                        updateSelectionCounter();
+                    });
+                }
+                
+                // Seleccionar todos en vista individual con botón
+                const btnSeleccionarTodos = document.getElementById('seleccionar-todos');
+                if (btnSeleccionarTodos) {
+                    btnSeleccionarTodos.addEventListener('click', function() {
+                        const selectAll = document.getElementById('select-all');
+                        selectAll.checked = true;
+                        const checkboxes = document.querySelectorAll('.row-checkbox');
+                        checkboxes.forEach(checkbox => {
+                            checkbox.checked = true;
+                        });
+                        updateSelectionCounter();
+                    });
+                }
+                
+                // Seleccionar todos en vista lote con botón
+                const btnSeleccionarTodosLote = document.getElementById('seleccionar-todos-lote');
+                if (btnSeleccionarTodosLote) {
+                    btnSeleccionarTodosLote.addEventListener('click', function() {
+                        const checkboxes = document.querySelectorAll('.lote-checkbox');
+                        checkboxes.forEach(checkbox => {
+                            checkbox.checked = true;
+                        });
+                        updateLoteSelectionCounter();
+                    });
+                }
+                
+                // Actualizar contador de selección individual
+                function updateSelectionCounter() {
+                    const checkboxes = document.querySelectorAll('.row-checkbox:checked');
+                    const counter = document.getElementById('seleccion-contador');
+                    if (counter) {
+                        counter.textContent = `${checkboxes.length} polígonos seleccionados`;
+                    }
+                }
+                
+                // Actualizar contador de selección lote
+                function updateLoteSelectionCounter() {
+                    const checkboxes = document.querySelectorAll('.lote-checkbox:checked');
+                    const counter = document.getElementById('lote-seleccion-contador');
+                    const countFichas = document.getElementById('count-fichas');
+                    if (counter) {
+                        counter.textContent = `${checkboxes.length} polígonos seleccionados`;
+                    }
+                    if (countFichas) {
+                        countFichas.textContent = checkboxes.length;
+                    }
+                }
+                
+                // Escuchar cambios en checkboxes individuales
+                const individualCheckboxes = document.querySelectorAll('.row-checkbox');
+                individualCheckboxes.forEach(checkbox => {
+                    checkbox.addEventListener('change', updateSelectionCounter);
+                });
+                
+                // Escuchar cambios en checkboxes de lote
+                const loteCheckboxes = document.querySelectorAll('.lote-checkbox');
+                loteCheckboxes.forEach(checkbox => {
+                    checkbox.addEventListener('change', updateLoteSelectionCounter);
+                });
+                
+                // Inicializar contadores
+                updateSelectionCounter();
+                updateLoteSelectionCounter();
+                
+                // Generar fichas en formato individual
+                const btnGenerarIndividual = document.getElementById('btn-generar-individual');
+                if (btnGenerarIndividual) {
+                    btnGenerarIndividual.addEventListener('click', function() {
+                        const selectedRows = Array.from(document.querySelectorAll('.row-checkbox:checked')).map(cb => cb.value);
+                        const formato = document.getElementById('formato').value;
+                        
+                        if (selectedRows.length === 0) {
+                            alert('Por favor, seleccione al menos un polígono.');
+                            return;
+                        }
+                        
+                        if (formato === 'shp') {
+                            generarShapefiles(selectedRows);
+                        } else {
+                            // Enviar formato original (pdf, excel, csv)
+                            const form = document.createElement('form');
+                            form.method = 'post';
+                            form.action = "{{ url_for('validacion_poligonos', tab='generar') }}";
+                            
+                            // Añadir los IDs de filas seleccionadas
+                            selectedRows.forEach(rowId => {
+                                const input = document.createElement('input');
+                                input.type = 'hidden';
+                                input.name = 'selected_rows';
+                                input.value = rowId;
+                                form.appendChild(input);
+                            });
+                            
+                            // Añadir el formato
+                            const formatoInput = document.createElement('input');
+                            formatoInput.type = 'hidden';
+                            formatoInput.name = 'formato';
+                            formatoInput.value = formato;
+                            form.appendChild(formatoInput);
+                            
+                            document.body.appendChild(form);
+                            form.submit();
+                        }
+                    });
+                }
+                
+                // Generar fichas en lote
+                const btnGenerarLote = document.getElementById('btn-generar-lote');
+                if (btnGenerarLote) {
+                    btnGenerarLote.addEventListener('click', function() {
+                        const selectedRows = Array.from(document.querySelectorAll('.lote-checkbox:checked')).map(cb => cb.value);
+                        
+                        if (selectedRows.length === 0) {
+                            alert('Por favor, seleccione al menos un polígono.');
+                            return;
+                        }
+                        
+                        // Generar paquete completo (PDF + SHP)
+                        generarPaqueteCompleto(selectedRows);
+                    });
+                }
+                
+                // Función para generar shapefiles (solo SHP)
+                function generarShapefiles(selectedRows) {
+                    // Mostrar cargando
+                    const loadingToast = mostrarCargando('Generando Shapefiles...');
+                    
+                    fetch('/generar_shapefiles', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ selected_rows: selectedRows })
+                    })
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('Error al generar shapefiles');
+                        }
+                        return response.blob();
+                    })
+                    .then(blob => {
+                        // Ocultar cargando
+                        ocultarCargando(loadingToast);
+                        
+                        // Descargar el archivo ZIP
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = 'poligonos_shapefiles.zip';
+                        document.body.appendChild(a);
+                        a.click();
+                        window.URL.revokeObjectURL(url);
+                        document.body.removeChild(a);
+                        
+                        mostrarMensajeExito('Shapefiles generados correctamente');
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        ocultarCargando(loadingToast);
+                        mostrarError('Error al generar shapefiles: ' + error.message);
+                    });
+                }
+                
+                // Función para generar paquete completo (PDF + SHP)
+                function generarPaqueteCompleto(selectedRows) {
+                    // Mostrar cargando
+                    const loadingToast = mostrarCargando('Generando paquete completo...');
+                    
+                    fetch('/generar_paquete_completo', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ selected_rows: selectedRows })
+                    })
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('Error al generar paquete completo');
+                        }
+                        return response.blob();
+                    })
+                    .then(blob => {
+                        // Ocultar cargando
+                        ocultarCargando(loadingToast);
+                        
+                        // Descargar el archivo ZIP
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = 'paquete_completo.zip';
+                        document.body.appendChild(a);
+                        a.click();
+                        window.URL.revokeObjectURL(url);
+                        document.body.removeChild(a);
+                        
+                        mostrarMensajeExito('Paquete completo generado correctamente');
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        ocultarCargando(loadingToast);
+                        mostrarError('Error al generar paquete: ' + error.message);
+                    });
+                }
+                
+                // Utilidades para mostrar notificaciones
+                function mostrarCargando(mensaje) {
+                    const toastContainer = document.createElement('div');
+                    toastContainer.className = 'toast-container position-fixed bottom-0 end-0 p-3';
+                    toastContainer.innerHTML = `
+                    <div class="toast show" role="alert" aria-live="assertive" aria-atomic="true">
+                        <div class="toast-header">
+                            <strong class="me-auto">Procesando</strong>
+                            <small>Ahora</small>
+                        </div>
+                        <div class="toast-body">
+                            <div class="d-flex align-items-center">
+                                <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                                <span>${mensaje}</span>
+                            </div>
+                        </div>
+                    </div>`;
+                    document.body.appendChild(toastContainer);
+                    return toastContainer;
+                }
+                
+                function ocultarCargando(toastContainer) {
+                    if (toastContainer && toastContainer.parentNode) {
+                        toastContainer.parentNode.removeChild(toastContainer);
+                    }
+                }
+                
+                function mostrarMensajeExito(mensaje) {
+                    const toastContainer = document.createElement('div');
+                    toastContainer.className = 'toast-container position-fixed bottom-0 end-0 p-3';
+                    toastContainer.innerHTML = `
+                    <div class="toast show" role="alert" aria-live="assertive" aria-atomic="true">
+                        <div class="toast-header">
+                            <strong class="me-auto text-success">Éxito</strong>
+                            <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+                        </div>
+                        <div class="toast-body">
+                            <i class="bi bi-check-circle text-success me-2"></i> ${mensaje}
+                        </div>
+                    </div>`;
+                    document.body.appendChild(toastContainer);
+                    setTimeout(() => {
+                        if (toastContainer.parentNode) {
+                            toastContainer.parentNode.removeChild(toastContainer);
+                        }
+                    }, 5000);
+                }
+                
+                function mostrarError(mensaje) {
+                    const toastContainer = document.createElement('div');
+                    toastContainer.className = 'toast-container position-fixed bottom-0 end-0 p-3';
+                    toastContainer.innerHTML = `
+                    <div class="toast show" role="alert" aria-live="assertive" aria-atomic="true">
+                        <div class="toast-header">
+                            <strong class="me-auto text-danger">Error</strong>
+                            <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+                        </div>
+                        <div class="toast-body">
+                            <i class="bi bi-exclamation-triangle text-danger me-2"></i> ${mensaje}
+                        </div>
+                    </div>`;
+                    document.body.appendChild(toastContainer);
+                    setTimeout(() => {
+                        if (toastContainer.parentNode) {
+                            toastContainer.parentNode.removeChild(toastContainer);
+                        }
+                    }, 5000);
+                }
             });
-        });
-    }
-    
-    // Cerrar mensajes flash automáticamente después de 5 segundos
-    setTimeout(() => {
-        const alerts = document.querySelectorAll('.alert');
-        alerts.forEach(alert => {
-            const bsAlert = new bootstrap.Alert(alert);
-            bsAlert.close();
-        });
-    }, 5000);
-});
-</script>
+        </script>
+</code_block_to_apply_changes_from>
+{% endif %}
 {% endblock %}

@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, flash
+from flask import Flask, render_template, request, redirect, url_for, flash, send_file
 import os
 import pandas as pd
 import numpy as np
@@ -12,6 +12,13 @@ from datetime import datetime
 from shapely.geometry import Polygon, Point
 from geopy.distance import geodesic
 import geopandas as gpd
+import shapefile
+import tempfile
+import zipfile
+import io
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.units import inch
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
@@ -19,6 +26,16 @@ app.secret_key = 'tu_clave_secreta_aqui'  # Cambia esto en producción
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB límite
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///poligonos.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['JSON_AS_ASCII'] = False  # Permitir caracteres UTF-8 en respuestas JSON
+
+# Añadir filtro personalizado para slice
+@app.template_filter('slice')
+def slice_filter(iterable, start, end=None):
+    if iterable is None or len(iterable) == 0:
+        return []
+    if end is None:
+        return iterable[start:]
+    return iterable[start:end]
 
 # Cargar shapefile de municipios de México
 try:
@@ -42,9 +59,23 @@ def obtener_ubicacion(lat, lon):
         mask = municipios_gdf.contains(punto)
         resultados = municipios_gdf[mask]
         if not resultados.empty:
+            # Corregir la codificación de caracteres
+            municipio = resultados.iloc[0]["NOMGEO"]
+            estado = resultados.iloc[0]["NOM_ENT"]
+            
+            # Intentar corregir la codificación si es necesario
+            try:
+                # Si los nombres están en Latin-1 pero interpretados como UTF-8
+                if isinstance(municipio, str) and any(c in municipio for c in ['Ã', 'Â', 'Á', 'É', 'Í', 'Ó', 'Ú']):
+                    municipio = municipio.encode('latin-1').decode('utf-8')
+                if isinstance(estado, str) and any(c in estado for c in ['Ã', 'Â', 'Á', 'É', 'Í', 'Ó', 'Ú']):
+                    estado = estado.encode('latin-1').decode('utf-8')
+            except Exception as encoding_error:
+                print(f"Error al corregir codificación: {encoding_error}")
+                
             return {
-                "municipio": resultados.iloc[0]["NOMGEO"],
-                "estado": resultados.iloc[0]["NOM_ENT"]
+                "municipio": municipio,
+                "estado": estado
             }
     except Exception as e:
         print(f"Error al obtener ubicación: {e}")
@@ -446,8 +477,12 @@ def calcular_area_poligono(coordenadas_str):
                 continue
             parts = pair.strip().split(',')
             if len(parts) >= 2:
-                lat, lon = map(float, parts[:2])
-                points.append((lat, lon))
+                try:
+                    lat, lon = map(float, parts[:2])
+                    points.append((lat, lon))
+                except (ValueError, TypeError):
+                    # Ignorar coordenadas inválidas
+                    continue
         
         if len(points) < 3:
             return 0.0
@@ -469,9 +504,14 @@ def calcular_area_poligono(coordenadas_str):
                 c = geodesic(p3, p1).meters
                 s = (a + b + c) / 2.0
                 
-                # Fórmula de Herón
-                area_triangulo = np.sqrt(s * (s - a) * (s - b) * (s - c))
-                area += area_triangulo
+                # Fórmula de Herón (evitar números negativos bajo la raíz)
+                area_factor = s * (s - a) * (s - b) * (s - c)
+                if area_factor > 0:
+                    area_triangulo = np.sqrt(area_factor)
+                    area += area_triangulo
+                else:
+                    # Si el factor es negativo, usar un enfoque alternativo o 0
+                    print(f"Factor de área negativo: {area_factor}")
         
         # Convertir a hectáreas (1 ha = 10,000 m²)
         return area / 10000.0
@@ -491,14 +531,26 @@ def calcular_area_poligono(coordenadas_str):
                     continue
                 parts = pair.strip().split(',')
                 if len(parts) >= 2:
-                    lat, lon = map(float, parts[:2])
-                    coords.append((lon, lat))  # Shapely usa (x,y) = (lon,lat)
+                    try:
+                        lat, lon = map(float, parts[:2])
+                        coords.append((lon, lat))  # Shapely usa (x,y) = (lon,lat)
+                    except (ValueError, TypeError):
+                        # Ignorar coordenadas inválidas
+                        continue
             
             if len(coords) < 3:
                 return 0.0
                 
-            polygon = Polygon(coords)
-            return polygon.area / 10000  # Convertir m² a hectáreas
+            try:
+                polygon = Polygon(coords)
+                if polygon.is_valid:
+                    return polygon.area / 10000  # Convertir m² a hectáreas
+                else:
+                    print("Polígono inválido, regresando área 0")
+                    return 0.0
+            except:
+                print("No se pudo crear polígono válido, regresando área 0")
+                return 0.0
         except Exception as inner_e:
             print(f"Error en fallback de cálculo de área: {inner_e}")
             return 0.0
@@ -544,8 +596,8 @@ def validacion_poligonos(tab):
                     'ID_CREDITO': p.id_credito,
                     'ID_PERSONA': p.id_persona,
                     'SUPERFICIE': p.superficie,
-                    'ESTADO': p.estado,
-                    'MUNICIPIO': p.municipio,
+                    'ESTADO': corregir_codificacion(p.estado),
+                    'MUNICIPIO': corregir_codificacion(p.municipio),
                     'COORDENADAS': p.coordenadas,
                     'COORDENADAS_CORREGIDAS': p.coordenadas_corregidas,
                     'AREA_DIGITALIZADA': p.area_digitalizada,
@@ -603,8 +655,8 @@ def validacion_poligonos(tab):
                     'ID_CREDITO': poligono.id_credito,
                     'ID_PERSONA': poligono.id_persona,
                     'SUPERFICIE': poligono.superficie,
-                    'ESTADO': poligono.estado,
-                    'MUNICIPIO': poligono.municipio,
+                    'ESTADO': corregir_codificacion(poligono.estado),
+                    'MUNICIPIO': corregir_codificacion(poligono.municipio),
                     'COORDENADAS': poligono.coordenadas, # Mantener coordenadas originales
                     'COORDENADAS_DECIMALES_CORREGIDAS': poligono.coordenadas_corregidas, # Mantener el nombre usado en frontend
                     'AREA_DIGITALIZADA': poligono.area_digitalizada, # Campo editable
@@ -709,8 +761,8 @@ def validacion_poligonos(tab):
                     'ID_CREDITO': p.id_credito,
                     'ID_PERSONA': p.id_persona,
                     'SUPERFICIE': p.superficie,
-                    'ESTADO': p.estado,
-                    'MUNICIPIO': p.municipio,
+                    'ESTADO': corregir_codificacion(p.estado),
+                    'MUNICIPIO': corregir_codificacion(p.municipio),
                     'COORDENADAS': p.coordenadas,
                     'COORDENADAS_CORREGIDAS': p.coordenadas_corregidas,
                     'AREA_DIGITALIZADA': p.area_digitalizada,
@@ -721,16 +773,22 @@ def validacion_poligonos(tab):
                 data.append(datos)
             
             # Si no hay datos en la base de datos, usar datos en memoria (mantener por si acaso)
-            if not data and excel_data['data']:
+            if not data and excel_data.get('data'):
                 data = excel_data['data']
                 flash('Generando reporte con datos en memoria. No hay datos guardados en la base de datos.', 'warning')
             
-            # Determinar columnas disponibles
+            # Asegurar que haya datos para prevenir división por cero
+            if not data:
+                flash('No hay datos disponibles para generar reportes. Por favor, cargue un archivo primero.', 'warning')
+                return redirect(url_for('validacion_poligonos', tab='cargar'))
+            
+            # Determinar columnas disponibles de manera segura
             all_columns = set()
             for row in data:
-                all_columns.update(row.keys())
+                if isinstance(row, dict):  # Asegurar que row sea un diccionario
+                    all_columns.update(row.keys())
             
-            columns = sorted(list(all_columns))
+            columns = sorted(list(all_columns)) if all_columns else []
             
             return render_template('validacion_poligonos.html', 
                                tab=tab,
@@ -977,7 +1035,6 @@ def actualizar_fila():
             #         print(f"Usando área ingresada manualmente: {area_manual} hectáreas")
             #     except ValueError:
             #         poligono.area_digitalizada = None # Poner None si no es válido
-            #         print("Valor de área digitalizada no válido, guardado como None")
 
             # Actualizar coordenadas (redundante con el bucle)
             # if 'COORDENADAS_DECIMALES_CORREGIDAS' in request.form:
@@ -1127,7 +1184,12 @@ def obtener_ubicacion_desde_poligono(coordenadas_str):
         lat = float(first_point[0])
         lon = float(first_point[1])
         
-        return obtener_ubicacion(lat, lon)
+        ubicacion = obtener_ubicacion(lat, lon)
+        if ubicacion:
+            # Asegurar que los nombres tengan codificación correcta
+            ubicacion['municipio'] = corregir_codificacion(ubicacion['municipio'])
+            ubicacion['estado'] = corregir_codificacion(ubicacion['estado'])
+        return ubicacion
     except Exception as e:
         print(f"Error al obtener ubicación desde polígono: {e}")
         return None
@@ -1135,6 +1197,319 @@ def obtener_ubicacion_desde_poligono(coordenadas_str):
 def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in {'xlsx', 'xls'}
+
+@app.route('/generar_shapefiles', methods=['POST'])
+def generar_shapefiles():
+    """Ruta para generar archivos shapefile de polígonos seleccionados"""
+    # Obtener los índices de polígonos seleccionados
+    selected_rows = request.json.get('selected_rows', [])
+    
+    if not selected_rows:
+        return jsonify({'error': 'No se seleccionaron polígonos'}), 400
+    
+    try:
+        # Preparar un archivo ZIP en memoria para contener todos los shapefiles
+        memory_file = io.BytesIO()
+        with zipfile.ZipFile(memory_file, 'w') as zf:
+            # Para cada polígono seleccionado
+            for row_id in selected_rows:
+                # Buscar el polígono en la base de datos por su ID
+                try:
+                    row_id = int(row_id)
+                    # Primero intentar buscar por ID exacto
+                    poligono = Poligono.query.get(row_id)
+                    
+                    if poligono is None:
+                        # Si no se encuentra, imprimir para depuración
+                        print(f"No se encontró polígono con ID {row_id}, buscando en posición")
+                        
+                        # Intentar buscar por posición como fallback
+                        poligonos = Poligono.query.all()
+                        if 0 <= row_id < len(poligonos):
+                            poligono = poligonos[row_id]
+                        else:
+                            print(f"Índice {row_id} fuera de rango, hay {len(poligonos)} polígonos")
+                            continue
+                    
+                    print(f"Generando shapefile para polígono ID={poligono.id}, ID_POLIGONO={poligono.id_poligono}")
+                except Exception as e:
+                    print(f"Error al recuperar polígono {row_id}: {e}")
+                    # Si no es un índice válido, continuar con el siguiente
+                    continue
+                
+                # Generar shapefile para este polígono
+                shapefile_buffer = generar_shapefile_individual(poligono, f'polygon-{row_id}')
+                
+                # Añadir el shapefile al archivo ZIP
+                if shapefile_buffer:
+                    zf.writestr(f'polygon-{row_id}.zip', shapefile_buffer.getvalue())
+        
+        # Regresar al inicio del archivo en memoria
+        memory_file.seek(0)
+        
+        # Enviar el archivo ZIP como respuesta
+        return send_file(
+            memory_file,
+            mimetype='application/zip',
+            as_attachment=True,
+            download_name='poligonos_shapefiles.zip'
+        )
+    
+    except Exception as e:
+        print(f"Error al generar shapefiles: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/generar_paquete_completo', methods=['POST'])
+def generar_paquete_completo():
+    """Ruta para generar un paquete completo con fichas PDF y shapefiles"""
+    # Obtener los índices de polígonos seleccionados
+    selected_rows = request.json.get('selected_rows', [])
+    
+    if not selected_rows:
+        return jsonify({'error': 'No se seleccionaron polígonos'}), 400
+    
+    try:
+        # Preparar un archivo ZIP en memoria para contener todos los archivos
+        memory_file = io.BytesIO()
+        with zipfile.ZipFile(memory_file, 'w') as zf:
+            # Crear carpeta para fichas técnicas
+            zf.writestr('fichas_tecnicas/', '')
+            # Crear carpeta para shapefiles
+            zf.writestr('shapefiles/', '')
+            
+            # Para cada polígono seleccionado
+            for row_id in selected_rows:
+                try:
+                    row_id = int(row_id)
+                    # Primero intentar buscar por ID exacto
+                    poligono = Poligono.query.get(row_id)
+                    
+                    if poligono is None:
+                        # Si no se encuentra, imprimir para depuración
+                        print(f"No se encontró polígono con ID {row_id}, buscando en posición")
+                        
+                        # Intentar buscar por posición como fallback
+                        poligonos = Poligono.query.all()
+                        if 0 <= row_id < len(poligonos):
+                            poligono = poligonos[row_id]
+                        else:
+                            print(f"Índice {row_id} fuera de rango, hay {len(poligonos)} polígonos")
+                            continue
+                            
+                    print(f"Generando fichas para polígono ID={poligono.id}, ID_POLIGONO={poligono.id_poligono}")
+                except Exception as e:
+                    print(f"Error al recuperar polígono {row_id}: {e}")
+                    # Si no es un ID válido, continuar con el siguiente
+                    continue
+                
+                # Generar ficha técnica PDF para este polígono
+                pdf_buffer = generar_ficha_tecnica(poligono, f'polygon-{row_id}')
+                if pdf_buffer:
+                    zf.writestr(f'fichas_tecnicas/ficha_polygon-{row_id}.pdf', pdf_buffer.getvalue())
+                
+                # Generar shapefile para este polígono
+                shapefile_buffer = generar_shapefile_individual(poligono, f'polygon-{row_id}')
+                if shapefile_buffer:
+                    zf.writestr(f'shapefiles/polygon-{row_id}.zip', shapefile_buffer.getvalue())
+        
+        # Regresar al inicio del archivo en memoria
+        memory_file.seek(0)
+        
+        # Enviar el archivo ZIP como respuesta
+        return send_file(
+            memory_file,
+            mimetype='application/zip',
+            as_attachment=True,
+            download_name='paquete_completo.zip'
+        )
+    
+    except Exception as e:
+        print(f"Error al generar paquete completo: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+def generar_shapefile_individual(poligono, nombre_archivo):
+    """Genera un archivo shapefile para un polígono individual"""
+    try:
+        # Crear un objeto de memoria para el archivo ZIP
+        zip_buffer = io.BytesIO()
+        
+        # Crear un directorio temporal para los archivos del shapefile
+        with tempfile.TemporaryDirectory() as tempdir:
+            # Crear el writer de shapefile
+            w = shapefile.Writer(os.path.join(tempdir, 'poligono'))
+            
+            # Definir campos de atributos
+            w.field('ID_POLIG', 'C', 40)
+            w.field('IF', 'C', 40)
+            w.field('ID_CRED', 'C', 40)
+            w.field('ID_PERS', 'C', 40)
+            w.field('SUPERF', 'N', 10, 4)
+            w.field('ESTADO', 'C', 40)
+            w.field('MUNICIP', 'C', 40)
+            w.field('AREA_HA', 'N', 10, 4)
+            w.field('ESTATUS', 'C', 10)
+            w.field('COMENT', 'C', 254)
+            
+            # Obtener coordenadas del polígono
+            coords = []
+            if poligono.coordenadas_corregidas:
+                # Verificar qué separador usa: ' | ' o '|'
+                if ' | ' in poligono.coordenadas_corregidas:
+                    pares = poligono.coordenadas_corregidas.split(' | ')
+                else:
+                    pares = poligono.coordenadas_corregidas.split('|')
+                
+                for par in pares:
+                    par = par.strip()
+                    if par and ',' in par:
+                        try:
+                            partes = par.split(',')
+                            lat = float(partes[0].strip())
+                            lon = float(partes[1].strip())
+                            coords.append([lon, lat])  # Shapefile usa [lon, lat]
+                        except (ValueError, IndexError) as e:
+                            print(f"Error al procesar coordenada {par}: {e}")
+                            continue
+                
+                print(f"Coordenadas procesadas para shapefile: {coords}")
+            
+            # Si no hay suficientes coordenadas, usar un punto
+            if len(coords) < 3:
+                if len(coords) == 1:
+                    # Crear un punto
+                    w.point(coords[0][0], coords[0][1])
+                    w.record(
+                        poligono.id_poligono or '',
+                        poligono.if_val or '',
+                        poligono.id_credito or '',
+                        poligono.id_persona or '',
+                        poligono.superficie or 0,
+                        corregir_codificacion(poligono.estado) or '',
+                        corregir_codificacion(poligono.municipio) or '',
+                        poligono.area_digitalizada or 0,
+                        poligono.estatus or '',
+                        poligono.comentarios or ''
+                    )
+                else:
+                    # No hay coordenadas válidas
+                    return None
+            else:
+                # Crear un polígono
+                w.poly([coords])
+                w.record(
+                    poligono.id_poligono or '',
+                    poligono.if_val or '',
+                    poligono.id_credito or '',
+                    poligono.id_persona or '',
+                    poligono.superficie or 0,
+                    corregir_codificacion(poligono.estado) or '',
+                    corregir_codificacion(poligono.municipio) or '',
+                    poligono.area_digitalizada or 0,
+                    poligono.estatus or '',
+                    poligono.comentarios or ''
+                )
+            
+            # Guardar el shapefile
+            w.close()
+            
+            # Crear archivo .prj para la proyección (WGS84)
+            with open(os.path.join(tempdir, 'poligono.prj'), 'w') as prj:
+                prj.write('GEOGCS["GCS_WGS_1984",DATUM["D_WGS_1984",SPHEROID["WGS_1984",6378137.0,298.257223563]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]]')
+            
+            # Comprimir todos los archivos en un ZIP
+            with zipfile.ZipFile(zip_buffer, 'w') as zf:
+                for filename in os.listdir(tempdir):
+                    filepath = os.path.join(tempdir, filename)
+                    zf.write(filepath, filename)
+        
+        # Regresar al inicio del buffer
+        zip_buffer.seek(0)
+        return zip_buffer
+    
+    except Exception as e:
+        print(f"Error al generar shapefile individual: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+def generar_ficha_tecnica(poligono, nombre_archivo):
+    """Genera una ficha técnica en formato PDF para un polígono"""
+    try:
+        # Crear un buffer de memoria para el PDF
+        buffer = io.BytesIO()
+        
+        # Crear el canvas
+        c = canvas.Canvas(buffer, pagesize=letter)
+        width, height = letter
+        
+        # Título
+        c.setFont("Helvetica-Bold", 18)
+        c.drawString(1*inch, 10*inch, f"Ficha Técnica: {nombre_archivo}")
+        
+        # Detalles del polígono
+        c.setFont("Helvetica", 12)
+        
+        y = 9*inch
+        c.drawString(1*inch, y, f"ID Polígono: {poligono.id_poligono or 'N/A'}")
+        y -= 0.3*inch
+        c.drawString(1*inch, y, f"IF: {poligono.if_val or 'N/A'}")
+        y -= 0.3*inch
+        c.drawString(1*inch, y, f"ID Crédito: {poligono.id_credito or 'N/A'}")
+        y -= 0.3*inch
+        c.drawString(1*inch, y, f"ID Persona: {poligono.id_persona or 'N/A'}")
+        y -= 0.3*inch
+        c.drawString(1*inch, y, f"Superficie Reportada: {poligono.superficie or 0} ha")
+        y -= 0.3*inch
+        c.drawString(1*inch, y, f"Área Digitalizada: {poligono.area_digitalizada or 0} ha")
+        y -= 0.3*inch
+        c.drawString(1*inch, y, f"Estado: {corregir_codificacion(poligono.estado) or 'N/A'}")
+        y -= 0.3*inch
+        c.drawString(1*inch, y, f"Municipio: {corregir_codificacion(poligono.municipio) or 'N/A'}")
+        y -= 0.3*inch
+        c.drawString(1*inch, y, f"Estatus: {poligono.estatus or 'N/A'}")
+        
+        # Comentarios
+        y -= 0.5*inch
+        c.drawString(1*inch, y, "Comentarios:")
+        y -= 0.3*inch
+        c.setFont("Helvetica", 10)
+        comentarios = poligono.comentarios or "Sin comentarios"
+        # Dividir comentarios en líneas si es muy largo
+        import textwrap
+        for line in textwrap.wrap(comentarios, width=70):
+            c.drawString(1*inch, y, line)
+            y -= 0.2*inch
+        
+        # Guardar el PDF
+        c.save()
+        
+        # Regresar al inicio del buffer
+        buffer.seek(0)
+        return buffer
+    
+    except Exception as e:
+        print(f"Error al generar ficha técnica: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+# Función para corregir la codificación de un texto
+def corregir_codificacion(texto):
+    if not texto:
+        return texto
+        
+    try:
+        # Si los nombres están en Latin-1 pero interpretados como UTF-8
+        if isinstance(texto, str) and any(c in texto for c in ['Ã', 'Â']):
+            return texto.encode('latin-1').decode('utf-8')
+        return texto
+    except Exception as e:
+        print(f"Error al corregir codificación: {e}")
+        return texto
 
 if __name__ == '__main__':
     app.run(debug=True)
