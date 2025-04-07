@@ -10,14 +10,16 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons/font/bootstrap-icons.css">
     
     <!-- Leaflet CSS -->
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
-<!-- Leaflet JS -->
-<script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
-<!-- Plugin para edición -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-editable/1.1.0/Leaflet.Editable.min.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <!-- Plugin para edición -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-editable/1.1.0/Leaflet.Editable.min.js"></script>
 
     <!-- En head de base.html -->
-<link rel="stylesheet" href="{{ url_for('static', filename='css/validacion.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/validacion.css') }}">
+    
+    {% block head %}{% endblock %}
 </head>
 <body>
     <div class="container-fluid p-0 d-flex h-100">

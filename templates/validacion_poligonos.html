@@ -582,6 +582,67 @@
                 } catch (error) {
                     console.error("Error al crear polígono:", error);
                 }
+            } else if (coordenadas.length === 2) {
+                try {
+                    console.log("Creando marcadores para las dos coordenadas:", coordenadas);
+                    
+                    // Guardar copia de las coordenadas originales
+                    originalCoords = JSON.parse(JSON.stringify(coordenadas));
+                    
+                    // Crear marcador para el primer punto
+                    var marker1 = L.marker(coordenadas[0], {
+                        icon: L.divIcon({
+                            className: 'two-point-marker',
+                            html: '<div style="width: 14px; height: 14px; background-color: red; border: 2px solid white; border-radius: 50%; box-shadow: 0 0 4px rgba(0,0,0,0.5);"></div>',
+                            iconSize: [14, 14],
+                            iconAnchor: [7, 7]
+                        })
+                    });
+                    
+                    // Crear marcador para el segundo punto
+                    var marker2 = L.marker(coordenadas[1], {
+                        icon: L.divIcon({
+                            className: 'two-point-marker',
+                            html: '<div style="width: 14px; height: 14px; background-color: red; border: 2px solid white; border-radius: 50%; box-shadow: 0 0 4px rgba(0,0,0,0.5);"></div>',
+                            iconSize: [14, 14],
+                            iconAnchor: [7, 7]
+                        })
+                    });
+                    
+                    // Añadir popups informativos
+                    marker1.bindPopup("Punto 1<br>Lat: " + coordenadas[0][0] + "<br>Lng: " + coordenadas[0][1]);
+                    marker2.bindPopup("Punto 2<br>Lat: " + coordenadas[1][0] + "<br>Lng: " + coordenadas[1][1]);
+                    
+                    // Añadir marcadores a la capa editable
+                    editableLayers.addLayer(marker1);
+                    editableLayers.addLayer(marker2);
+                    
+                    // Dibujar una línea entre los dos puntos (opcional)
+                    var linea = L.polyline([coordenadas[0], coordenadas[1]], {color: 'red', weight: 2, dashArray: '5, 5'});
+                    editableLayers.addLayer(linea);
+                    
+                    // Calcular el punto medio para centrar el mapa
+                    var latMedio = (coordenadas[0][0] + coordenadas[1][0]) / 2;
+                    var lngMedio = (coordenadas[0][1] + coordenadas[1][1]) / 2;
+                    
+                    // Crear bounds para abarcar ambos puntos
+                    var bounds = L.latLngBounds([coordenadas[0], coordenadas[1]]);
+                    map.fitBounds(bounds, {padding: [50, 50]});
+                    
+                    // Establecer área a 0 ya que son solo dos puntos
+                    document.getElementById('Area_digitalizada').value = "0.0000";
+                    
+                    // Deshabilitar botón de edición de polígono ya que solo hay dos puntos
+                    var editPolygonBtn = document.getElementById('editPolygon');
+                    if (editPolygonBtn) {
+                        editPolygonBtn.disabled = true;
+                        editPolygonBtn.title = "No se puede editar con solo dos puntos";
+                    }
+                    
+                    console.log("Marcadores creados y mapa ajustado a los dos puntos");
+                } catch (error) {
+                    console.error("Error al crear marcadores para las dos coordenadas:", error);
+                }
             } else if (coordenadas.length === 1) {
                 try {
                     console.log("Creando marcador para la coordenada única:", coordenadas[0]);

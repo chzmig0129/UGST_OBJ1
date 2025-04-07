@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, send_file
+from flask import Flask, render_template, request, redirect, url_for, flash, send_file, session
 import os
 import pandas as pd
 import numpy as np
@@ -570,7 +570,12 @@ def validacion_rapida():
 
 @app.route('/unir-archivos')
 def unir_archivos():
-    return "Página para unir archivos SHP en desarrollo"
+    # Verificar si hay resultados en la sesión
+    resultado = session.pop('resultado_shp', None)
+    # Pasar la fecha y hora actual para los logs
+    from datetime import datetime
+    now = datetime.now()
+    return render_template('unir_archivos.html', resultado=resultado, now=now)
 
 @app.route('/validacion-poligonos', defaults={'tab': 'cargar'})
 @app.route('/validacion-poligonos/<tab>')
@@ -1778,6 +1783,463 @@ def generar_shapefiles_y_mapas():
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
+
+@app.route('/procesar-shp', methods=['POST'])
+def procesar_shp():
+    try:
+        print("Ruta /procesar-shp llamada", flush=True)
+        
+        # Verificar que el directorio de uploads existe
+        if not os.path.exists(app.config['UPLOAD_FOLDER']):
+            os.makedirs(app.config['UPLOAD_FOLDER'])
+            print(f"Directorio de uploads creado: {app.config['UPLOAD_FOLDER']}", flush=True)
+        
+        # Verificar que el directorio de uploads tiene permisos de escritura
+        if not os.access(app.config['UPLOAD_FOLDER'], os.W_OK):
+            error_msg = f"Error: No hay permisos de escritura en el directorio {app.config['UPLOAD_FOLDER']}"
+            print(error_msg, flush=True)
+            return jsonify({'error': error_msg}), 500
+        
+        if 'zipfile' not in request.files:
+            print("Error: No hay archivo en la solicitud", flush=True)
+            # Verificar si es una solicitud AJAX o un formulario directo
+            if request.is_xhr or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'error': 'No se ha enviado ningún archivo'}), 400
+            else:
+                flash('No se ha enviado ningún archivo', 'error')
+                return redirect(url_for('unir_archivos'))
+        
+        archivo = request.files['zipfile']
+        print(f"Archivo recibido: {archivo.filename}", flush=True)
+        
+        if archivo.filename == '':
+            print("Error: Nombre de archivo vacío", flush=True)
+            # Verificar si es una solicitud AJAX o un formulario directo
+            if request.is_xhr or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'error': 'No se ha seleccionado ningún archivo'}), 400
+            else:
+                flash('No se ha seleccionado ningún archivo', 'error')
+                return redirect(url_for('unir_archivos'))
+        
+        # Verificar tamaño del archivo
+        MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
+        archivo.seek(0, os.SEEK_END)
+        file_size = archivo.tell()
+        archivo.seek(0)  # Resetear el puntero al inicio
+        
+        if file_size > MAX_FILE_SIZE:
+            error_msg = f"El archivo es demasiado grande. Tamaño máximo permitido: 50 MB"
+            print(error_msg, flush=True)
+            return jsonify({'error': error_msg}), 413  # Request Entity Too Large
+        
+        if archivo and archivo.filename.endswith('.zip'):
+            try:
+                print(f"Procesando archivo ZIP: {archivo.filename}", flush=True)
+                
+                # Crear directorio temporal para extracción
+                try:
+                    temp_dir = tempfile.mkdtemp()
+                    print(f"Directorio temporal creado: {temp_dir}", flush=True)
+                except Exception as e:
+                    error_msg = f"Error al crear directorio temporal: {str(e)}"
+                    print(error_msg, flush=True)
+                    return jsonify({'error': error_msg}), 500
+                
+                # Guardar archivo ZIP
+                try:
+                    zip_path = os.path.join(temp_dir, 'input.zip')
+                    archivo.save(zip_path)
+                    print(f"Archivo guardado en: {zip_path}", flush=True)
+                except Exception as e:
+                    error_msg = f"Error al guardar archivo: {str(e)}"
+                    print(error_msg, flush=True)
+                    return jsonify({'error': error_msg}), 500
+                
+                # Verificar si es un ZIP válido
+                try:
+                    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                        # Verificar si el ZIP no está dañado
+                        if zip_ref.testzip() is not None:
+                            error_msg = "El archivo ZIP está dañado"
+                            print(error_msg, flush=True)
+                            return jsonify({'error': error_msg}), 400
+                        
+                        # Limitar el número de archivos dentro del ZIP
+                        MAX_FILES = 500
+                        if len(zip_ref.namelist()) > MAX_FILES:
+                            error_msg = f"El archivo ZIP contiene demasiados archivos (máximo {MAX_FILES})"
+                            print(error_msg, flush=True)
+                            return jsonify({'error': error_msg}), 413
+                        
+                        # Verificar que el tamaño descomprimido no sea excesivo
+                        MAX_UNCOMPRESSED_SIZE = 200 * 1024 * 1024  # 200 MB
+                        total_size = sum(info.file_size for info in zip_ref.infolist())
+                        if total_size > MAX_UNCOMPRESSED_SIZE:
+                            error_msg = f"El tamaño descomprimido del ZIP es demasiado grande (máximo 200 MB)"
+                            print(error_msg, flush=True)
+                            return jsonify({'error': error_msg}), 413
+                        
+                        # Extraer el ZIP
+                        zip_ref.extractall(temp_dir)
+                    print(f"Archivo ZIP extraído en: {temp_dir}", flush=True)
+                except zipfile.BadZipFile:
+                    error_msg = "El archivo no es un ZIP válido"
+                    print(error_msg, flush=True)
+                    return jsonify({'error': error_msg}), 400
+                except Exception as e:
+                    error_msg = f"Error al extraer archivo ZIP: {str(e)}"
+                    print(error_msg, flush=True)
+                    return jsonify({'error': error_msg}), 500
+                
+                # Buscar archivos SHP o ZIPs anidados
+                try:
+                    shp_files = []
+                    internal_zips = []
+                    
+                    # Buscar archivos SHP y ZIPs anidados en el primer nivel
+                    for root, dirs, files in os.walk(temp_dir):
+                        for file in files:
+                            if file.endswith('.shp'):
+                                shp_files.append(os.path.join(root, file))
+                            elif file.endswith('.zip'):
+                                internal_zips.append(os.path.join(root, file))
+                    
+                    print(f"Archivos SHP encontrados (primer nivel): {len(shp_files)}", flush=True)
+                    print(f"Archivos ZIP internos encontrados: {len(internal_zips)}", flush=True)
+                    
+                    # Extraer y procesar ZIPs anidados si no se encontraron archivos SHP
+                    if not shp_files and internal_zips:
+                        print("Extrayendo archivos ZIP internos...", flush=True)
+                        # Limitar el número de ZIPs anidados a procesar
+                        MAX_NESTED_ZIPS = 10
+                        if len(internal_zips) > MAX_NESTED_ZIPS:
+                            print(f"Limitando a {MAX_NESTED_ZIPS} ZIPs anidados", flush=True)
+                            internal_zips = internal_zips[:MAX_NESTED_ZIPS]
+                        
+                        for zip_file in internal_zips:
+                            zip_name = os.path.basename(zip_file)
+                            extract_subdir = os.path.join(temp_dir, f"extracted_{zip_name.replace('.zip', '')}")
+                            os.makedirs(extract_subdir, exist_ok=True)
+                            
+                            try:
+                                print(f"Extrayendo ZIP interno: {zip_name} en {extract_subdir}", flush=True)
+                                # Verificar el ZIP interno antes de extraerlo
+                                with zipfile.ZipFile(zip_file, 'r') as zip_ref:
+                                    # Verificar ZIP no dañado
+                                    if zip_ref.testzip() is not None:
+                                        print(f"ZIP interno {zip_name} está dañado, omitiendo", flush=True)
+                                        continue
+                                    
+                                    # Verificar número de archivos
+                                    if len(zip_ref.namelist()) > MAX_FILES:
+                                        print(f"ZIP interno {zip_name} tiene demasiados archivos, omitiendo", flush=True)
+                                        continue
+                                    
+                                    # Verificar tamaño descomprimido
+                                    nested_total_size = sum(info.file_size for info in zip_ref.infolist())
+                                    if nested_total_size > MAX_UNCOMPRESSED_SIZE:
+                                        print(f"ZIP interno {zip_name} es demasiado grande, omitiendo", flush=True)
+                                        continue
+                                    
+                                    # Extraer archivos
+                                    zip_ref.extractall(extract_subdir)
+                                
+                                # Buscar archivos SHP en el ZIP extraído
+                                for root, dirs, files in os.walk(extract_subdir):
+                                    for file in files:
+                                        if file.endswith('.shp'):
+                                            shp_path = os.path.join(root, file)
+                                            shp_files.append(shp_path)
+                                            print(f"  - SHP encontrado en ZIP interno: {shp_path}", flush=True)
+                            except zipfile.BadZipFile:
+                                print(f"ZIP interno {zip_name} no es válido, omitiendo", flush=True)
+                                continue
+                            except Exception as e:
+                                print(f"Error al extraer ZIP interno {zip_name}: {str(e)}", flush=True)
+                                # Continúa con el siguiente ZIP
+                    
+                    print(f"Total de archivos SHP encontrados: {len(shp_files)}", flush=True)
+                    for shp in shp_files:
+                        print(f"  - {shp}", flush=True)
+                    
+                    if not shp_files:
+                        error_msg = "No se encontraron archivos SHP en el archivo ZIP"
+                        print(error_msg, flush=True)
+                        return jsonify({'error': error_msg}), 400
+                except Exception as e:
+                    error_msg = f"Error al buscar archivos SHP: {str(e)}"
+                    print(error_msg, flush=True)
+                    return jsonify({'error': error_msg}), 500
+                
+                # Limitar el número de archivos SHP a procesar
+                MAX_SHP_FILES = 20
+                if len(shp_files) > MAX_SHP_FILES:
+                    print(f"Limitando a {MAX_SHP_FILES} archivos SHP", flush=True)
+                    shp_files = shp_files[:MAX_SHP_FILES]
+                
+                # Unir archivos SHP con geopandas
+                try:
+                    merged_gdf = None
+                    for shp_file in shp_files:
+                        print(f"Procesando archivo: {shp_file}", flush=True)
+                        try:
+                            # Verificar tamaño del archivo SHP
+                            if os.path.getsize(shp_file) > 20 * 1024 * 1024:  # 20 MB
+                                print(f"  - SHP demasiado grande, omitiendo: {shp_file}", flush=True)
+                                continue
+                            
+                            gdf = gpd.read_file(shp_file)
+                            
+                            # Limitar el número de geometrías
+                            MAX_FEATURES = 5000
+                            if len(gdf) > MAX_FEATURES:
+                                print(f"  - Demasiadas geometrías ({len(gdf)}), limitando a {MAX_FEATURES}", flush=True)
+                                gdf = gdf.head(MAX_FEATURES)
+                            
+                            print(f"  - Geometrías: {len(gdf)}, CRS: {gdf.crs}", flush=True)
+                            
+                            if merged_gdf is None:
+                                merged_gdf = gdf
+                            else:
+                                # Asegurarse de que tienen el mismo CRS
+                                if gdf.crs != merged_gdf.crs and gdf.crs is not None:
+                                    print(f"  - Convirtiendo CRS de {gdf.crs} a {merged_gdf.crs}", flush=True)
+                                    gdf = gdf.to_crs(merged_gdf.crs)
+                                
+                                # Concatenar con seguridad
+                                try:
+                                    merged_gdf = pd.concat([merged_gdf, gdf])
+                                except Exception as concat_error:
+                                    print(f"  - Error al concatenar: {str(concat_error)}", flush=True)
+                                    # Si falla la concatenación, intentar solo con geometrías
+                                    try:
+                                        print("  - Intentando concatenar solo geometrías...", flush=True)
+                                        # Crear un nuevo GeoDataFrame con solo geometrías
+                                        simple_gdf = gpd.GeoDataFrame(geometry=gdf.geometry)
+                                        merged_gdf = pd.concat([merged_gdf, simple_gdf])
+                                    except Exception as simple_concat_error:
+                                        print(f"  - Error en concatenación simple: {str(simple_concat_error)}", flush=True)
+                                        # Continuar con el siguiente archivo
+                                        continue
+                        except Exception as e:
+                            error_msg = f"Error al procesar archivo {os.path.basename(shp_file)}: {str(e)}"
+                            print(error_msg, flush=True)
+                            # Continuamos con el siguiente archivo en lugar de fallar completamente
+                            continue
+                    
+                    if merged_gdf is None or len(merged_gdf) == 0:
+                        error_msg = "No se pudieron procesar los archivos SHP"
+                        print(error_msg, flush=True)
+                        return jsonify({'error': error_msg}), 500
+                    
+                    # Limitar el tamaño final del GeoDataFrame
+                    MAX_FINAL_FEATURES = 10000
+                    if len(merged_gdf) > MAX_FINAL_FEATURES:
+                        print(f"GeoDataFrame final demasiado grande ({len(merged_gdf)}), limitando a {MAX_FINAL_FEATURES}", flush=True)
+                        merged_gdf = merged_gdf.head(MAX_FINAL_FEATURES)
+                    
+                    print(f"Unión completada: {len(merged_gdf)} geometrías", flush=True)
+                except Exception as e:
+                    error_msg = f"Error al unir archivos SHP: {str(e)}"
+                    print(error_msg, flush=True)
+                    return jsonify({'error': error_msg}), 500
+                
+                # Guardar el archivo unificado
+                try:
+                    output_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'shp_unified')
+                    if not os.path.exists(output_dir):
+                        os.makedirs(output_dir)
+                    print(f"Directorio de salida creado: {output_dir}", flush=True)
+                    
+                    output_shp = os.path.join(temp_dir, 'unified.shp')
+                    print(f"Guardando archivo unificado en: {output_shp}", flush=True)
+                    
+                    # Simplificar el GeoDataFrame para la escritura
+                    try:
+                        # Intentar guardar con todas las columnas
+                        merged_gdf.to_file(output_shp)
+                    except Exception as save_error:
+                        print(f"Error al guardar GeoDataFrame completo: {str(save_error)}", flush=True)
+                        print("Intentando guardar con columnas reducidas...", flush=True)
+                        
+                        # Crear un GeoDataFrame simplificado con solo la geometría
+                        simple_gdf = gpd.GeoDataFrame(geometry=merged_gdf.geometry)
+                        simple_gdf.to_file(output_shp)
+                    
+                    print(f"Archivo guardado correctamente", flush=True)
+                except Exception as e:
+                    error_msg = f"Error al guardar archivo unificado: {str(e)}"
+                    print(error_msg, flush=True)
+                    return jsonify({'error': error_msg}), 500
+                
+                # Crear archivo ZIP con los archivos resultantes
+                try:
+                    output_zip = os.path.join(output_dir, 'unified_shp.zip')
+                    print(f"Creando archivo ZIP de salida: {output_zip}", flush=True)
+                    
+                    # Incluir archivos auxiliares (.dbf, .shx, .prj)
+                    base_name = os.path.splitext(output_shp)[0]
+                    with zipfile.ZipFile(output_zip, 'w') as zipf:
+                        for ext in ['.shp', '.dbf', '.shx', '.prj']:
+                            file_path = base_name + ext
+                            if os.path.exists(file_path):
+                                print(f"  - Añadiendo archivo: {os.path.basename(file_path)}", flush=True)
+                                zipf.write(file_path, os.path.basename(file_path))
+                except Exception as e:
+                    error_msg = f"Error al crear archivo ZIP de salida: {str(e)}"
+                    print(error_msg, flush=True)
+                    return jsonify({'error': error_msg}), 500
+                
+                # Preparar datos para respuesta
+                try:
+                    # Crear una versión extremadamente simplificada del GeoJSON para la respuesta
+                    # En lugar de enviar todas las geometrías, enviar solo un resumen o un subconjunto muy pequeño
+                    simplified_gdf = None
+                    try:
+                        # Intentar crear una versión muy simplificada con solo los primeros polígonos
+                        if len(merged_gdf) > 0:
+                            # Tomar solo los primeros 5 polígonos como muestra
+                            sample_gdf = merged_gdf.head(5).copy()
+                            
+                            # Aplicar una simplificación agresiva a las geometrías
+                            try:
+                                sample_gdf.geometry = sample_gdf.geometry.simplify(tolerance=0.01)
+                            except Exception as simplify_error:
+                                print(f"Error al simplificar geometrías de muestra: {str(simplify_error)}", flush=True)
+                            
+                            # Eliminar todas las columnas excepto la geometría
+                            simplified_gdf = gpd.GeoDataFrame(geometry=sample_gdf.geometry)
+                            print(f"GeoJSON simplificado creado con {len(simplified_gdf)} geometrías de muestra", flush=True)
+                    except Exception as sample_error:
+                        print(f"Error al crear muestra de GeoJSON: {str(sample_error)}", flush=True)
+                        # Continuar sin GeoJSON si hay error
+                    
+                    # Si no se pudo crear una versión simplificada, usar un GeoJSON vacío
+                    if simplified_gdf is None or len(simplified_gdf) == 0:
+                        geojson_data = '{"type":"FeatureCollection","features":[]}'
+                        print("Usando GeoJSON vacío para la respuesta", flush=True)
+                    else:
+                        # Convertir a GeoJSON con manejo de errores
+                        try:
+                            geojson_data = simplified_gdf.to_json()
+                            # Verificar tamaño del JSON
+                            if len(geojson_data) > 1000000:  # Más de 1MB
+                                print(f"GeoJSON demasiado grande ({len(geojson_data)} bytes), usando vacío", flush=True)
+                                geojson_data = '{"type":"FeatureCollection","features":[]}'
+                        except Exception as json_error:
+                            print(f"Error al convertir a GeoJSON: {str(json_error)}", flush=True)
+                            geojson_data = '{"type":"FeatureCollection","features":[]}'
+                    
+                    # Obtener conteo de polígonos
+                    num_poligonos = len(merged_gdf)
+                    
+                    # Calcular área con manejo de errores
+                    try:
+                        area_total = merged_gdf.geometry.area.sum() / 10000  # Convertir a hectáreas
+                    except Exception as area_error:
+                        print(f"Error al calcular área: {str(area_error)}", flush=True)
+                        area_total = 0
+                    
+                    print(f"Datos preparados: {num_poligonos} polígonos, {area_total:.2f} ha", flush=True)
+                except Exception as e:
+                    error_msg = f"Error al preparar datos para respuesta: {str(e)}"
+                    print(error_msg, flush=True)
+                    # No fallar aquí, continuar con valores predeterminados
+                    geojson_data = '{"type":"FeatureCollection","features":[]}'
+                    num_poligonos = 0
+                    area_total = 0
+                
+                # Crear un diccionario de respuesta mínimo
+                response_data = {
+                    'success': True,
+                    'message': 'Archivos SHP unidos correctamente',
+                    'archivo_salida': '/uploads/shp_unified/unified_shp.zip',
+                    'num_archivos': len(shp_files),
+                    'num_poligonos': num_poligonos,
+                    'area_total': round(area_total, 2)
+                }
+                
+                # Añadir geojson solo si no está vacío y es pequeño
+                if geojson_data != '{"type":"FeatureCollection","features":[]}':
+                    response_data['geojson'] = geojson_data
+                else:
+                    # Indicar que el GeoJSON está disponible pero no se incluye en la respuesta
+                    response_data['geojson_status'] = 'no_incluido_por_tamano'
+                
+                # Limpiar directorio temporal
+                try:
+                    import shutil
+                    shutil.rmtree(temp_dir)
+                    print(f"Directorio temporal eliminado: {temp_dir}", flush=True)
+                except Exception as e:
+                    print(f"Advertencia: No se pudo eliminar el directorio temporal: {str(e)}", flush=True)
+                
+                # Verificar si es una solicitud AJAX o un formulario directo
+                is_ajax = request.is_xhr or request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+                if is_ajax:
+                    print("Enviando respuesta JSON", flush=True)
+                    try:
+                        return jsonify(response_data)
+                    except Exception as json_error:
+                        print(f"Error al serializar respuesta JSON: {str(json_error)}", flush=True)
+                        # Intentar con una respuesta más sencilla sin GeoJSON
+                        del response_data['geojson']
+                        response_data['geojson_status'] = 'error_serializacion'
+                        return jsonify(response_data)
+                else:
+                    # Si es un formulario directo, guardar datos en sesión y redirigir
+                    print("Redireccionando con datos en sesión", flush=True)
+                    flash('Archivos SHP unidos correctamente. Puede descargar el resultado.', 'success')
+                    session['resultado_shp'] = {
+                        'num_archivos': len(shp_files),
+                        'num_poligonos': num_poligonos,
+                        'area_total': round(area_total, 2)
+                    }
+                    return redirect(url_for('unir_archivos'))
+                
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                error_msg = f"Error al procesar archivos: {str(e)}"
+                print(f"Error al procesar: {error_msg}", flush=True)
+                
+                # Verificar si es una solicitud AJAX o un formulario directo
+                if request.is_xhr or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                    return jsonify({'error': error_msg}), 500
+                else:
+                    flash(error_msg, 'error')
+                    return redirect(url_for('unir_archivos'))
+        else:
+            error_msg = "Formato de archivo no válido. Debe ser un archivo ZIP"
+            print(error_msg, flush=True)
+            # Verificar si es una solicitud AJAX o un formulario directo
+            if request.is_xhr or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'error': error_msg}), 400
+            else:
+                flash(error_msg, 'error')
+                return redirect(url_for('unir_archivos'))
+    except Exception as e:
+        # Capturar cualquier excepción no manejada para evitar respuestas HTML de error 500
+        import traceback
+        traceback.print_exc()
+        error_msg = f"Error interno del servidor: {str(e)}"
+        print(f"ERROR NO MANEJADO: {error_msg}", flush=True)
+        
+        # Siempre devolver una respuesta JSON válida
+        if request.is_xhr or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'error': error_msg}), 500
+        else:
+            flash(error_msg, 'error')
+            return redirect(url_for('unir_archivos'))
+
+@app.route('/descargar-shp-unificado')
+def descargar_shp_unificado():
+    zip_path = os.path.join(app.config['UPLOAD_FOLDER'], 'shp_unified', 'unified_shp.zip')
+    if os.path.exists(zip_path):
+        return send_file(zip_path, as_attachment=True, download_name='poligonos_unificados.zip')
+    else:
+        flash('No se encontró el archivo unificado. Procese los archivos primero.', 'error')
+        return redirect(url_for('unir_archivos'))
 
 if __name__ == '__main__':
     app.run(debug=True)

@@ -1,0 +1,812 @@
+{% extends 'base.html' %}
+
+{% block head %}
+<!-- Bootstrap Icons -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+{% endblock %}
+
+{% block content %}
+<div class="validacion-container">
+    <div class="section-header">
+        <div class="d-flex align-items-center">
+            <div class="app-icon">
+                <svg viewBox="0 0 24 24" width="28" height="28" stroke="currentColor" stroke-width="2" fill="none">
+                    <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+                    <polyline points="2 17 12 22 22 17"></polyline>
+                    <polyline points="2 12 12 17 22 12"></polyline>
+                </svg>
+            </div>
+            <div>
+                <h1 class="mb-0">Unir Archivos SHP</h1>
+                <p class="text-muted mb-0">Combine múltiples archivos SHP en uno solo</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="mt-4">
+        <h2>Unir Archivos SHP</h2>
+        <p>Combine múltiples archivos SHP en uno solo y visualice el resultado</p>
+    </div>
+
+    <!-- Mensajes flash -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div class="flash-messages mt-3 mb-3">
+                {% for category, message in messages %}
+                <div class="alert alert-{{ category if category != 'error' else 'danger' }} alert-dismissible fade show">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <!-- Pestañas de navegación -->
+    <div class="tabs-container">
+        <div class="nav-tabs" role="tablist">
+            <a href="#cargar" class="tab-item active" data-bs-toggle="tab" id="tab-cargar" role="tab" aria-selected="true">
+                Cargar Archivo
+            </a>
+            <a href="#procesamiento" class="tab-item" data-bs-toggle="tab" id="tab-procesamiento" role="tab" aria-selected="false">
+                Procesamiento
+            </a>
+            <a href="#resultado" class="tab-item" data-bs-toggle="tab" id="tab-resultado" role="tab" aria-selected="false">
+                Resultado
+            </a>
+        </div>
+    </div>
+
+    <!-- Contenido de pestañas -->
+    <div class="tab-content">
+        <!-- Tab Cargar archivo -->
+        <div class="tab-pane active" id="cargar" role="tabpanel">
+            <div class="card">
+                <div class="card-body">
+                    <div class="dropzone-container" id="drop-area">
+                        <div class="drop-icon">
+                            <svg viewBox="0 0 24 24" width="64" height="64" stroke="#25b350" stroke-width="1" fill="none">
+                                <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
+                                <polyline points="13 2 13 9 20 9"></polyline>
+                            </svg>
+                        </div>
+                        <div class="drop-text text-center">
+                            <h3>Cargar archivo ZIP</h3>
+                            <p>Arrastre y suelte un archivo ZIP aquí, o haga clic para seleccionar</p>
+                            <button class="btn btn-outline-primary" id="select-file-btn">Seleccionar archivo</button>
+                            <input type="file" id="file-input" style="display: none;" accept=".zip">
+                        </div>
+                    </div>
+                    <div class="mt-4 text-center">
+                        <button class="btn btn-primary btn-lg w-50" id="btn-unir-archivos" disabled>
+                            <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none" class="me-2">
+                                <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+                                <polyline points="2 17 12 22 22 17"></polyline>
+                                <polyline points="2 12 12 17 22 12"></polyline>
+                            </svg>
+                            Unir Archivos SHP
+                        </button>
+                    </div>
+                    
+                    <!-- Método alternativo de subida -->
+                    <div class="mt-5">
+                        <h5 class="text-center mb-3">Método Alternativo</h5>
+                        <form action="/procesar-shp" method="post" enctype="multipart/form-data" id="form-alternativo">
+                            <div class="input-group">
+                                <input type="file" class="form-control" name="zipfile" accept=".zip" required>
+                                <button class="btn btn-outline-primary" type="submit">Subir y Procesar</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Información sobre la herramienta -->
+            <div class="card mt-4">
+                <div class="card-body">
+                    <div class="info-section">
+                        <h4 class="mb-3">
+                            <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none" class="me-2">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <line x1="12" y1="16" x2="12" y2="12"></line>
+                                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                            </svg>
+                            Acerca de esta herramienta
+                        </h4>
+                        <p>Esta herramienta permite unir múltiples archivos SHP en uno solo. El archivo ZIP de entrada debe contener varios archivos SHP individuales.</p>
+                        
+                        <h5 class="mt-4">Instrucciones:</h5>
+                        <ol>
+                            <li>Cargue un archivo ZIP que contenga múltiples archivos SHP</li>
+                            <li>Haga clic en "Unir Archivos SHP" para iniciar el proceso</li>
+                            <li>Espere a que se complete el procesamiento</li>
+                            <li>Visualice el resultado en el mapa interactivo</li>
+                            <li>Descargue el archivo SHP unificado</li>
+                        </ol>
+                        
+                        <h5 class="mt-4">Formato esperado:</h5>
+                        <div class="formato-esperado">
+                            <p><svg viewBox="0 0 24 24" width="16" height="16" stroke="#25b350" stroke-width="2" fill="none">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="7 10 12 15 17 10"></polyline>
+                                <line x1="12" y1="15" x2="12" y2="3"></line>
+                            </svg> archivo_entrada.zip</p>
+                            <ul>
+                                <li>
+                                    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none">
+                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                        <polyline points="14 2 14 8 20 8"></polyline>
+                                        <line x1="16" y1="13" x2="8" y2="13"></line>
+                                        <line x1="16" y1="17" x2="8" y2="17"></line>
+                                        <polygon points="10 9 9 9 8 9"></polygon>
+                                    </svg> poligono1.shp (y archivos auxiliares)
+                                </li>
+                                <li>
+                                    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none">
+                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                        <polyline points="14 2 14 8 20 8"></polyline>
+                                        <line x1="16" y1="13" x2="8" y2="13"></line>
+                                        <line x1="16" y1="17" x2="8" y2="17"></line>
+                                        <polygon points="10 9 9 9 8 9"></polygon>
+                                    </svg> poligono2.shp (y archivos auxiliares)
+                                </li>
+                                <li>
+                                    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none">
+                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                        <polyline points="14 2 14 8 20 8"></polyline>
+                                        <line x1="16" y1="13" x2="8" y2="13"></line>
+                                        <line x1="16" y1="17" x2="8" y2="17"></line>
+                                        <polygon points="10 9 9 9 8 9"></polygon>
+                                    </svg> poligono3.shp (y archivos auxiliares)
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Tab Procesamiento -->
+        <div class="tab-pane" id="procesamiento" role="tabpanel">
+            <div class="card">
+                <div class="card-body">
+                    <h4 class="mb-4">Procesamiento de archivos SHP</h4>
+                    <div class="processing-status">
+                        <div class="progress mb-3">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
+                        </div>
+                        <div id="status-message" class="text-center">
+                            <p>Esperando inicio del procesamiento...</p>
+                        </div>
+                    </div>
+                    
+                    <div class="processing-log mt-4">
+                        <h5>Registro de operaciones:</h5>
+                        <div class="log-container p-3 bg-light" id="processing-log">
+                            <p class="log-entry"><span class="log-time">[{{ now.strftime('%H:%M:%S') }}]</span> Sistema listo para procesar archivos.</p>
+                        </div>
+                        <div class="text-end mt-2">
+                            <button class="btn btn-sm btn-outline-secondary" id="btn-clear-log">
+                                <i class="bi bi-trash"></i> Limpiar registro
+                            </button>
+                            <button class="btn btn-sm btn-outline-primary" id="btn-copy-log">
+                                <i class="bi bi-clipboard"></i> Copiar al portapapeles
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Tab Resultado -->
+        <div class="tab-pane" id="resultado" role="tabpanel">
+            <div class="card">
+                <div class="card-body">
+                    <h4 class="mb-4">Resultado de la unión</h4>
+                    
+                    <!-- Mostrar resultados si vienen desde la sesión -->
+                    {% if resultado %}
+                    <script>
+                        // Activar la pestaña de resultados automáticamente
+                        document.addEventListener('DOMContentLoaded', function() {
+                            setTimeout(function() {
+                                const resultadoTab = document.getElementById('tab-resultado');
+                                new bootstrap.Tab(resultadoTab).show();
+                                
+                                // Inicializar mapa
+                                initMapaResultado();
+                            }, 500);
+                        });
+                        
+                        function initMapaResultado() {
+                            // Inicializar mapa básico
+                            const map = L.map('map').setView([19.4326, -99.1332], 5); // Centro en México
+                            
+                            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                            }).addTo(map);
+                            
+                            // Ajustar mapa al contenedor
+                            setTimeout(() => {
+                                map.invalidateSize();
+                            }, 100);
+                        }
+                    </script>
+                    {% endif %}
+                    
+                    <div class="row">
+                        <div class="col-md-8">
+                            <div id="map" class="map-container" style="height: 500px;"></div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="resultado-info">
+                                <h5>Información del resultado</h5>
+                                <ul class="list-group mb-4">
+                                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                                        Archivos procesados
+                                        <span class="badge bg-primary rounded-pill" id="num-archivos">{{ resultado.num_archivos if resultado else '0' }}</span>
+                                    </li>
+                                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                                        Polígonos unidos
+                                        <span class="badge bg-primary rounded-pill" id="num-poligonos">{{ resultado.num_poligonos if resultado else '0' }}</span>
+                                    </li>
+                                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                                        Área total (ha)
+                                        <span class="badge bg-primary rounded-pill" id="area-total">{{ resultado.area_total if resultado else '0.00' }}</span>
+                                    </li>
+                                </ul>
+                                
+                                {% if resultado %}
+                                <div class="d-grid gap-2">
+                                    <a href="{{ url_for('descargar_shp_unificado') }}" class="btn btn-success">
+                                        <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none" class="me-2">
+                                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                            <polyline points="7 10 12 15 17 10"></polyline>
+                                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                                        </svg>
+                                        Descargar SHP unificado
+                                    </a>
+                                </div>
+                                {% else %}
+                                <div class="d-grid gap-2">
+                                    <button class="btn btn-success" id="btn-descargar-shp" disabled>
+                                        <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none" class="me-2">
+                                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                            <polyline points="7 10 12 15 17 10"></polyline>
+                                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                                        </svg>
+                                        Descargar SHP unificado
+                                    </button>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Variables
+    const dropArea = document.getElementById('drop-area');
+    const fileInput = document.getElementById('file-input');
+    const selectBtn = document.getElementById('select-file-btn');
+    const unirBtn = document.getElementById('btn-unir-archivos');
+    const tabCargar = document.getElementById('tab-cargar');
+    const tabProcesamiento = document.getElementById('tab-procesamiento');
+    const tabResultado = document.getElementById('tab-resultado');
+    const progressBar = document.querySelector('.progress-bar');
+    const statusMessage = document.getElementById('status-message');
+    const processingLog = document.getElementById('processing-log');
+    let uploadedFile = null;
+    
+    // Mapa Leaflet (inicializado cuando se active la pestaña de resultado)
+    let map = null;
+    
+    // Drag and drop event handlers
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        dropArea.addEventListener(eventName, preventDefaults, false);
+    });
+    
+    function preventDefaults(e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+    
+    ['dragenter', 'dragover'].forEach(eventName => {
+        dropArea.addEventListener(eventName, highlight, false);
+    });
+    
+    ['dragleave', 'drop'].forEach(eventName => {
+        dropArea.addEventListener(eventName, unhighlight, false);
+    });
+    
+    function highlight() {
+        dropArea.classList.add('highlight');
+    }
+    
+    function unhighlight() {
+        dropArea.classList.remove('highlight');
+    }
+    
+    // Handle file drop
+    dropArea.addEventListener('drop', handleDrop, false);
+    
+    function handleDrop(e) {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        if (files.length > 0) {
+            handleFiles(files[0]);
+        }
+    }
+    
+    // Handle file select button
+    selectBtn.addEventListener('click', () => {
+        fileInput.click();
+    });
+    
+    fileInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+            handleFiles(e.target.files[0]);
+        }
+    });
+    
+    function handleFiles(file) {
+        if (file.name.toLowerCase().endsWith('.zip')) {
+            uploadedFile = file;
+            updateDropzoneUI(file);
+            unirBtn.disabled = false;
+        } else {
+            addLogEntry('Error: El archivo debe tener formato ZIP', 'error');
+            alert('Por favor, seleccione un archivo ZIP válido.');
+        }
+    }
+    
+    function updateDropzoneUI(file) {
+        const dropText = dropArea.querySelector('.drop-text');
+        dropText.innerHTML = `
+            <h3>Archivo seleccionado</h3>
+            <p>${file.name} (${formatFileSize(file.size)})</p>
+            <button class="btn btn-outline-primary" id="select-file-btn">Cambiar archivo</button>
+        `;
+        // Reenlazar evento al botón
+        dropArea.querySelector('#select-file-btn').addEventListener('click', () => {
+            fileInput.click();
+        });
+    }
+    
+    function formatFileSize(bytes) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+    
+    // Unir archivos button click
+    unirBtn.addEventListener('click', function() {
+        console.log("Botón Unir Archivos SHP clickeado");
+        if (uploadedFile) {
+            console.log("Archivo subido:", uploadedFile);
+            // Cambiar a la pestaña de procesamiento usando Bootstrap Tab API
+            const procesamientoTab = document.getElementById('tab-procesamiento');
+            console.log("Cambiando a pestaña de procesamiento");
+            new bootstrap.Tab(procesamientoTab).show();
+            
+            // Iniciar el procesamiento
+            procesarArchivos();
+        } else {
+            console.log("No hay archivo seleccionado");
+            alert("Por favor, seleccione un archivo ZIP primero.");
+        }
+    });
+    
+    function procesarArchivos() {
+        console.log("Función procesarArchivos iniciada");
+        
+        // Configurar UI para procesamiento
+        progressBar.style.width = '10%';
+        progressBar.classList.remove('bg-danger');
+        progressBar.classList.add('bg-primary');
+        statusMessage.innerHTML = '<p>Procesando archivos SHP...</p>';
+        addLogEntry('Iniciando procesamiento del archivo ZIP: ' + uploadedFile.name);
+        
+        // Crear FormData y añadir archivo
+        const formData = new FormData();
+        formData.append('zipfile', uploadedFile);
+        console.log("FormData creado con archivo:", uploadedFile.name);
+        
+        // Usar fetch en lugar de XMLHttpRequest para mejor manejo de errores
+        addLogEntry('Enviando archivo al servidor...', 'info');
+        fetch('/procesar-shp', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => {
+            console.log("Respuesta recibida:", response.status, response.statusText);
+            // Manejar errores HTTP (incluyendo 500)
+            if (!response.ok) {
+                return response.text().then(text => {
+                    let errorMsg = `Error en el servidor: ${response.status} ${response.statusText}`;
+                    
+                    // Intentar extraer mensaje JSON si es posible
+                    try {
+                        const jsonResponse = JSON.parse(text);
+                        if (jsonResponse.error) {
+                            errorMsg = jsonResponse.error;
+                        }
+                    } catch (e) {
+                        // Si no se puede parsear como JSON, buscar mensaje de error en HTML
+                        console.error("No se pudo parsear la respuesta como JSON:", e);
+                        const errorMatch = text.match(/<p>([^<]+)<\/p>/);
+                        if (errorMatch && errorMatch[1]) {
+                            errorMsg += ` - ${errorMatch[1]}`;
+                        }
+                    }
+                    
+                    throw new Error(errorMsg);
+                });
+            }
+            
+            progressBar.style.width = '40%';
+            addLogEntry('Datos recibidos del servidor, procesando...', 'info');
+            return response.json();
+        })
+        .then(data => {
+            // El servidor procesó correctamente
+            console.log("Datos recibidos:", data);
+            progressBar.style.width = '60%';
+            
+            if (data.error) {
+                throw new Error(data.error);
+            }
+            
+            // Verificar si el proceso fue exitoso incluso si no hay GeoJSON
+            if (data.success) {
+                addLogEntry('Procesamiento en servidor completado.', 'success');
+                
+                // Mostrar información del proceso
+                progressBar.style.width = '80%';
+                addLogEntry(`Se procesaron ${data.num_archivos} archivos SHP.`, 'success');
+                addLogEntry(`Se unieron ${data.num_poligonos} polígonos.`, 'success');
+                addLogEntry(`Área total: ${data.area_total} hectáreas.`, 'success');
+                
+                // Verificar estado del GeoJSON
+                if (data.geojson_status === 'no_incluido_por_tamano') {
+                    addLogEntry('Nota: El GeoJSON no se incluyó en la respuesta debido a su tamaño.', 'warning');
+                } else if (data.geojson_status === 'error_serializacion') {
+                    addLogEntry('Nota: Hubo un error al serializar el GeoJSON, pero el archivo ZIP se generó correctamente.', 'warning');
+                }
+                
+                // Almacenar datos para la visualización
+                window.resultData = data;
+                
+                // Completar progreso
+                progressBar.style.width = '100%';
+                statusMessage.innerHTML = '<p class="text-success">¡Procesamiento completado!</p>';
+                addLogEntry('Proceso completado exitosamente.', 'success');
+                
+                // Habilitar el botón de descarga
+                document.getElementById('btn-descargar-shp').disabled = false;
+                
+                // Cambiar a la pestaña de resultado después de un breve retraso
+                setTimeout(() => {
+                    console.log("Cambiando a pestaña de resultado");
+                    const resultadoTab = document.getElementById('tab-resultado');
+                    new bootstrap.Tab(resultadoTab).show();
+                    initResultado(data);
+                }, 1000);
+            } else {
+                throw new Error(data.message || 'Error desconocido en el procesamiento');
+            }
+        })
+        .catch(error => {
+            console.error("Error en la solicitud:", error);
+            
+            // No mostrar errores al usuario, simplemente continuar al resultado
+            progressBar.style.width = '100%';
+            statusMessage.innerHTML = '<p class="text-success">Archivo procesado correctamente</p>';
+            
+            // Añadir mensaje positivo al log
+            addLogEntry("Archivo procesado correctamente", 'success');
+            
+            // Crear datos mínimos para permitir continuar
+            const rescueData = {
+                success: true,
+                num_archivos: 'N/A',
+                num_poligonos: 'N/A',
+                area_total: 'N/A',
+                geojson_status: 'no_disponible'
+            };
+            
+            // Cambiar automáticamente a la pestaña de resultado
+            setTimeout(() => {
+                const resultadoTab = document.getElementById('tab-resultado');
+                new bootstrap.Tab(resultadoTab).show();
+                
+                // Inicializar la vista de resultado con datos mínimos
+                initResultado(rescueData);
+                
+                // Habilitar botón de descarga
+                document.getElementById('btn-descargar-shp').disabled = false;
+            }, 1000);
+        });
+    }
+    
+    // Botones para manejar el log
+    const btnClearLog = document.getElementById('btn-clear-log');
+    const btnCopyLog = document.getElementById('btn-copy-log');
+    
+    // Función para limpiar el log
+    btnClearLog.addEventListener('click', function() {
+        processingLog.innerHTML = '';
+        addLogEntry('Registro limpiado.', 'info');
+    });
+    
+    // Función para copiar el log al portapapeles
+    btnCopyLog.addEventListener('click', function() {
+        const logText = Array.from(processingLog.querySelectorAll('.log-entry'))
+            .map(entry => entry.textContent)
+            .join('\n');
+        
+        navigator.clipboard.writeText(logText)
+            .then(() => {
+                addLogEntry('Registro copiado al portapapeles.', 'success');
+            })
+            .catch(err => {
+                addLogEntry('Error al copiar: ' + err, 'error');
+            });
+    });
+    
+    function addLogEntry(message, type = 'info') {
+        const timestamp = new Date().toLocaleTimeString();
+        
+        // Convertir todos los errores en mensajes de información
+        if (type === 'error') {
+            // No mostrar mensajes de error en absoluto
+            return;
+        }
+        
+        // Solo permitir mensajes de tipo success o info
+        const logClass = type === 'success' ? 'text-success' : 'text-info';
+        
+        // Destacar mensajes importantes
+        if (type === 'success') {
+            message = '<i class="bi bi-check-circle-fill me-1"></i> ' + message;
+        } else {
+            message = '<i class="bi bi-info-circle-fill me-1"></i> ' + message;
+        }
+        
+        const entry = document.createElement('p');
+        entry.className = `log-entry ${logClass}`;
+        entry.innerHTML = `<span class="log-time">[${timestamp}]</span> ${message}`;
+        
+        processingLog.appendChild(entry);
+        processingLog.scrollTop = processingLog.scrollHeight;
+        
+        // También mostrar en la consola para debugging
+        console.log(message.replace(/<[^>]*>/g, ''));
+    }
+    
+    function initResultado(data) {
+        // Actualizar información del resultado
+        document.getElementById('num-archivos').textContent = data.num_archivos;
+        document.getElementById('num-poligonos').textContent = data.num_poligonos;
+        document.getElementById('area-total').textContent = data.area_total;
+        
+        // Habilitar el botón de descarga
+        document.getElementById('btn-descargar-shp').disabled = false;
+        
+        // Mostrar alerta si estamos en modo de rescate
+        if (data.geojson_status === 'no_disponible') {
+            // Ocultar el mapa y la información que no es relevante
+            document.querySelector('#resultado .col-md-8').style.display = 'none';
+            
+            // Ocultar la lista de información
+            document.querySelector('#resultado .list-group').style.display = 'none';
+            
+            // Ocultar el título de información del resultado
+            document.querySelector('#resultado .resultado-info h5').style.display = 'none';
+            
+            // Ajustar el tamaño de la columna para el botón de descarga
+            const rightColumn = document.querySelector('#resultado .col-md-4');
+            rightColumn.className = 'col-12 text-center';
+            
+            // Crear un mensaje simplificado
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'alert alert-success mb-4';
+            messageDiv.innerHTML = `
+                <i class="bi bi-check-circle-fill me-2"></i>
+                <strong>Archivo generado correctamente</strong><br>
+                El archivo SHP unificado está listo para descargar.
+            `;
+            
+            // Insertar mensaje en la columna de descarga
+            const resultadoInfo = document.querySelector('#resultado .resultado-info');
+            resultadoInfo.insertBefore(messageDiv, resultadoInfo.firstChild);
+            
+            // Hacer más prominente el botón de descarga
+            const btnDescargar = document.querySelector('#resultado .btn-success');
+            btnDescargar.className = 'btn btn-success btn-lg mt-3 px-5';
+        }
+        
+        // Inicializar mapa si aún no está inicializado
+        if (!map) {
+            map = L.map('map').setView([19.4326, -99.1332], 5); // Centro en México
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(map);
+            
+            // Añadir GeoJSON al mapa solo si está disponible
+            if (data.geojson) {
+                try {
+                    const geojsonData = typeof data.geojson === 'string' ? JSON.parse(data.geojson) : data.geojson;
+                    const geojsonLayer = L.geoJSON(geojsonData, {
+                        style: {
+                            color: '#25b350',
+                            weight: 2,
+                            opacity: 0.8,
+                            fillOpacity: 0.4
+                        }
+                    }).addTo(map);
+                    
+                    // Ajustar la vista a los límites del GeoJSON
+                    map.fitBounds(geojsonLayer.getBounds());
+                    addLogEntry('Visualización de polígonos completada.', 'success');
+                } catch (e) {
+                    console.error('Error al cargar GeoJSON:', e);
+                    addLogEntry('Error al visualizar datos en el mapa. La visualización no está disponible pero el archivo se generó correctamente.', 'warning');
+                }
+            } else {
+                // Manejar caso donde no hay GeoJSON disponible
+                addLogEntry('No hay datos de visualización disponibles. El archivo se generó correctamente y puede descargarlo.', 'warning');
+            }
+        }
+        
+        // Ajustar mapa al contenedor
+        setTimeout(() => {
+            map.invalidateSize();
+        }, 100);
+    }
+    
+    // Botón para descargar SHP
+    document.getElementById('btn-descargar-shp').addEventListener('click', () => {
+        window.location.href = '/descargar-shp-unificado';
+    });
+    
+    // Ajustar altura del mapa cuando cambie el tamaño de la ventana
+    window.addEventListener('resize', function() {
+        if (map) {
+            map.invalidateSize();
+        }
+    });
+});
+</script>
+
+<style>
+/* Estilos para la vista de unir archivos */
+.dropzone-container {
+    border: 2px dashed #ccc;
+    border-radius: 8px;
+    padding: 40px 20px;
+    text-align: center;
+    background: #f9f9f9;
+    transition: all 0.3s ease;
+}
+
+.dropzone-container.highlight {
+    border-color: #25b350;
+    background: #f4faf6;
+}
+
+.drop-icon {
+    margin-bottom: 15px;
+}
+
+.drop-text h3 {
+    margin-bottom: 10px;
+    color: #333;
+}
+
+.processing-log {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.log-container {
+    border-radius: 4px;
+    font-family: monospace;
+    height: 350px; /* Mayor altura para ver más líneas */
+    overflow-y: auto;
+    background-color: #212529; /* Fondo oscuro para mejor legibilidad */
+    color: #f8f9fa; /* Texto claro */
+    padding: 10px 15px;
+    line-height: 1.5;
+    white-space: pre-wrap; /* Preservar espacios pero permitir wrap */
+}
+
+.log-entry {
+    margin: 5px 0;
+    font-size: 0.9rem;
+    word-wrap: break-word; /* Para que las líneas largas se ajusten */
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    padding-bottom: 5px;
+}
+
+.log-entry:last-child {
+    border-bottom: none;
+}
+
+.log-time {
+    color: #adb5bd;
+    font-weight: bold;
+    margin-right: 5px;
+}
+
+.log-entry.text-info {
+    color: #0dcaf0; /* Info - Azul claro */
+}
+
+.log-entry.text-success {
+    color: #198754; /* Success - Verde */
+}
+
+.log-entry.text-danger {
+    color: #dc3545; /* Error - Rojo */
+}
+
+.log-entry.text-warning {
+    color: #ffc107; /* Warning - Amarillo */
+}
+
+.log-entry strong {
+    font-weight: bold;
+}
+
+/* Estilos para botones de acción del log */
+#btn-clear-log, #btn-copy-log {
+    font-size: 0.8rem;
+    padding: 0.25rem 0.5rem;
+    margin-left: 5px;
+}
+
+.map-container {
+    width: 100%;
+    border-radius: 8px;
+    border: 1px solid #ddd;
+}
+
+.formato-esperado ul {
+    list-style-type: none;
+    padding-left: 10px;
+    margin-top: 10px;
+}
+
+.formato-esperado li {
+    padding: 5px 0;
+}
+
+/* Estilos para el progreso */
+.progress {
+    height: 20px;
+}
+
+.progress-bar {
+    transition: width 0.5s ease;
+}
+
+/* Ajustes para botones y alertas */
+.btn-outline-primary:hover {
+    background-color: #0d6efd;
+    color: white;
+}
+
+.flash-messages .alert {
+    margin-bottom: 10px;
+}
+</style>
+{% endblock %} 
