@@ -20,6 +20,11 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
 from shapefile_utils import plot_shapefile_to_png
+from utils.pdf_generator import (generar_ficha_tecnica_desde_plantilla, verificar_instalacion_pymupdf, 
+                                generar_ficha_tecnica_fallback, generar_ficha_tecnica_simple, 
+                                garantizar_pymupdf, import_pymupdf)
+import shutil
+import math
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
@@ -100,6 +105,7 @@ class Poligono(db.Model):
     area_digitalizada = db.Column(db.Float, nullable=True) # Área calculada/editada
     estatus = db.Column(db.Text, nullable=True) # Estatus (si existe)
     comentarios = db.Column(db.Text, nullable=True) # Comentarios editables
+    descripcion = db.Column(db.Text, nullable=True) # Nueva columna para descripción
     # Metadata
     fecha_creacion = db.Column(db.DateTime, default=datetime.utcnow)
     fecha_modificacion = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -138,7 +144,7 @@ with app.app_context():
             'id', 'id_poligono', 'if_val', 'id_credito', 'id_persona',
             'superficie', 'estado', 'municipio', 'coordenadas',
             'coordenadas_corregidas', 'area_digitalizada', 'estatus',
-            'comentarios', 'fecha_creacion', 'fecha_modificacion'
+            'comentarios', 'descripcion', 'fecha_creacion', 'fecha_modificacion'
         }
         current_db_columns = set(column_names)
         
@@ -609,6 +615,7 @@ def validacion_poligonos(tab):
                     'AREA_DIGITALIZADA': p.area_digitalizada,
                     'ESTATUS': p.estatus,
                     'COMENTARIOS': p.comentarios,
+                    'DESCRIPCION': p.descripcion,
                     'db_id': p.id # ID de la base de datos
                 }
                 # Ya no es necesario cargar JSON ni usar setdefault,
@@ -619,7 +626,7 @@ def validacion_poligonos(tab):
             columns_to_display = [
                 'ID_POLIGONO', 'IF', 'ID_CREDITO', 'ID_PERSONA', 'SUPERFICIE',
                 'ESTADO', 'MUNICIPIO', 'COORDENADAS', 'COORDENADAS_CORREGIDAS',
-                'AREA_DIGITALIZADA', 'ESTATUS', 'COMENTARIOS', 'db_id' # Añadir COMENTARIOS
+                'AREA_DIGITALIZADA', 'ESTATUS', 'COMENTARIOS', 'DESCRIPCION', 'db_id'
             ]
             # --- FIN: Definir columnas fijas ---
 
@@ -668,6 +675,7 @@ def validacion_poligonos(tab):
                     'AREA_DIGITALIZADA': poligono.area_digitalizada, # Campo editable
                     'ESTATUS': poligono.estatus,
                     'COMENTARIOS': poligono.comentarios, # Campo editable
+                    'DESCRIPCION': poligono.descripcion, # Campo editable
                     'db_id': poligono.id
                 }
                 
@@ -688,6 +696,7 @@ def validacion_poligonos(tab):
                 if not row_data['ESTADO']: row_data['ESTADO'] = ''
                 if not row_data['MUNICIPIO']: row_data['MUNICIPIO'] = ''
                 if not row_data['COMENTARIOS']: row_data['COMENTARIOS'] = ''
+                if not row_data['DESCRIPCION']: row_data['DESCRIPCION'] = ''
                 
                 # NUEVO: Obtener municipio y estado desde coordenadas si no están definidos
                 if (not row_data['ESTADO'] or not row_data['MUNICIPIO']) and poligono.coordenadas_corregidas:
@@ -774,6 +783,7 @@ def validacion_poligonos(tab):
                     'AREA_DIGITALIZADA': p.area_digitalizada,
                     'ESTATUS': p.estatus,
                     'COMENTARIOS': p.comentarios,
+                    'DESCRIPCION': p.descripcion,
                     'db_id': p.id
                 }
                 data.append(datos)
@@ -924,7 +934,8 @@ def cargar_excel():
                         coordenadas_corregidas=str(row.get('COORDENADAS_DECIMALES_CORREGIDAS', '')), # Usar las corregidas
                         area_digitalizada=None, # Se inicializa como None
                         estatus=str(row.get('ESTATUS', '')), # Añadir si existe en Excel
-                        comentarios=None        # Se inicializa como None
+                        comentarios=None,        # Se inicializa como None
+                        descripcion=str(row.get('DESCRIPCION', ''))  # Añadir descripción
                         # datos_json ya no existe
                     )
                     db.session.add(poligono)
@@ -1011,6 +1022,7 @@ def actualizar_fila():
                 elif campo_form == 'AREA_DIGITALIZADA': atributo_modelo = 'area_digitalizada'
                 elif campo_form == 'ESTATUS': atributo_modelo = 'estatus'
                 elif campo_form == 'COMENTARIOS': atributo_modelo = 'comentarios'
+                elif campo_form == 'DESCRIPCION': atributo_modelo = 'descripcion'
                 # Añadir más mapeos si se agregan más campos editables
 
                 if atributo_modelo:
@@ -1148,11 +1160,147 @@ def diagnostico_poligono(db_id):
         'area_digitalizada': poligono.area_digitalizada,
         'estatus': poligono.estatus,
         'comentarios': poligono.comentarios,
+        'descripcion': poligono.descripcion,
         'fecha_creacion': str(poligono.fecha_creacion),
         'fecha_modificacion': str(poligono.fecha_modificacion)
     }
     
     return jsonify(datos)
+
+@app.route('/get-historico-poligonos')
+def get_historico_poligonos():
+    """Endpoint para cargar y devolver los polígonos históricos como GeoJSON"""
+    try:
+        # Ruta al archivo shapefile histórico
+        historico_shapefile = "data/HISTORICO_ORDEN_40.shp"
+        
+        # Leer el shapefile con geopandas
+        historico_gdf = gpd.read_file(historico_shapefile)
+        
+        # Verificar/convertir CRS a WGS84 (EPSG:4326) si es necesario
+        if historico_gdf.crs != "EPSG:4326":
+            historico_gdf = historico_gdf.to_crs(epsg=4326)
+        
+        # Convertir a GeoJSON
+        geojson_data = json.loads(historico_gdf.to_json())
+        
+        # Asegurar que tenemos el campo ID_POLIGON (si existe)
+        id_field = None
+        for field in historico_gdf.columns:
+            if field.upper() == 'ID_POLIGON':
+                id_field = field
+                break
+            
+        # Agregar información sobre el campo de ID para facilitar el etiquetado en el frontend
+        respuesta = {
+            'geojson': geojson_data,
+            'id_field': id_field
+        }
+        
+        return jsonify(respuesta)
+    except Exception as e:
+        print(f"Error al cargar el shapefile histórico: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/get-historico-poligonos-radio/<int:polygon_id>')
+def get_historico_poligonos_radio(polygon_id):
+    """Endpoint para cargar y devolver los polígonos históricos dentro de un radio de 10km"""
+    try:
+        # Buscar el polígono en la base de datos
+        poligono = Poligono.query.get(polygon_id)
+        if poligono is None:
+            return jsonify({'error': 'Polígono no encontrado'}), 404
+            
+        # Obtener coordenadas del polígono
+        coordenadas_corregidas = poligono.coordenadas_corregidas
+        if not coordenadas_corregidas:
+            return jsonify({'error': 'El polígono no tiene coordenadas válidas'}), 400
+            
+        # Extraer el primer punto del polígono como punto de referencia
+        coords_list = coordenadas_corregidas.split(' | ')
+        if not coords_list:
+            return jsonify({'error': 'Formato de coordenadas inválido'}), 400
+            
+        first_point = coords_list[0].split(',')
+        if len(first_point) < 2:
+            return jsonify({'error': 'Formato de coordenadas inválido'}), 400
+            
+        lat_ref = float(first_point[0])
+        lon_ref = float(first_point[1])
+        
+        # Ruta al archivo shapefile histórico
+        historico_shapefile = "data/HISTORICO_ORDEN_40.shp"
+        
+        # Leer el shapefile con geopandas
+        historico_gdf = gpd.read_file(historico_shapefile)
+        
+        # Verificar/convertir CRS a WGS84 (EPSG:4326) si es necesario
+        if historico_gdf.crs != "EPSG:4326":
+            historico_gdf = historico_gdf.to_crs(epsg=4326)
+        
+        # Filtrar polígonos en el radio de 10km
+        from shapely.geometry import Point
+        import math
+        
+        # Radio de la tierra en km
+        R = 6371.0
+        
+        # Función para calcular distancia haversine
+        def haversine(lat1, lon1, lat2, lon2):
+            # Convertir de grados a radianes
+            lat1 = math.radians(lat1)
+            lon1 = math.radians(lon1)
+            lat2 = math.radians(lat2)
+            lon2 = math.radians(lon2)
+            
+            # Fórmula haversine
+            dlon = lon2 - lon1
+            dlat = lat2 - lat1
+            a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
+            c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+            distance = R * c
+            
+            return distance
+        
+        # Crear una función para aplicar a cada geometría
+        def en_radio(geometry):
+            # Para polígonos, usamos el centroide
+            centroid = geometry.centroid
+            lat = centroid.y
+            lon = centroid.x
+            
+            # Calcular la distancia
+            distancia = haversine(lat_ref, lon_ref, lat, lon)
+            
+            # Retornar True si está dentro del radio (10km)
+            return distancia <= 10.0
+        
+        # Aplicar el filtro a todas las geometrías
+        mask = historico_gdf.geometry.apply(en_radio)
+        historico_filtrado = historico_gdf[mask]
+        
+        # Convertir a GeoJSON
+        geojson_data = json.loads(historico_filtrado.to_json())
+        
+        # Asegurar que tenemos el campo ID_POLIGON (si existe)
+        id_field = None
+        for field in historico_filtrado.columns:
+            if field.upper() == 'ID_POLIGON':
+                id_field = field
+                break
+            
+        # Agregar información sobre el campo de ID y contador
+        respuesta = {
+            'geojson': geojson_data,
+            'id_field': id_field,
+            'total': len(historico_filtrado),
+            'radio_km': 10.0
+        }
+        
+        return jsonify(respuesta)
+    except Exception as e:
+        print(f"Error al cargar el shapefile histórico filtrado: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/obtener_ubicacion', methods=['POST'])
 def get_ubicacion():
@@ -1314,8 +1462,12 @@ def generar_paquete_completo():
                 
                 # Generar shapefile para este polígono
                 shapefile_buffer = generar_shapefile_individual(poligono, f'polygon-{row_id}')
+                png_filepath = None
+                
                 if shapefile_buffer:
-                    zf.writestr(f'shapefiles/polygon-{row_id}.zip', shapefile_buffer.getvalue())
+                    # Usar ID_POLIGONO para nombrar el archivo si está disponible
+                    archivo_nombre = poligono.id_poligono if poligono.id_poligono else f'polygon-{row_id}'
+                    zf.writestr(f'shapefiles/{archivo_nombre}.zip', shapefile_buffer.getvalue())
                     
                     # Generar mapas PNG a partir del shapefile
                     try:
@@ -1324,22 +1476,53 @@ def generar_paquete_completo():
                             # Generar PNG a partir del shapefile
                             png_dir = plot_shapefile_to_png(shapefile_buffer, temp_png_dir)
                             
-                            # Añadir todos los archivos PNG al ZIP
+                            # Añadir todos los archivos PNG al ZIP y guardar la ruta del primer PNG para la ficha técnica
                             if png_dir:
                                 for png_filename in os.listdir(png_dir):
                                     if png_filename.endswith('.png'):
                                         png_path = os.path.join(png_dir, png_filename)
+                                        # Guardar la ruta del primer PNG para usarla en la ficha
+                                        if png_filepath is None:
+                                            png_filepath = png_path
+                                        
+                                        # Guardar la imagen en un archivo temporal más permanente que podamos usar para el PDF
+                                        temp_img_path = tempfile.NamedTemporaryFile(delete=False, suffix='.png').name
+                                        shutil.copy2(png_path, temp_img_path)
+                                        png_filepath = temp_img_path
+                                        
                                         with open(png_path, 'rb') as png_file:
-                                            zf.writestr(f'mapas/{png_filename}', png_file.read())
+                                            # Guardar con un nombre predecible basado en ID_POLIGONO
+                                            png_name = f"{poligono.id_poligono or f'polygon-{row_id}'}.png"
+                                            zf.writestr(f'mapas/{png_name}', png_file.read())
                     except Exception as e:
                         print(f"Error al generar mapa PNG para polígono {row_id}: {e}")
+                        error_msg = f"Error al generar mapa PNG para polígono {row_id}: {e}"
+                        errores_detalles.append(error_msg)
+                        errores += 1
                         import traceback
                         traceback.print_exc()
                 
-                # Generar ficha técnica PDF para este polígono (incluirá automáticamente el mapa)
-                pdf_buffer = generar_ficha_tecnica(poligono, f'polygon-{row_id}')
-                if pdf_buffer:
-                    zf.writestr(f'fichas_tecnicas/ficha_polygon-{row_id}.pdf', pdf_buffer.getvalue())
+                # Generar ficha técnica PDF con la nueva plantilla
+                if png_filepath:
+                    pdf_buffer = generar_ficha_tecnica_desde_plantilla(poligono, png_filepath)
+                    if pdf_buffer:
+                        # Usar ID_POLIGONO para nombrar el archivo si está disponible
+                        archivo_nombre = poligono.id_poligono if poligono.id_poligono else f'polygon-{row_id}'
+                        zf.writestr(f'fichas_tecnicas/ficha_{archivo_nombre}.pdf', pdf_buffer.getvalue())
+                    else:
+                        # Si falla la generación con la plantilla, intentar el método original como respaldo
+                        pdf_buffer = generar_ficha_tecnica(poligono, f'polygon-{row_id}')
+                        if pdf_buffer:
+                            # Usar ID_POLIGONO para nombrar el archivo si está disponible
+                            archivo_nombre = poligono.id_poligono if poligono.id_poligono else f'polygon-{row_id}'
+                            zf.writestr(f'fichas_tecnicas/ficha_{archivo_nombre}.pdf', pdf_buffer.getvalue())
+                else:
+                    # Si no hay imagen, usar el método tradicional
+                    pdf_buffer = generar_ficha_tecnica(poligono, f'polygon-{row_id}')
+                    if pdf_buffer:
+                        # Usar ID_POLIGONO para nombrar el archivo si está disponible
+                        archivo_nombre = poligono.id_poligono if poligono.id_poligono else f'polygon-{row_id}'
+                        zf.writestr(f'fichas_tecnicas/ficha_{archivo_nombre}.pdf', pdf_buffer.getvalue())
         
         # Regresar al inicio del archivo en memoria
         memory_file.seek(0)
@@ -1620,8 +1803,19 @@ def generar_ficha_tecnica(poligono, nombre_archivo):
         # Ajustar comentarios al espacio disponible
         import textwrap
         comentario_lines = textwrap.wrap(comentarios, width=30)
-        for i, line in enumerate(comentario_lines[:5]):  # Limitar a 5 líneas
+        for i, line in enumerate(comentario_lines[:3]):  # Limitar a 3 líneas para dejar espacio a la descripción
             c.drawString(5.1*inch, metadata_y - 0.3*inch - (i * 0.2*inch), line)
+        
+        # Añadir descripción
+        descripcion_y = metadata_y - 0.3*inch - (len(comentario_lines[:3]) * 0.2*inch) - 0.3*inch
+        c.setFont("Helvetica-Bold", 9)
+        c.drawString(5.1*inch, descripcion_y, "Descripción:")
+        
+        c.setFont("Helvetica", 9)
+        descripcion = poligono.descripcion or ""
+        descripcion_lines = textwrap.wrap(descripcion, width=30)
+        for i, line in enumerate(descripcion_lines[:2]):  # Limitar a 2 líneas
+            c.drawString(5.1*inch, descripcion_y - 0.2*inch - (i * 0.2*inch), line)
         
         # Información SRC mejor espaciada
         c.setFont("Helvetica-Bold", 9)
@@ -1744,9 +1938,9 @@ def generar_shapefiles_y_mapas():
                 shapefile_buffer = generar_shapefile_individual(poligono, f'polygon-{row_id}')
                 
                 if shapefile_buffer:
-                    # Añadir el shapefile al archivo ZIP
-                    shapefile_filename = f'polygon-{row_id}.zip'
-                    zf.writestr(f'shapefiles/{shapefile_filename}', shapefile_buffer.getvalue())
+                    # Usar ID_POLIGONO para nombrar el archivo si está disponible
+                    archivo_nombre = poligono.id_poligono if poligono.id_poligono else f'polygon-{row_id}'
+                    zf.writestr(f'shapefiles/{archivo_nombre}.zip', shapefile_buffer.getvalue())
                     
                     # Generar y añadir el mapa PNG
                     try:
@@ -2240,6 +2434,382 @@ def descargar_shp_unificado():
     else:
         flash('No se encontró el archivo unificado. Procese los archivos primero.', 'error')
         return redirect(url_for('unir_archivos'))
+
+@app.route('/generar_ficha_tecnica_template/<int:db_id>')
+def generar_ficha_tecnica_template_route(db_id):
+    """Genera una ficha técnica con la nueva plantilla para un polígono específico"""
+    try:
+        # Obtener las fechas del formulario
+        fecha_referencia = request.args.get('fecha_referencia')
+        fecha_final = request.args.get('fecha_final')
+        
+        # Buscar el polígono en la base de datos
+        poligono = Poligono.query.get(db_id)
+        if not poligono:
+            return jsonify({"error": "Polígono no encontrado"}), 404
+        
+        # Verificar que PyMuPDF esté correctamente configurado
+        pymupdf_funcional = garantizar_pymupdf()
+        if not pymupdf_funcional:
+            print("ADVERTENCIA: PyMuPDF no está correctamente configurado, se usará el método alternativo")
+        
+        # Generar mapa del polígono
+        shapefile_buffer = generar_shapefile_individual(poligono, f'polygon-{db_id}')
+        if not shapefile_buffer:
+            return jsonify({"error": "No se pudo generar el shapefile"}), 500
+        
+        png_filepath = None
+        # Crear un directorio temporal para guardar los PNG
+        with tempfile.TemporaryDirectory() as temp_png_dir:
+            # Generar PNG a partir del shapefile
+            png_dir = plot_shapefile_to_png(shapefile_buffer, temp_png_dir)
+            
+            # Buscar el archivo PNG generado
+            if png_dir:
+                for png_filename in os.listdir(png_dir):
+                    if png_filename.endswith('.png'):
+                        png_filepath = os.path.join(png_dir, png_filename)
+                        break
+            
+            if not png_filepath:
+                return jsonify({"error": "No se pudo generar la imagen del mapa"}), 500
+            
+            # Generar ficha técnica con la plantilla
+            pdf_buffer = generar_ficha_tecnica_desde_plantilla(poligono, png_filepath, fecha_referencia, fecha_final)
+            
+            if not pdf_buffer:
+                return jsonify({"error": "No se pudo generar la ficha técnica"}), 500
+            
+            # Enviar el PDF como respuesta
+            return send_file(
+                pdf_buffer,
+                mimetype='application/pdf',
+                as_attachment=True,
+                download_name=f'ficha_tecnica_{poligono.id_poligono or db_id}.pdf'
+            )
+    
+    except Exception as e:
+        print(f"Error al generar ficha técnica con plantilla: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/generar_paquete_completo_con_plantilla', methods=['POST'])
+def generar_paquete_completo_con_plantilla():
+    """Ruta para generar un paquete completo con fichas PDF basadas en plantilla y shapefiles"""
+    # Obtener los índices de polígonos seleccionados
+    selected_rows = request.json.get('selected_rows', [])
+    fecha_referencia = request.json.get('fecha_referencia')
+    fecha_final = request.json.get('fecha_final')
+    
+    # Debugging: Log the received dates
+    print(f"DEBUG - Fecha de Referencia recibida: {fecha_referencia}")
+    print(f"DEBUG - Fecha Final recibida: {fecha_final}")
+    
+    if not selected_rows:
+        return jsonify({'error': 'No se seleccionaron polígonos'}), 400
+    
+    try:
+        # Verificamos PyMuPDF usando la función mejorada
+        from utils.pdf_generator import garantizar_pymupdf
+        pymupdf_funcional = garantizar_pymupdf()
+        if not pymupdf_funcional:
+            print("ADVERTENCIA: PyMuPDF no está correctamente configurado, se usará el método alternativo")
+            
+        # Verificar que la plantilla existe - usar el directorio static/plantilla
+        plantilla_path = os.path.join('static', 'plantilla', 'Plantilla_2.pdf')
+        plantilla_encontrada = False
+        
+        if os.path.exists(plantilla_path):
+            plantilla_encontrada = True
+            print(f"Plantilla encontrada en: {os.path.abspath(plantilla_path)}")
+        else:
+            # Verificar rutas alternativas
+            rutas_alternativas = [
+                'Plantilla_2.pdf',
+                './plantilla/Plantilla_2.pdf',
+                '../plantilla/Plantilla_2.pdf',
+                './static/plantilla/Plantilla_2.pdf'
+            ]
+            
+            for ruta in rutas_alternativas:
+                if os.path.exists(ruta):
+                    plantilla_path = ruta
+                    plantilla_encontrada = True
+                    print(f"Plantilla encontrada en ruta alternativa: {os.path.abspath(ruta)}")
+                    break
+            
+        # Añadir mensaje de advertencia si no se encontró la plantilla
+        if not plantilla_encontrada:
+            print("ADVERTENCIA: No se encontró la plantilla, se usará el método alternativo")
+            
+        # Continuamos con el proceso independientemente de la plantilla
+
+        # Verificar permisos de lectura del archivo
+        try:
+            if plantilla_encontrada:
+                with open(plantilla_path, 'rb') as f:
+                    _ = f.read(1)  # Leer un byte para verificar acceso
+                    print(f"Archivo de plantilla accesible: {plantilla_path}")
+        except Exception as e:
+            print(f"Error al acceder a la plantilla: {e}")
+            print("Se utilizará el método alternativo para generar PDFs")
+            
+        # Preparar un archivo ZIP en memoria para contener todos los archivos
+        memory_file = io.BytesIO()
+        with zipfile.ZipFile(memory_file, 'w') as zf:
+            # Crear carpeta para fichas técnicas
+            zf.writestr('fichas_tecnicas/', '')
+            # Crear carpeta para shapefiles
+            zf.writestr('shapefiles/', '')
+            # Crear carpeta para mapas
+            zf.writestr('mapas/', '')
+            # Crear una carpeta para logs
+            zf.writestr('logs/', '')
+            
+            # Contadores para estadísticas
+            total_poligonos = len(selected_rows)
+            poligonos_procesados = 0
+            errores = 0
+            errores_detalles = []
+            
+            # Para cada polígono seleccionado
+            for row_id in selected_rows:
+                try:
+                    row_id = int(row_id)
+                    # Primero intentar buscar por ID exacto
+                    poligono = Poligono.query.get(row_id)
+                    
+                    if poligono is None:
+                        # Si no se encuentra, imprimir para depuración
+                        print(f"No se encontró polígono con ID {row_id}, buscando en posición")
+                        
+                        # Intentar buscar por posición como fallback
+                        poligonos = Poligono.query.all()
+                        if 0 <= row_id < len(poligonos):
+                            poligono = poligonos[row_id]
+                        else:
+                            print(f"Índice {row_id} fuera de rango, hay {len(poligonos)} polígonos")
+                            error_msg = f"Índice {row_id} fuera de rango, hay {len(poligonos)} polígonos"
+                            errores_detalles.append(error_msg)
+                            errores += 1
+                            continue
+                            
+                    print(f"Generando fichas para polígono ID={poligono.id}, ID_POLIGONO={poligono.id_poligono}")
+                except Exception as e:
+                    print(f"Error al recuperar polígono {row_id}: {e}")
+                    error_msg = f"Error al recuperar polígono {row_id}: {e}"
+                    errores_detalles.append(error_msg)
+                    errores += 1
+                    # Si no es un ID válido, continuar con el siguiente
+                    continue
+                
+                # Generar shapefile para este polígono
+                shapefile_buffer = generar_shapefile_individual(poligono, f'polygon-{row_id}')
+                png_filepath = None
+                
+                if shapefile_buffer:
+                    # Usar ID_POLIGONO para nombrar el archivo si está disponible
+                    archivo_nombre = poligono.id_poligono if poligono.id_poligono else f'polygon-{row_id}'
+                    zf.writestr(f'shapefiles/{archivo_nombre}.zip', shapefile_buffer.getvalue())
+                    
+                    # Generar mapas PNG a partir del shapefile
+                    try:
+                        # Crear un directorio temporal para guardar los PNG
+                        with tempfile.TemporaryDirectory() as temp_png_dir:
+                            # Generar PNG a partir del shapefile
+                            png_dir = plot_shapefile_to_png(shapefile_buffer, temp_png_dir)
+                            
+                            # Añadir todos los archivos PNG al ZIP y guardar la ruta del primer PNG para la ficha técnica
+                            if png_dir:
+                                for png_filename in os.listdir(png_dir):
+                                    if png_filename.endswith('.png'):
+                                        png_path = os.path.join(png_dir, png_filename)
+                                        # Guardar la ruta del primer PNG para usarla en la ficha
+                                        if png_filepath is None:
+                                            png_filepath = png_path
+                                        
+                                        # Guardar la imagen en un archivo temporal más permanente que podamos usar para el PDF
+                                        temp_img_path = tempfile.NamedTemporaryFile(delete=False, suffix='.png').name
+                                        shutil.copy2(png_path, temp_img_path)
+                                        png_filepath = temp_img_path
+                                        
+                                        with open(png_path, 'rb') as png_file:
+                                            # Guardar con un nombre predecible basado en ID_POLIGONO
+                                            png_name = f"{poligono.id_poligono or f'polygon-{row_id}'}.png"
+                                            zf.writestr(f'mapas/{png_name}', png_file.read())
+                    except Exception as e:
+                        print(f"Error al generar mapa PNG para polígono {row_id}: {e}")
+                        error_msg = f"Error al generar mapa PNG para polígono {row_id}: {e}"
+                        errores_detalles.append(error_msg)
+                        errores += 1
+                        import traceback
+                        traceback.print_exc()
+                
+                # Generar ficha técnica PDF con la nueva plantilla
+                if png_filepath:
+                    try:
+                        # Configurar un log específico para este polígono
+                        log_buffer = io.StringIO()
+                        log_buffer.write(f"=== Log de generación de PDF para polígono {row_id} ===\n")
+                        log_buffer.write(f"ID_POLIGONO: {poligono.id_poligono}\n")
+                        log_buffer.write(f"Fecha: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+                        
+                        # Verificar que la imagen existe
+                        if os.path.exists(png_filepath):
+                            log_buffer.write(f"Imagen encontrada en: {os.path.abspath(png_filepath)}\n")
+                        else:
+                            log_buffer.write(f"ADVERTENCIA: No se encontró la imagen en: {os.path.abspath(png_filepath)}\n")
+                        
+                        # Intentar generar el PDF con la plantilla
+                        log_buffer.write("Intentando generar PDF con la plantilla...\n")
+                        pdf_buffer = generar_ficha_tecnica_desde_plantilla(poligono, png_filepath, fecha_referencia, fecha_final)
+                        
+                        # Guardar una copia del PDF (si se generó) para depuración
+                        if pdf_buffer:
+                            log_buffer.write(f"PDF generado correctamente con plantilla ({len(pdf_buffer.getvalue())} bytes)\n")
+                            # Guardar una copia del PDF generado con plantilla para diagnóstico
+                            try:
+                                debug_pdf_path = os.path.join('debug', f'template_pdf_{poligono.id_poligono or row_id}.pdf')
+                                os.makedirs('debug', exist_ok=True)
+                                with open(debug_pdf_path, 'wb') as f:
+                                    f.write(pdf_buffer.getvalue())
+                                log_buffer.write(f"Copia de diagnóstico guardada en: {debug_pdf_path}\n")
+                                pdf_buffer.seek(0)  # Resetear el buffer
+                            except Exception as debug_error:
+                                log_buffer.write(f"No se pudo guardar copia de diagnóstico: {debug_error}\n")
+                        
+                        # Si falla la generación con plantilla, usar el método simple como respaldo
+                        if pdf_buffer is None:
+                            log_buffer.write("Error al generar PDF con plantilla, intentando método simple como respaldo...\n")
+                            pdf_buffer = generar_ficha_tecnica_simple(poligono, png_filepath)
+                            
+                            # Guardar una copia del PDF simple para comparación
+                            if pdf_buffer:
+                                try:
+                                    debug_simple_path = os.path.join('debug', f'simple_pdf_{poligono.id_poligono or row_id}.pdf')
+                                    os.makedirs('debug', exist_ok=True)
+                                    with open(debug_simple_path, 'wb') as f:
+                                        f.write(pdf_buffer.getvalue())
+                                    log_buffer.write(f"Copia de PDF simple guardada en: {debug_simple_path}\n")
+                                    pdf_buffer.seek(0)  # Resetear el buffer
+                                except Exception as debug_error:
+                                    log_buffer.write(f"No se pudo guardar copia de PDF simple: {debug_error}\n")
+                        
+                        if pdf_buffer:
+                            log_buffer.write(f"PDF generado correctamente ({len(pdf_buffer.getvalue())} bytes)\n")
+                            nombre_archivo = f"{poligono.id_poligono or f'polygon-{row_id}'}.pdf"
+                            zf.writestr(f'fichas_tecnicas/{nombre_archivo}', pdf_buffer.getvalue())
+                            poligonos_procesados += 1
+                        else:
+                            log_buffer.write("ERROR: No se pudo generar el PDF (buffer vacío)\n")
+                            errores += 1
+                            error_msg = f"No se pudo generar el PDF para el polígono {row_id} - ID_POLIGONO={poligono.id_poligono}"
+                            errores_detalles.append(error_msg)
+                    except Exception as e:
+                        print(f"Error al generar PDF para polígono {row_id}: {e}")
+                        log_buffer.write(f"EXCEPCIÓN: {str(e)}\n")
+                        import traceback
+                        error_traceback = traceback.format_exc()
+                        log_buffer.write(f"Traceback:\n{error_traceback}\n")
+                        
+                        error_msg = f"Error al generar PDF para polígono {row_id}: {e}"
+                        errores_detalles.append(error_msg)
+                        errores += 1
+                    finally:
+                        # Guardar el log en el archivo ZIP
+                        archivo_nombre = poligono.id_poligono if poligono.id_poligono else f'polygon-{row_id}'
+                        zf.writestr(f'logs/log_{archivo_nombre}.txt', log_buffer.getvalue())
+                else:
+                    error_msg = f"No se pudo generar mapa para polígono {row_id}"
+                    errores_detalles.append(error_msg)
+                    errores += 1
+                    print(f"Error: No se pudo generar mapa para polígono {row_id}")
+            
+            # Añadir un resumen en el ZIP
+            resumen = f"""
+            Resumen de generación de fichas técnicas:
+            --------------------------------------
+            Total de polígonos seleccionados: {total_poligonos}
+            Polígonos procesados exitosamente: {poligonos_procesados}
+            Errores: {errores}
+            
+            Detalles de errores:
+            {chr(10).join(errores_detalles)}
+            
+            Generado el: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}
+            """
+            zf.writestr('resumen.txt', resumen)
+        
+        # Regresar al inicio del archivo en memoria
+        memory_file.seek(0)
+        
+        # Enviar el archivo ZIP como respuesta
+        return send_file(
+            memory_file,
+            mimetype='application/zip',
+            as_attachment=True,
+            download_name='paquete_completo_con_plantilla.zip'
+        )
+    
+    except Exception as e:
+        print(f"Error al generar paquete completo con plantilla: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/generar_excel', methods=['GET'])
+def generar_excel():
+    """Ruta para generar un archivo Excel con todos los registros de la base de datos"""
+    try:
+        # Obtener todos los polígonos de la base de datos
+        poligonos = Poligono.query.all()
+        
+        if not poligonos:
+            flash('No hay datos disponibles para generar el archivo Excel', 'warning')
+            return redirect(url_for('validacion_poligonos', tab='generar'))
+        
+        # Crear un DataFrame con las columnas específicas requeridas
+        data = []
+        for p in poligonos:
+            datos = {
+                'ID_CREDITO': p.id_credito,
+                'ID_PERSONA': p.id_persona,
+                'SUPERFICIE': p.area_digitalizada,  # Renombrar superficie_digitalizada a SUPERFICIE
+                'ID_POLIGONO': p.id_poligono,
+                'ESTATUS': p.estatus,
+                'COMENTARIO': p.comentarios,
+                'DESCRIPCION': p.descripcion
+            }
+            data.append(datos)
+        
+        # Crear un DataFrame de pandas con los datos
+        df = pd.DataFrame(data)
+        
+        # Crear un objeto BytesIO para guardar el Excel en memoria
+        excel_file = io.BytesIO()
+        
+        # Guardar el DataFrame como un archivo Excel
+        with pd.ExcelWriter(excel_file, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Polígonos')
+        
+        # Preparar el archivo para la descarga
+        excel_file.seek(0)
+        
+        # Crear una respuesta con el archivo Excel
+        return send_file(
+            excel_file,
+            as_attachment=True,
+            download_name='poligonos_export.xlsx',
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        
+    except Exception as e:
+        print(f"ERROR AL GENERAR EXCEL: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        flash(f'Error al generar archivo Excel: {str(e)}', 'error')
+        return redirect(url_for('validacion_poligonos', tab='generar'))
 
 if __name__ == '__main__':
     app.run(debug=True)

@@ -73,8 +73,8 @@
                         <button class="btn btn-primary" type="submit">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                                <polyline points="17 8 12 3 7 8"></polyline>
-                                <line x1="12" y1="3" x2="12" y2="15"></line>
+                                <polyline points="7 10 12 15 17 10"></polyline>
+                                <line x1="12" y1="15" x2="12" y2="3"></line>
                             </svg>
                             Cargar
                         </button>
@@ -118,6 +118,8 @@
                                         <th class="bg-light">{{ col }}</th> {# Newly added columns #}
                                     {% elif col == 'COMENTARIOS' %}
                                         <th class="bg-light">{{ col }}</th> {# Comentarios column #}
+                                    {% elif col == 'DESCRIPCION' %}
+                                        <th class="bg-light">{{ col }}</th> {# Descripcion column #}
                                     {% else %}
                                         <th>{{ col }}</th>
                                     {% endif %}
@@ -234,8 +236,34 @@
                             
                             <div class="row mb-3">
                                 <div class="col-12">
-                                    <label for="Comentarios" class="form-label">Comentarios</label>
+                                    <label for="ComentariosSelect" class="form-label">Comentarios</label>
+                                    <select class="form-select mb-2" id="ComentariosSelect">
+                                        <option value="">-- Seleccionar comentario predefinido --</option>
+                                        <option value="COORDENADA TRASLAPADA CON">COORDENADA TRASLAPADA CON</option>
+                                        <option value="COORDENADAS TRASLAPADAS CON">COORDENADAS TRASLAPADAS CON</option>
+                                        <option value="CUMPLE CON LA SUPERFICIE">CUMPLE CON LA SUPERFICIE</option>
+                                        <option value="NO CUMPLE CON LA SUPERFICIE">NO CUMPLE CON LA SUPERFICIE</option>
+                                        <option value="NO COINCIDE LA SUPERFICIE">NO COINCIDE LA SUPERFICIE</option>
+                                        <option value="NO COINCIDEN LAS SUPERFICIES">NO COINCIDEN LAS SUPERFICIES</option>
+                                        <option value="NO SE PUEDE DELIMITAR">NO SE PUEDE DELIMITAR</option>
+                                        <option value="NO SE PUEDE DELIMITAR, VERIFICAR">NO SE PUEDE DELIMITAR, VERIFICAR</option>
+                                        <option value="PARCELA TRASLAPADA CON">PARCELA TRASLAPADA CON</option>
+                                        <option value="PARCELAS TRASLAPADAS">PARCELAS TRASLAPADAS</option>
+                                        <option value="PARCELAS SEPARADAS">PARCELAS SEPARADAS</option>
+                                        <option value="POLÍGONO TRASLAPADO CON">POLÍGONO TRASLAPADO CON</option>
+                                    </select>
                                     <textarea class="form-control" id="Comentarios" name="COMENTARIOS" rows="2">{{ row_data.get('COMENTARIOS', '') }}</textarea>
+                                </div>
+                            </div>
+                            
+                            <div class="row mb-3">
+                                <div class="col-12">
+                                    <label for="DescripcionSelect" class="form-label">Descripción</label>
+                                    <select class="form-select mb-2" id="DescripcionSelect">
+                                        <option value="">-- Seleccionar ID de polígono histórico --</option>
+                                        <!-- Opciones de IDs históricos se cargarán dinámicamente -->
+                                    </select>
+                                    <textarea class="form-control" id="Descripcion" name="DESCRIPCION" rows="2">{{ row_data.get('DESCRIPCION', '') }}</textarea>
                                 </div>
                             </div>
                             
@@ -263,6 +291,15 @@
                                     <i class="bi bi-geo-alt"></i> Detectar Municipio/Estado
                                 </button>
                                 <small id="infoUbicacion" class="text-muted ms-2"></small>
+                            </div>
+                            
+                            <!-- Sección para información de polígonos históricos -->
+                            <div class="mb-3 alert alert-warning">
+                                <h5><i class="bi bi-exclamation-triangle-fill"></i> Verificación de traslapes</h5>
+                                <p>Se están mostrando polígonos históricos en color <strong style="color: #ff8c00;">naranja</strong> en el mapa. Por favor, verifique si el polígono actual traslapa con alguno de estos polígonos históricos y documente los resultados en los comentarios.</p>
+                                <div id="historico-info" class="mt-2">
+                                    <small>Los IDs de los polígonos históricos se muestran en el centro de cada polígono en el mapa.</small>
+                                </div>
                             </div>
                             
                             <div class="mt-4 d-flex">
@@ -302,6 +339,13 @@
         <!-- Leaflet.GeometryUtil para calcular áreas -->
         <script src="https://unpkg.com/leaflet-geometryutil@0.10.1/src/leaflet.geometryutil.js" crossorigin=""></script>
         
+        <!-- Leaflet.fullscreen plugin -->
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.fullscreen@2.4.0/Control.FullScreen.css" />
+        <script src="https://cdn.jsdelivr.net/npm/leaflet.fullscreen@2.4.0/Control.FullScreen.js"></script>
+        
+        <!-- Turf.js para operaciones geométricas -->
+        <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+        
         <style>
             .edit-control-container {
                 margin-bottom: 5px;
@@ -319,6 +363,21 @@
                 font-weight: bold;
                 color: #ff4500;
             }
+            /* Estilos para el botón de pantalla completa */
+            .leaflet-control-fullscreen a {
+                background-color: #fff;
+                border-radius: 4px;
+                box-shadow: 0 1px 5px rgba(0,0,0,0.4);
+                transition: all 0.3s ease;
+            }
+            .leaflet-control-fullscreen a:hover {
+                background-color: #f4f4f4;
+                transform: scale(1.05);
+            }
+            .fullscreen-icon {
+                background-image: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9ImN1cnJlbnRDb2xvciIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIGNsYXNzPSJmZWF0aGVyIGZlYXRoZXItbWF4aW1pemUiPjxwYXRoIGQ9Ik04IDN2M2EyIDIgMCAwIDEtMiAySDNtMTggMGgtM2EyIDIgMCAwIDEtMi0yVjNtMCAxOHYtM2EyIDIgMCAwIDEgMi0yaDNNMyAxNmgzYTIgMiAwIDAgMSAyIDJ2MyI+PC9wYXRoPjwvc3ZnPg==);
+            }
+            /* Fin estilos pantalla completa */
             .custom-leaflet-btn {
                 margin-bottom: 5px;
                 display: block;
@@ -382,6 +441,44 @@
         
         <script>
         document.addEventListener('DOMContentLoaded', function() {
+            // Código para el dropdown de comentarios predefinidos
+            const comentariosSelect = document.getElementById('ComentariosSelect');
+            const comentariosTextarea = document.getElementById('Comentarios');
+            
+            if (comentariosSelect && comentariosTextarea) {
+                comentariosSelect.addEventListener('change', function() {
+                    if (this.value) {
+                        // Si el textarea ya tiene contenido, añadir una nueva línea
+                        if (comentariosTextarea.value && comentariosTextarea.value.trim() !== '') {
+                            comentariosTextarea.value += '\n' + this.value;
+                        } else {
+                            comentariosTextarea.value = this.value;
+                        }
+                    }
+                    // Resetear el select
+                    this.selectedIndex = 0;
+                });
+            }
+            
+            // Código para el dropdown de IDs de polígonos históricos
+            const descripcionSelect = document.getElementById('DescripcionSelect');
+            const descripcionTextarea = document.getElementById('Descripcion');
+            
+            if (descripcionSelect && descripcionTextarea) {
+                descripcionSelect.addEventListener('change', function() {
+                    if (this.value) {
+                        // Si el textarea ya tiene contenido, añadir una nueva línea
+                        if (descripcionTextarea.value && descripcionTextarea.value.trim() !== '') {
+                            descripcionTextarea.value += '\n' + this.value;
+                        } else {
+                            descripcionTextarea.value = this.value;
+                        }
+                    }
+                    // Resetear el select
+                    this.selectedIndex = 0;
+                });
+            }
+            
             // Verificar que Leaflet está disponible
             if (typeof L === 'undefined') {
                 console.error("Leaflet no está disponible. Intentando cargar nuevamente...");
@@ -441,7 +538,13 @@
                 var map = L.map('map', {
                     center: [25.6866, -100.3161], // Centro en Monterrey por defecto
                     zoom: 5,
-                    maxZoom: 18
+                    maxZoom: 18,
+                    fullscreenControl: true,
+                    fullscreenControlOptions: {
+                        position: 'topleft',
+                        title: 'Pantalla Completa',
+                        titleCancel: 'Salir de Pantalla Completa'
+                    }
                 });
                 
                 // Añadir diferentes capas base como opciones
@@ -488,7 +591,27 @@
                     }
                     
                     // Crear iframe con Google Maps
-                    mapElement.innerHTML = '<iframe width="100%" height="550" frameborder="0" style="border:0" src="https://www.google.com/maps/embed/v1/view?key=YOUR_API_KEY&center=' + center + '&zoom=10" allowfullscreen></iframe>';
+                    mapElement.innerHTML = '<div style="position: relative; width: 100%; height: 550px;">' +
+                        '<iframe width="100%" height="550" frameborder="0" style="border:0" src="https://www.google.com/maps/embed/v1/view?key=YOUR_API_KEY&center=' + center + '&zoom=10" allowfullscreen></iframe>' +
+                        '<button id="googleMapsFullscreen" style="position: absolute; top: 10px; left: 10px; z-index: 1000; background-color: white; border: 2px solid rgba(0,0,0,0.2); border-radius: 4px; padding: 5px 10px; cursor: pointer;"><i class="bi bi-arrows-fullscreen"></i> Pantalla Completa</button>' +
+                        '</div>';
+                    
+                    // Añadir evento al botón de pantalla completa para Google Maps
+                    setTimeout(function() {
+                        var fullscreenButton = document.getElementById('googleMapsFullscreen');
+                        if (fullscreenButton) {
+                            fullscreenButton.addEventListener('click', function() {
+                                var iframeContainer = fullscreenButton.parentElement;
+                                if (iframeContainer) {
+                                    if (document.fullscreenElement) {
+                                        document.exitFullscreen();
+                                    } else {
+                                        iframeContainer.requestFullscreen();
+                                    }
+                                }
+                            });
+                        }
+                    }, 100);
                     
                     // Mensaje al usuario
                     mapElement.innerHTML += "<div class='alert alert-warning mt-2'>Se está mostrando un mapa alternativo. La edición no está disponible.</div>";
@@ -539,12 +662,13 @@
             var coordenadas = [];
             
             // Cargar coordenadas desde el backend (if present)
-{% if coords_para_mapa %}
-            coordenadas = {{ coords_para_mapa|tojson }};
+            {% if coords_para_mapa %}
+            var coordenadas = {{ coords_para_mapa|tojson }};
             console.log("Coordenadas cargadas desde el backend:", coordenadas);
-{% else %}
+            {% else %}
+            var coordenadas = [];
             console.log("No hay coordenadas disponibles desde el backend");
-{% endif %}
+            {% endif %}
             
             // Crear polígono si hay suficientes coordenadas
             if (coordenadas && coordenadas.length >= 3) {
@@ -579,6 +703,15 @@
                     } catch (e) {
                         console.error("Error al calcular área:", e);
                     }
+                    
+                    // Cargar polígonos históricos para verificar traslapes
+                    {% if db_id %}
+                    // Si hay un ID de base de datos, cargar solo polígonos en un radio de 10km
+                    cargarPoligonosHistoricos(map, {{ db_id }});
+                    {% else %}
+                    // Sin ID de base de datos, cargar todos (por compatibilidad con dibujo de polígono nuevo)
+                    cargarPoligonosHistoricos(map);
+                    {% endif %}
                 } catch (error) {
                     console.error("Error al crear polígono:", error);
                 }
@@ -704,29 +837,39 @@
             
             // NUEVO: Función para detectar ubicación del polígono
             function detectarUbicacionPoligono() {
-                if (!coordenadas || coordenadas.length === 0) {
-                    document.getElementById('infoUbicacion').textContent = 'No hay coordenadas para detectar ubicación';
-                    document.getElementById('infoUbicacion').style.color = 'red';
+                console.log("Detectando ubicación del polígono");
+                var btnDetectar = document.getElementById('btnDetectarUbicacion');
+                var infoUbicacion = document.getElementById('infoUbicacion');
+                
+                if (!polygon || polygon.getLatLngs().length === 0) {
+                    infoUbicacion.textContent = 'No hay polígono definido';
+                    infoUbicacion.style.color = 'red';
                     return;
                 }
                 
-                document.getElementById('infoUbicacion').textContent = 'Consultando ubicación...';
-                document.getElementById('infoUbicacion').style.color = '';
+                // Obtener el centroide del polígono
+                var centroid = turf.centroid(
+                    turf.polygon([
+                        polygon.getLatLngs()[0].map(p => [p.lng, p.lat])
+                    ])
+                );
                 
-                // Usar la primera coordenada del polígono para determinar la ubicación
-                var firstCoord = coordenadas[0];
+                var lat = centroid.geometry.coordinates[1];
+                var lon = centroid.geometry.coordinates[0];
                 
+                console.log("Centroide detectado:", lat, lon);
+                infoUbicacion.textContent = 'Consultando ubicación...';
+                infoUbicacion.style.color = 'blue';
+                
+                // Consultar ubicación via API
                 fetch('/obtener_ubicacion', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ lat: firstCoord[0], lon: firstCoord[1] })
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({lat: lat, lon: lon})
                 })
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error('Error en la respuesta del servidor');
-                    }
-                    return response.json();
-                })
+                .then(response => response.json())
                 .then(data => {
                     if (data.error) {
                         document.getElementById('infoUbicacion').textContent = 'No se pudo determinar la ubicación';
@@ -746,6 +889,119 @@
                         'Error al consultar ubicación: ' + error.message;
                     document.getElementById('infoUbicacion').style.color = 'red';
                 });
+            }
+            
+            // Función para cargar polígonos históricos
+            function cargarPoligonosHistoricos(map, polygon_id) {
+                console.log("Cargando polígonos históricos...");
+                
+                // URL para la carga de polígonos históricos
+                var url = '/get-historico-poligonos';
+                
+                // Si se proporciona un ID de polígono, usar la API de radio
+                if (polygon_id) {
+                    url = `/get-historico-poligonos-radio/${polygon_id}`;
+                    console.log(`Cargando polígonos históricos en un radio de 10km alrededor del polígono ${polygon_id}...`);
+                }
+                
+                fetch(url)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.error) {
+                            console.error("Error al cargar polígonos históricos:", data.error);
+                            return;
+                        }
+                        
+                        var idField = data.id_field;
+                        
+                        // Eliminar capas históricas anteriores si existieran
+                        if (window.historicoLayer) {
+                            map.removeLayer(window.historicoLayer);
+                        }
+                        
+                        // Para almacenar los IDs de los polígonos históricos
+                        var historicalPolygonIds = [];
+                        
+                        // Crear nueva capa con los polígonos históricos
+                        window.historicoLayer = L.geoJSON(data.geojson, {
+                            style: function (feature) {
+                                return {
+                                    color: "#007bff",
+                                    weight: 2,
+                                    opacity: 0.7,
+                                    fillOpacity: 0.1
+                                };
+                            },
+                            onEachFeature: function (feature, layer) {
+                                // Determinar el ID del polígono si está disponible
+                                var id = "Sin ID";
+                                if (idField && feature.properties && feature.properties[idField]) {
+                                    id = feature.properties[idField];
+                                    // Guardar el ID para el dropdown
+                                    historicalPolygonIds.push(id);
+                                }
+                                
+                                // Añadir tooltip con información del polígono
+                                var tooltipContent = `<b>ID: ${id}</b><br>`;
+                                if (feature.properties) {
+                                    for (var prop in feature.properties) {
+                                        if (prop !== idField) {
+                                            tooltipContent += `${prop}: ${feature.properties[prop]}<br>`;
+                                        }
+                                    }
+                                }
+                                layer.bindTooltip(tooltipContent);
+                            }
+                        }).addTo(map);
+                        
+                        // Actualizar el dropdown de IDs históricos
+                        var descripcionSelect = document.getElementById('DescripcionSelect');
+                        if (descripcionSelect) {
+                            // Limpiar opciones existentes excepto la primera (default)
+                            while (descripcionSelect.options.length > 1) {
+                                descripcionSelect.remove(1);
+                            }
+                            
+                            // Añadir nuevas opciones con los IDs históricos
+                            historicalPolygonIds.forEach(function(id) {
+                                var option = document.createElement('option');
+                                option.value = "ID Polígono Histórico: " + id;
+                                option.textContent = "ID Polígono Histórico: " + id;
+                                descripcionSelect.appendChild(option);
+                            });
+                        }
+                        
+                        // Si se cargaron polígonos por radio, mostrar notificación
+                        if (data.total !== undefined && polygon_id) {
+                            // Crear un toast para informar cuántos polígonos se cargaron
+                            var toastHTML = `
+                            <div class="toast-container position-fixed bottom-0 end-0 p-3">
+                              <div class="toast show" role="alert" aria-live="assertive" aria-atomic="true">
+                                <div class="toast-header">
+                                  <strong class="me-auto">Polígonos Históricos</strong>
+                                  <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+                                </div>
+                                <div class="toast-body">
+                                  Se cargaron ${data.total} polígonos históricos en un radio de ${data.radio_km}km.
+                                </div>
+                              </div>
+                            </div>`;
+                            
+                            var toastDiv = document.createElement('div');
+                            toastDiv.innerHTML = toastHTML;
+                            document.body.appendChild(toastDiv);
+                            
+                            // Eliminar el toast después de 5 segundos
+                            setTimeout(function() {
+                                toastDiv.remove();
+                            }, 5000);
+                        }
+                        
+                        console.log("Polígonos históricos cargados correctamente");
+                    })
+                    .catch(error => {
+                        console.error("Error al cargar polígonos históricos:", error);
+                    });
             }
             
             // Añadir evento al botón de detectar ubicación
@@ -1549,6 +1805,29 @@
                 map.invalidateSize();
             });
             
+            // Eventos para el modo de pantalla completa
+            map.on('fullscreenchange', function () {
+                if (map.isFullscreen()) {
+                    console.log('Entrando en modo pantalla completa');
+                    // Ajustar el mapa cuando está en pantalla completa
+                    setTimeout(function() {
+                        map.invalidateSize();
+                        if (polygon) {
+                            map.fitBounds(polygon.getBounds());
+                        }
+                    }, 200);
+                } else {
+                    console.log('Saliendo del modo pantalla completa');
+                    // Ajustar el mapa cuando sale de pantalla completa
+                    setTimeout(function() {
+                        map.invalidateSize();
+                        if (polygon) {
+                            map.fitBounds(polygon.getBounds());
+                        }
+                    }, 200);
+                }
+            });
+            
             // Inicializar el botón de edición al cargar la página
             setTimeout(reiniciarBotonEdicion, 300);
         }
@@ -1731,13 +2010,24 @@
                             
                             <div class="row mb-4">
                                 <div class="col-md-4">
+                                    <label for="fecha_referencia" class="form-label">Fecha de Referencia</label>
+                                    <input type="date" class="form-control" id="fecha_referencia" name="fecha_referencia">
+                                </div>
+                                <div class="col-md-4">
+                                    <label for="fecha_final" class="form-label">Fecha Final</label>
+                                    <input type="date" class="form-control" id="fecha_final" name="fecha_final">
+                                </div>
+                            </div>
+                            <div class="row mb-4">
+                                <div class="col-md-4">
                                     <label for="formato" class="form-label">Formato de salida</label>
-                                    <select class="form-select" id="formato" name="formato">
-                                        <option value="pdf">PDF</option>
-                                        <option value="excel">Excel</option>
+                                    <select id="formato" class="form-select">
+                                        <option value="pdf">PDF (Ficha técnica)</option>
+                                        <option value="pdf_template">PDF con Plantilla (Nuevo formato)</option>
+                                        <option value="excel">Excel (.xlsx)</option>
                                         <option value="csv">CSV</option>
-                                        <option value="shp">Shapefile (SHP)</option>
-                                        <option value="shp_with_map">Shapefile con Mapas PNG</option>
+                                        <option value="shp">Shapefile (.shp)</option>
+                                        <option value="shp_with_map">Shapefile + Mapas PNG</option>
                                     </select>
                                 </div>
                             </div>
@@ -1758,91 +2048,120 @@
                     </div>
                     
                     <div class="tab-pane fade" id="vista-lote">
-                        <div class="row">
+                        <div class="row mb-4">
                             <div class="col-md-4">
-                                <div class="card mb-3">
-                                    <div class="card-header">
-                                        <h5 class="mb-0">Seleccionar Polígonos</h5>
-                                        <button type="button" class="btn btn-sm btn-outline-primary mt-2" id="seleccionar-todos-lote">Seleccionar Todos</button>
-                                    </div>
-                                    <div class="card-body polygon-selector" style="max-height: 400px; overflow-y: auto;">
-                                        {% for row in data %}
-                                        <div class="form-check mb-2">
-                                            <input class="form-check-input lote-checkbox" type="checkbox" value="{{ row.db_id }}" id="polygon-{{ row.db_id }}">
-                                            <label class="form-check-label" for="polygon-{{ row.db_id }}">
-                                                polygon-{{ row.db_id }}
-                                                {% if row.get('MUNICIPIO') and row.get('ESTADO') %}
-                                                <small class="text-muted d-block">{{ row.get('MUNICIPIO') }}, {{ row.get('ESTADO') }}</small>
-                                                {% endif %}
-                                            </label>
-                                        </div>
-                                        {% endfor %}
-                                    </div>
-                                    <div class="card-footer">
-                                        <div id="lote-seleccion-contador">1 polígonos seleccionados</div>
+                                <label for="lote_fecha_referencia" class="form-label">Fecha de Referencia</label>
+                                <input type="date" class="form-control" id="lote_fecha_referencia" name="fecha_referencia">
+                            </div>
+                            <div class="col-md-4">
+                                <label for="lote_fecha_final" class="form-label">Fecha Final</label>
+                                <input type="date" class="form-control" id="lote_fecha_final" name="fecha_final">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card mb-3">
+                                <div class="card-header">
+                                    <h5 class="mb-0">Seleccionar Polígonos</h5>
+                                    <div class="btn-group mt-2">
+                                        <button type="button" class="btn btn-sm btn-outline-primary" id="seleccionar-todos-lote">Seleccionar Todos</button>
+                                        <button type="button" class="btn btn-sm btn-outline-success" id="seleccionar-estatus-7">Seleccionar Estatus 7</button>
                                     </div>
                                 </div>
+                                <div class="card-body polygon-selector" style="max-height: 400px; overflow-y: auto;">
+                                    {% for row in data %}
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input lote-checkbox" type="checkbox" value="{{ row.db_id }}" id="polygon-{{ row.db_id }}">
+                                        <label class="form-check-label" for="polygon-{{ row.db_id }}">
+                                            {% if row.get('ID_POLIGONO') %}
+                                                {{ row.get('ID_POLIGONO') }}
+                                            {% else %}
+                                                polygon-{{ row.db_id }}
+                                            {% endif %}
+                                            {% if row.get('ESTATUS') %}
+                                                <small class="d-block mt-1">
+                                                    <span class="badge 
+                                                    {% if row.get('ESTATUS') == 'Válido' %}bg-success
+                                                    {% elif row.get('ESTATUS') == 'Inválido' %}bg-danger
+                                                    {% elif row.get('ESTATUS') == 'Revisar' %}bg-warning
+                                                    {% else %}bg-secondary{% endif %}">
+                                                        {{ row.get('ESTATUS') }}
+                                                    </span>
+                                                </small>
+                                            {% endif %}
+                                            {% if row.get('MUNICIPIO') and row.get('ESTADO') %}
+                                            <small class="text-muted d-block">{{ row.get('MUNICIPIO') }}, {{ row.get('ESTADO') }}</small>
+                                            {% endif %}
+                                        </label>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                                <div class="card-footer">
+                                    <div id="lote-seleccion-contador">1 polígonos seleccionados</div>
+                                </div>
                             </div>
-                            
-                            <div class="col-md-8">
-                                <div class="card">
-                                    <div class="card-body">
-                                        <div class="d-flex align-items-center mb-3">
-                                            <div class="check-circle bg-primary text-white">
-                                                <i class="bi bi-check"></i>
-                                            </div>
-                                            <h5 class="ms-2 mb-0">Previsualización de Lote</h5>
+                        </div>
+                        
+                        <div class="col-md-8">
+                            <div class="card">
+                                <div class="card-body">
+                                    <div class="d-flex align-items-center mb-3">
+                                        <div class="check-circle bg-primary text-white">
+                                            <i class="bi bi-check"></i>
                                         </div>
-                                        
-                                        <p>Se generarán <span id="count-fichas">1</span> fichas técnicas y archivos SHP. El resultado se organizará en:</p>
-                                        
-                                        <div class="row mb-4">
-                                            <div class="col-md-6">
-                                                <div class="export-preview p-3 border rounded">
-                                                    <div class="d-flex align-items-center mb-2">
-                                                        <i class="bi bi-folder text-primary me-2" style="font-size: 1.2rem;"></i>
-                                                        <h6 class="mb-0">Carpeta de Fichas Técnicas</h6>
-                                                    </div>
-                                                    <p class="small text-muted mb-2">Contiene todas las fichas técnicas en formato PDF para cada polígono seleccionado.</p>
-                                                    <ul class="list-unstyled small ms-4 mb-0">
-                                                        <li class="mb-1"><i class="bi bi-file-pdf text-danger me-1"></i> ficha_polygon-0.pdf</li>
-                                                        <li class="mb-1"><i class="bi bi-file-pdf text-danger me-1"></i> ficha_polygon-2.pdf</li>
-                                                        <li class="mb-1"><i class="bi bi-three-dots me-1"></i> ...</li>
-                                                    </ul>
+                                        <h5 class="ms-2 mb-0">Previsualización de Lote</h5>
+                                    </div>
+                                    
+                                    <p>Se generarán <span id="count-fichas">1</span> fichas técnicas y archivos SHP. El resultado se organizará en:</p>
+                                    
+                                    <div class="row mb-4">
+                                        <div class="col-md-6">
+                                            <div class="export-preview p-3 border rounded">
+                                                <div class="d-flex align-items-center mb-2">
+                                                    <i class="bi bi-folder text-primary me-2" style="font-size: 1.2rem;"></i>
+                                                    <h6 class="mb-0">Carpeta de Fichas Técnicas</h6>
                                                 </div>
-                                            </div>
-                                            
-                                            <div class="col-md-6">
-                                                <div class="export-preview p-3 border rounded">
-                                                    <div class="d-flex align-items-center mb-2">
-                                                        <i class="bi bi-folder text-success me-2" style="font-size: 1.2rem;"></i>
-                                                        <h6 class="mb-0">Carpeta de Archivos SHP</h6>
-                                                    </div>
-                                                    <p class="small text-muted mb-2">Contiene los archivos SHP y sus correspondientes archivos comprimidos en ZIP para cada polígono.</p>
-                                                    <ul class="list-unstyled small ms-4 mb-0">
-                                                        <li class="mb-1"><i class="bi bi-file-earmark me-1 text-success"></i> polygon-0.shp</li>
-                                                        <li class="mb-1"><i class="bi bi-file-earmark-zip me-1 text-primary"></i> polygon-0.zip</li>
-                                                        <li class="mb-1"><i class="bi bi-three-dots me-1"></i> ...</li>
-                                                    </ul>
-                                                </div>
+                                                <p class="small text-muted mb-2">Contiene todas las fichas técnicas en formato PDF para cada polígono seleccionado.</p>
+                                                <ul class="list-unstyled small ms-4 mb-0">
+                                                    <li class="mb-1"><i class="bi bi-file-pdf text-danger me-1"></i> ficha_ID_POLIGONO.pdf</li>
+                                                    <li class="mb-1"><i class="bi bi-file-pdf text-danger me-1"></i> ficha_ID_POLIGONO.pdf</li>
+                                                    <li class="mb-1"><i class="bi bi-three-dots me-1"></i> ...</li>
+                                                </ul>
                                             </div>
                                         </div>
                                         
-                                        <div class="alert alert-info">
-                                            <div class="d-flex">
-                                                <i class="bi bi-info-circle me-2" style="font-size: 1.2rem;"></i>
-                                                <div>
-                                                    <h6 class="mb-1">Información sobre archivos SHP</h6>
-                                                    <p class="small mb-0">Los archivos SHP (Shapefile) son un formato estándar para datos geoespaciales. Cada polígono se exportará como un archivo SHP con sus correspondientes archivos auxiliares (.shx, .dbf, .prj) comprimidos en un ZIP para facilitar su distribución.</p>
+                                        <div class="col-md-6">
+                                            <div class="export-preview p-3 border rounded">
+                                                <div class="d-flex align-items-center mb-2">
+                                                    <i class="bi bi-folder text-success me-2" style="font-size: 1.2rem;"></i>
+                                                    <h6 class="mb-0">Carpeta de Archivos SHP</h6>
                                                 </div>
+                                                <p class="small text-muted mb-2">Contiene los archivos SHP y sus correspondientes archivos comprimidos en ZIP para cada polígono.</p>
+                                                <ul class="list-unstyled small ms-4 mb-0">
+                                                    <li class="mb-1"><i class="bi bi-file-earmark me-1 text-success"></i> ID_POLIGONO.shp</li>
+                                                    <li class="mb-1"><i class="bi bi-file-earmark-zip me-1 text-primary"></i> ID_POLIGONO.zip</li>
+                                                    <li class="mb-1"><i class="bi bi-three-dots me-1"></i> ...</li>
+                                                </ul>
                                             </div>
                                         </div>
-                                        
-                                        <div class="d-flex justify-content-end mt-3">
-                                            <button type="button" id="btn-generar-lote" class="btn btn-primary">
-                                                <i class="bi bi-file-earmark-zip me-1"></i> Generar Fichas en Lote
-                                            </button>
+                                    </div>
+                                    
+                                    <div class="alert alert-info">
+                                        <div class="d-flex">
+                                            <i class="bi bi-info-circle me-2" style="font-size: 1.2rem;"></i>
+                                            <div>
+                                                <h6 class="mb-1">Información sobre archivos SHP</h6>
+                                                <p class="small mb-0">Los archivos SHP (Shapefile) son un formato estándar para datos geoespaciales. Cada polígono se exportará como un archivo SHP con sus correspondientes archivos auxiliares (.shx, .dbf, .prj) comprimidos en un ZIP para facilitar su distribución.</p>
+                                            </div>
                                         </div>
+                                    </div>
+                                    
+                                    <div class="d-flex justify-content-end mt-3">
+                                        <a href="{{ url_for('generar_excel') }}" class="btn btn-success me-2">
+                                            <i class="bi bi-file-earmark-excel me-1"></i> Generar Excel
+                                        </a>
+                                        <button type="button" id="btn-generar-lote" class="btn btn-primary">
+                                            <i class="bi bi-file-earmark-zip me-1"></i> Generar Fichas en Lote
+                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -1917,6 +2236,36 @@
                     });
                 }
                 
+                // Seleccionar solo estatus 7 con botón
+                const btnSeleccionarEstatus7 = document.getElementById('seleccionar-estatus-7');
+                if (btnSeleccionarEstatus7) {
+                    btnSeleccionarEstatus7.addEventListener('click', function() {
+                        // Primero deseleccionar todos
+                        const allCheckboxes = document.querySelectorAll('.lote-checkbox');
+                        allCheckboxes.forEach(checkbox => {
+                            checkbox.checked = false;
+                        });
+                        
+                        // Luego seleccionar solo los que tienen estatus 7
+                        const checkboxLabels = document.querySelectorAll('.form-check-label');
+                        checkboxLabels.forEach(label => {
+                            const badgeElement = label.querySelector('.badge');
+                            if (badgeElement && badgeElement.textContent.trim() === '7') {
+                                // Obtener el id del polígono desde el atributo "for" del label
+                                const polygonId = label.getAttribute('for');
+                                // Encontrar y marcar el checkbox correspondiente
+                                const checkbox = document.getElementById(polygonId);
+                                if (checkbox) {
+                                    checkbox.checked = true;
+                                }
+                            }
+                        });
+                        
+                        // Actualizar contador
+                        updateLoteSelectionCounter();
+                    });
+                }
+                
                 // Actualizar contador de selección individual
                 function updateSelectionCounter() {
                     const checkboxes = document.querySelectorAll('.row-checkbox:checked');
@@ -1971,6 +2320,17 @@
                             generarShapefiles(selectedRows);
                         } else if (formato === 'shp_with_map') {
                             generarShapefilesConMapas(selectedRows);
+                        } else if (formato === 'pdf_template') {
+                            // Si es solo un polígono, generar ficha individual con plantilla
+                            if (selectedRows.length === 1) {
+                                const rowId = selectedRows[0];
+                                const fechaReferencia = document.getElementById('fecha_referencia').value;
+                                const fechaFinal = document.getElementById('fecha_final').value;
+                                window.open(`/generar_ficha_tecnica_template/${rowId}?fecha_referencia=${fechaReferencia}&fecha_final=${fechaFinal}`, '_blank');
+                            } else {
+                                // Si son múltiples, usar el método de lote para generar el paquete completo
+                                generarPaqueteCompleto(selectedRows);
+                            }
                         } else {
                             // Enviar formato original (pdf, excel, csv)
                             const form = document.createElement('form');
@@ -1993,6 +2353,22 @@
                             formatoInput.value = formato;
                             form.appendChild(formatoInput);
                             
+                            // Añadir las fechas seleccionadas
+                            const fechaReferencia = document.getElementById('fecha_referencia').value;
+                            const fechaFinal = document.getElementById('fecha_final').value;
+                            
+                            const fechaReferenciaInput = document.createElement('input');
+                            fechaReferenciaInput.type = 'hidden';
+                            fechaReferenciaInput.name = 'fecha_referencia';
+                            fechaReferenciaInput.value = fechaReferencia;
+                            form.appendChild(fechaReferenciaInput);
+                            
+                            const fechaFinalInput = document.createElement('input');
+                            fechaFinalInput.type = 'hidden';
+                            fechaFinalInput.name = 'fecha_final';
+                            fechaFinalInput.value = fechaFinal;
+                            form.appendChild(fechaFinalInput);
+                            
                             document.body.appendChild(form);
                             form.submit();
                         }
@@ -2010,8 +2386,96 @@
                             return;
                         }
                         
-                        // Generar paquete completo (PDF + SHP)
-                        generarPaqueteCompleto(selectedRows);
+                        // Preguntar al usuario qué tipo de ficha técnica quiere generar
+                        const usarPlantilla = confirm("¿Desea generar las fichas técnicas con la nueva plantilla? \n\nSi selecciona 'Cancelar' se usará el formato tradicional.");
+                        
+                        if (usarPlantilla) {
+                            // Generar paquete completo con la nueva plantilla
+                            generarPaqueteCompletoConPlantilla(selectedRows);
+                        } else {
+                            // Generar paquete completo con el formato tradicional
+                            generarPaqueteCompleto(selectedRows);
+                        }
+                    });
+                }
+
+                // Función para generar paquete completo con la nueva plantilla
+                function generarPaqueteCompletoConPlantilla(selectedRows) {
+                    // Mostrar cargando
+                    const loadingToast = mostrarCargando('Generando paquete completo con plantilla...');
+                    
+                    // Determinar qué tab está activo - comprobando tanto contenido de tab como enlace de navegación
+                    const vistaLoteTabContent = document.getElementById('vista-lote');
+                    const vistaLoteNavLink = document.querySelector('a[href="#vista-lote"]');
+                    
+                    const vistaLoteActiva = (vistaLoteTabContent && (vistaLoteTabContent.classList.contains('active') || vistaLoteTabContent.classList.contains('show'))) || 
+                                           (vistaLoteNavLink && vistaLoteNavLink.classList.contains('active'));
+                    
+                    console.log('Vista lote activa:', vistaLoteActiva);
+                    
+                    // Obtener las fechas seleccionadas dependiendo del tab activo
+                    let fechaReferencia = '';
+                    let fechaFinal = '';
+                    
+                    try {
+                        if (vistaLoteActiva) {
+                            // Si estamos en la vista de lote, tomar los valores de esos campos
+                            const fechaRefElement = document.getElementById('lote_fecha_referencia');
+                            const fechaFinElement = document.getElementById('lote_fecha_final');
+                            
+                            fechaReferencia = fechaRefElement ? fechaRefElement.value : '';
+                            fechaFinal = fechaFinElement ? fechaFinElement.value : '';
+                            console.log('Tomando fechas de vista lote:', fechaReferencia, fechaFinal);
+                        } else {
+                            // Si estamos en la vista individual, tomar los valores de esos campos
+                            const fechaRefElement = document.getElementById('fecha_referencia');
+                            const fechaFinElement = document.getElementById('fecha_final');
+                            
+                            fechaReferencia = fechaRefElement ? fechaRefElement.value : '';
+                            fechaFinal = fechaFinElement ? fechaFinElement.value : '';
+                            console.log('Tomando fechas de vista individual:', fechaReferencia, fechaFinal);
+                        }
+                    } catch (error) {
+                        console.error('Error al obtener fechas:', error);
+                    }
+                    
+                    fetch('/generar_paquete_completo_con_plantilla', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ 
+                            selected_rows: selectedRows,
+                            fecha_referencia: fechaReferencia,
+                            fecha_final: fechaFinal
+                        })
+                    })
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('Error al generar paquete completo');
+                        }
+                        return response.blob();
+                    })
+                    .then(blob => {
+                        // Ocultar cargando
+                        ocultarCargando(loadingToast);
+                        
+                        // Descargar el archivo ZIP
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = 'paquete_completo_con_plantilla.zip';
+                        document.body.appendChild(a);
+                        a.click();
+                        window.URL.revokeObjectURL(url);
+                        document.body.removeChild(a);
+                        
+                        mostrarMensajeExito('Paquete completo con plantilla generado correctamente');
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        ocultarCargando(loadingToast);
+                        mostrarError('Error al generar paquete: ' + error.message);
                     });
                 }
                 

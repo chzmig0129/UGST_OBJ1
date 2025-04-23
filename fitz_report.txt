@@ -1,0 +1,17 @@
+Python: C:\Users\migue\Documents\VALGEOUGST\venv_new\Scripts\python.exe
+fitz importado: <module 'fitz' from 'C:\\Users\\migue\\Documents\\VALGEOUGST\\venv_new\\lib\\site-packages\\fitz\\__init__.py'>
+Tipo de fitz: <class 'module'>
+Versión: ('1.22.5', '1.22.2', '20230621000001')
+Archivo: C:\Users\migue\Documents\VALGEOUGST\venv_new\lib\site-packages\fitz\__init__.py
+¿fitz tiene el método open?: True
+
+Rutas de búsqueda:
+  C:\Users\migue\Documents\VALGEOUGST
+  C:\Users\migue\AppData\Local\Programs\Python\Python310\python310.zip
+  C:\Users\migue\AppData\Local\Programs\Python\Python310\DLLs
+  C:\Users\migue\AppData\Local\Programs\Python\Python310\lib
+  C:\Users\migue\AppData\Local\Programs\Python\Python310
+  C:\Users\migue\Documents\VALGEOUGST\venv_new
+  C:\Users\migue\Documents\VALGEOUGST\venv_new\lib\site-packages
+
+No se pudo importar PyMuPDF

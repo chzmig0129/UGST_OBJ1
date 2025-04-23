@@ -1,0 +1,19 @@
+
+=== DIAGNÓSTICO DE PYMUPDF ===
+Python ejecutable: C:\Users\migue\Documents\VALGEOUGST\venv_new\Scripts\python.exe
+Python versión: 3.10.4 (tags/v3.10.4:9d38120, Mar 23 2022, 23:13:41) [MSC v.1929 64 bit (AMD64)]
+
+Rutas de búsqueda:
+  0: C:\Users\migue\Documents\VALGEOUGST
+  1: C:\Users\migue\AppData\Local\Programs\Python\Python310\python310.zip
+  2: C:\Users\migue\AppData\Local\Programs\Python\Python310\DLLs
+  3: C:\Users\migue\AppData\Local\Programs\Python\Python310\lib
+  4: C:\Users\migue\AppData\Local\Programs\Python\Python310
+  5: C:\Users\migue\Documents\VALGEOUGST\venv_new
+  6: C:\Users\migue\Documents\VALGEOUGST\venv_new\lib\site-packages
+
+=== DETALLES DEL MÓDULO FITZ ===
+Tipo de fitz: <class 'module'>
+Archivo del módulo: C:\Users\migue\Documents\VALGEOUGST\venv_new\lib\site-packages\fitz\__init__.py
+Directorio del módulo: ['C:\\Users\\migue\\Documents\\VALGEOUGST\\venv_new\\lib\\site-packages\\fitz']
+Versión: ('1.22.5', '1.22.2', '20230621000001')
