@@ -706,7 +706,7 @@
                     
                     // Cargar polígonos históricos para verificar traslapes
                     {% if db_id %}
-                    // Si hay un ID de base de datos, cargar solo polígonos en un radio de 10km
+                    // Si hay un ID de base de datos, cargar solo polígonos en un radio de 5km
                     cargarPoligonosHistoricos(map, {{ db_id }});
                     {% else %}
                     // Sin ID de base de datos, cargar todos (por compatibilidad con dibujo de polígono nuevo)
@@ -901,7 +901,7 @@
                 // Si se proporciona un ID de polígono, usar la API de radio
                 if (polygon_id) {
                     url = `/get-historico-poligonos-radio/${polygon_id}`;
-                    console.log(`Cargando polígonos históricos en un radio de 10km alrededor del polígono ${polygon_id}...`);
+                    console.log(`Cargando polígonos históricos en un radio de 5km alrededor del polígono ${polygon_id}...`);
                 }
                 
                 fetch(url)
