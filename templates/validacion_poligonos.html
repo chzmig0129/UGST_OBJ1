@@ -1202,6 +1202,12 @@
                         // Iniciar dibujo
                         drawControl.enable();
                         
+                        // Habilitar navegación durante el dibujo
+                        map.dragging.enable();
+                        map.scrollWheelZoom.enable();
+                        map.doubleClickZoom.enable();
+                        map.touchZoom.enable();
+                        
                         // Mostrar mensaje al usuario
                         var instructionToast = `
                         <div class="toast-container position-fixed bottom-0 end-0 p-3">
@@ -1496,6 +1502,12 @@
                 
                 // Iniciar dibujo
                 drawControl.enable();
+                
+                // Habilitar navegación durante el dibujo
+                map.dragging.enable();
+                map.scrollWheelZoom.enable();
+                map.doubleClickZoom.enable();
+                map.touchZoom.enable();
                 
                 // Mostrar mensaje al usuario
                 var instructionToast = `
