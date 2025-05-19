@@ -1,0 +1,11 @@
+[33maba0765[m[33m ([m[1;36mHEAD -> [m[1;32mmain[m[33m, [m[1;31mUGST/main[m[33m)[m HEAD@{0}: pull --tags UGST main: Fast-forward
+[33m06bdd99[m HEAD@{1}: pull --tags UGST main: Fast-forward
+[33m2d5af1a[m HEAD@{2}: commit: App actualizada con historicos
+[33mbf474ff[m HEAD@{3}: commit: Unión de SHPFile implementado
+[33mde57b35[m HEAD@{4}: commit: Generador de fichas
+[33m6638d69[m HEAD@{5}: commit: Actualizacion de shp files
+[33m2cff41d[m HEAD@{6}: commit: Editar Poligonos Hecho
+[33m21b7349[m HEAD@{7}: commit: Estatus 7, 6 Agregado
+[33m687a8b4[m HEAD@{8}: commit: Version Actualizada con Carga de Poligonos en Leaftlet
+[33m270d47f[m HEAD@{9}: commit: "Edicion de Poligono Funciona"
+[33m40de543[m HEAD@{10}: commit (initial): Hola

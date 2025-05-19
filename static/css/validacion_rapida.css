@@ -1,0 +1,148 @@
+/* Estilos para la página de validación rápida SHP */
+
+/* Contenedor principal */
+.validacion-container {
+    padding: 30px;
+    height: 100%;
+}
+
+/* Encabezado de sección */
+.section-header {
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid rgba(0,0,0,0.1);
+}
+
+.app-icon {
+    background-color: #ff9800;
+    color: white;
+    width: 50px;
+    height: 50px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 15px;
+}
+
+/* Contenedor de pestañas */
+.tabs-container {
+    margin-bottom: 20px;
+}
+
+.nav-tabs {
+    display: flex;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.tab-item {
+    padding: 10px 15px;
+    color: #495057;
+    text-decoration: none;
+    border-bottom: 2px solid transparent;
+    margin-right: 10px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.tab-item:hover {
+    color: #ff9800;
+    border-bottom-color: rgba(255, 152, 0, 0.5);
+}
+
+.tab-item.active {
+    color: #ff9800;
+    border-bottom-color: #ff9800;
+}
+
+/* Contenido de pestañas */
+.tab-content {
+    background-color: white;
+    border-radius: 4px;
+}
+
+/* Tarjetas */
+.card {
+    border: none;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    margin-bottom: 20px;
+}
+
+.card-header {
+    border-bottom: 1px solid rgba(0,0,0,0.05);
+    font-weight: 500;
+}
+
+/* Tooltip del mapa */
+.polygon-tooltip {
+    background: rgba(0,0,0,0.7);
+    border: none;
+    color: white;
+    font-weight: bold;
+    padding: 5px 10px;
+    font-size: 14px;
+}
+
+/* Mensajes flash */
+.flash-messages {
+    margin-bottom: 20px;
+}
+
+/* Estilos para tarjetas de estadísticas */
+.card-body.text-center {
+    padding: 20px 10px;
+}
+
+.card-body.text-center h3 {
+    font-size: 2.5rem;
+    margin-bottom: 5px;
+}
+
+/* Formato de información */
+.formato-info {
+    background-color: #f8f9fa;
+    border-radius: 4px;
+    padding: 15px;
+}
+
+.formato-info h4 {
+    font-size: 1.2rem;
+    color: #495057;
+    margin-bottom: 10px;
+}
+
+.formato-info ul {
+    padding-left: 20px;
+}
+
+/* Botones */
+.btn-outline-primary, .btn-outline-success {
+    font-weight: 500;
+    padding: 8px 16px;
+}
+
+.btn-outline-primary:hover {
+    background-color: #ff9800;
+    border-color: #ff9800;
+}
+
+.btn-outline-success:hover {
+    background-color: #28a745;
+    border-color: #28a745;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .validacion-container {
+        padding: 15px;
+    }
+    
+    .nav-tabs {
+        flex-wrap: wrap;
+    }
+    
+    .tab-item {
+        margin-bottom: 5px;
+    }
+} 

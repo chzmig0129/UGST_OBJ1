@@ -1,0 +1,1500 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="validacion-container">
+    <div class="section-header">
+        <div class="d-flex align-items-center">
+            <div class="app-icon">
+                <svg viewBox="0 0 24 24" width="28" height="28" stroke="currentColor" stroke-width="2" fill="none">
+                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                    <circle cx="12" cy="10" r="3"></circle>
+                </svg>
+            </div>
+            <div>
+                <h1 class="mb-0">Validación Rápida SHP</h1>
+                <p class="text-muted mb-0">Cargue, valide y procese archivos shapefile de forma rápida y eficiente</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pestañas de navegación -->
+    <div class="tabs-container">
+        <div class="nav-tabs">
+            <a href="{{ url_for('validacion_rapida_shp', tab='cargar') }}" class="tab-item {% if tab == 'cargar' %}active{% endif %}">
+                Cargar Datos
+            </a>
+            <a href="{{ url_for('validacion_rapida_shp', tab='lista') }}" class="tab-item {% if tab == 'lista' %}active{% endif %}">
+                Lista de Polígonos
+            </a>
+            <a href="{{ url_for('validacion_rapida_shp', tab='editar') }}" class="tab-item {% if tab == 'editar' %}active{% endif %}">
+                Editar Polígono
+            </a>
+            <a href="{{ url_for('validacion_rapida_shp', tab='generar') }}" class="tab-item {% if tab == 'generar' %}active{% endif %}">
+                Generar Archivos
+            </a>
+        </div>
+    </div>
+
+    <!-- Mensajes flash -->
+    {% with messages = get_flashed_messages() %}
+        {% if messages %}
+            <div class="flash-messages">
+                {% for message in messages %}
+                <div class="alert alert-info alert-dismissible fade show">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <!-- Contenido de las pestañas -->
+    <div class="tab-content">
+        {% if tab == 'cargar' %}
+        <!-- Pestaña de Cargar Datos -->
+        <div class="card">
+            <div class="card-body">
+                <h3 class="mb-4">Cargar archivos SHP</h3>
+                
+                {% if filename %}
+                <div class="alert alert-success mb-3">
+                    Archivo actual: <strong>{{ filename }}</strong>
+                    {% if shp_info %}
+                    <br>Archivos SHP detectados: {{ shp_info.count }}
+                    {% endif %}
+                </div>
+                {% endif %}
+                
+                <form action="{{ url_for('cargar_shp_zip') }}" method="post" enctype="multipart/form-data">
+                    <div class="input-group mb-3">
+                        <input type="file" class="form-control" id="archivo" name="archivo" accept=".zip" required>
+                        <button class="btn btn-primary" type="submit">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="7 10 12 15 17 10"></polyline>
+                                <line x1="12" y1="15" x2="12" y2="3"></line>
+                            </svg>
+                            Cargar
+                        </button>
+                    </div>
+                </form>
+                
+                <div class="formato-info mt-4">
+                    <h4>Instrucciones:</h4>
+                    <ul>
+                        <li>Suba un archivo .ZIP que puede contener:</li>
+                        <ul>
+                            <li>Archivos SHP (shapefiles) directamente, o</li>
+                            <li>Múltiples archivos .ZIP anidados, cada uno con sus archivos SHP</li>
+                        </ul>
+                        <li>Cada SHP debe incluir todos sus archivos asociados (.shx, .dbf, .prj, etc.)</li>
+                        <li>El sistema procesará automáticamente todos los SHP encontrados, incluso dentro de archivos ZIP anidados</li>
+                        <li>Los datos se cargarán en la base de datos local para su procesamiento</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        
+        {% elif tab == 'lista' %}
+        <!-- Pestaña de Lista de Polígonos -->
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h3 class="mb-0">Polígonos cargados desde SHP</h3>
+                    {% if shp_data %}
+                    <span class="badge bg-primary">{{ shp_data|length }} registros</span>
+                    {% endif %}
+                </div>
+                
+                {% if shp_data and shp_columns %}
+                <div class="mb-3">
+                    <div class="btn-group">
+                        <button type="button" class="btn btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="bi bi-filter"></i> Filtrar por Shapefile
+                        </button>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="{{ url_for('validacion_rapida_shp', tab='lista') }}">Todos</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            {% for shp in shp_archivos %}
+                            <li><a class="dropdown-item" href="{{ url_for('validacion_rapida_shp', tab='lista', shp_filter=shp) }}">{{ shp }}</a></li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                    
+                    <button class="btn btn-outline-success ms-2" type="button" id="btnExportarLista">
+                        <i class="bi bi-file-earmark-excel"></i> Exportar
+                    </button>
+                </div>
+                
+                <div class="table-responsive">
+                    <table class="table table-hover table-striped">
+                        <thead class="table-light">
+                            <tr>
+                                <th>#</th>
+                                <th>SHP Origen</th>
+                                {% for col in shp_columns %}
+                                    {% if col in ['COORDENADAS', 'GEOM', 'WKT'] %}
+                                        <th class="bg-info text-white" style="max-width: 150px;">{{ col }}</th>
+                                    {% elif col == 'AREA' %}
+                                        <th class="bg-success text-white">{{ col }} (ha)</th>
+                                    {% elif col in ['COMENTARIO', 'ESTATUS'] %}
+                                        <th class="bg-warning">{{ col }}</th>
+                                    {% else %}
+                                        <th>{{ col }}</th>
+                                    {% endif %}
+                                {% endfor %}
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in shp_data %}
+                            <tr>
+                                <td>{{ loop.index }}</td>
+                                <td><span class="badge bg-secondary">{{ row.shp_origen }}</span></td>
+                                {% for col in shp_columns %}
+                                    {% if col in ['COORDENADAS', 'GEOM', 'WKT'] %}
+                                        <td style="max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{ row[col] if row[col] is not none else '' }}">
+                                    {% else %}
+                                        <td>
+                                    {% endif %}
+                                        {# Display values, handle None #}
+                                        {% if row[col] is not none %}
+                                            {% if col == 'AREA' %}
+                                                {{ "%.2f"|format(row[col]|float) }} ha
+                                            {% elif col == 'ESTATUS' %}
+                                                <span class="badge 
+                                                {% if row[col] == '7' or row[col] == 7 or row[col] == 'aprobado' %}bg-success
+                                                {% elif row[col] == '6' or row[col] == 6 or row[col] == 'no_aprobado' %}bg-warning
+                                                {% else %}bg-secondary{% endif %}">
+                                                    {% if row[col] == '7' or row[col] == 7 or row[col] == 'aprobado' %}Aprobado
+                                                    {% elif row[col] == '6' or row[col] == 6 or row[col] == 'no_aprobado' %}No aprobado
+                                                    {% else %}{{ row[col] }}{% endif %}
+                                                </span>
+                                            {% else %}
+                                                {{ row[col] }}
+                                            {% endif %}
+                                        {% else %}
+                                            <span class="text-muted">--</span>
+                                        {% endif %}
+                                    </td>
+                                {% endfor %}
+                                <td>
+                                    <a href="{{ url_for('validacion_rapida_shp', tab='editar', shp_id=row.shp_id) }}" class="btn btn-sm btn-outline-primary" title="Editar Polígono">
+                                        <i class="bi bi-pencil"></i>
+                                    </a>
+                                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="confirmarEliminar({{ row.shp_id }})" title="Eliminar">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    No hay datos disponibles. Por favor, cargue archivos SHP en la pestaña "Cargar Datos".
+                </div>
+                <div class="text-center mt-4">
+                    <a href="{{ url_for('validacion_rapida_shp', tab='cargar') }}" class="btn btn-primary">
+                        <i class="bi bi-upload me-2"></i> Ir a Cargar Datos
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        
+        {% elif tab == 'editar' %}
+        <!-- Pestaña de Editar Polígono -->
+        <div class="card">
+            <div class="card-body">
+                <h3 class="mb-4">Editar Polígono SHP: {% if shp_record %}{{ shp_record.shp_origen }}-{{ shp_id }}{% else %}Nuevo{% endif %}</h3>
+                
+                {% if shp_record %}
+                <form action="{{ url_for('actualizar_shp_record') }}" method="post" id="formEditarShp">
+                    <input type="hidden" name="shp_id" value="{{ shp_id }}">
+                    <input type="hidden" name="wkt_geometry" value="">
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <!-- Información general del polígono -->
+                            <div class="card mb-3">
+                                <div class="card-header bg-light">
+                                    <h5 class="mb-0">Información general</h5>
+                                </div>
+                                <div class="card-body">
+                                    <div class="mb-3">
+                                        <label class="form-label">Archivo SHP de origen</label>
+                                        <input type="text" class="form-control" value="{{ shp_record.shp_origen }}" readonly>
+                                    </div>
+                                    
+                                    <div class="row mb-3">
+                                        <div class="col-md-6">
+                                            <label for="area" class="form-label">Área (ha)</label>
+                                            <input type="text" class="form-control" id="area" name="area" 
+                                                   value="{{ '%.4f'|format(shp_record.area|float) if shp_record.area else '0.0000' }}" readonly>
+                                        </div>
+                                        {% if shp_record.id_campo %}
+                                        <div class="col-md-6">
+                                            <label for="id_campo" class="form-label">ID en SHP</label>
+                                            <input type="text" class="form-control" id="id_campo" name="id_campo" 
+                                                   value="{{ shp_record.id_campo }}" readonly>
+                                        </div>
+                                        {% endif %}
+                                    </div>
+                                    
+                                    <!-- Campo para mostrar las coordenadas del polígono -->
+                                    <div class="mb-3">
+                                        <label for="nuevas_coordenadas" class="form-label">Coordenadas del Polígono</label>
+                                        <textarea class="form-control" id="nuevas_coordenadas" name="nuevas_coordenadas" rows="4" readonly>{{ shp_record.nuevas_coordenadas or '' }}</textarea>
+                                        <div class="form-text">Las coordenadas se actualizarán automáticamente al editar o crear un nuevo polígono.</div>
+                                    </div>
+                                    
+                                    {% if shp_record.municipio or shp_record.estado %}
+                                    <div class="row mb-3">
+                                        {% if shp_record.municipio %}
+                                        <div class="col-md-6">
+                                            <label for="municipio" class="form-label">Municipio</label>
+                                            <input type="text" class="form-control" id="municipio" name="municipio" 
+                                                   value="{{ shp_record.municipio }}">
+                                        </div>
+                                        {% endif %}
+                                        {% if shp_record.estado %}
+                                        <div class="col-md-6">
+                                            <label for="estado" class="form-label">Estado</label>
+                                            <input type="text" class="form-control" id="estado" name="estado" 
+                                                   value="{{ shp_record.estado }}">
+                                        </div>
+                                        {% endif %}
+                                    </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            
+                            <!-- Campos personalizados -->
+                            <div class="card mb-3">
+                                <div class="card-header bg-warning bg-opacity-25">
+                                    <h5 class="mb-0">Validación</h5>
+                                </div>
+                                <div class="card-body">
+                                    <div class="mb-3">
+                                        <label for="comentario" class="form-label">Comentarios</label>
+                                        <textarea class="form-control" id="comentario" name="comentario" rows="3">{{ shp_record.comentario or '' }}</textarea>
+                                    </div>
+                                    
+                                    <div class="mb-3">
+                                        <label class="form-label">Estatus</label>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="radio" name="estatus" id="estatus6" value="no_aprobado" {% if shp_record.estatus == '6' or shp_record.estatus == 6 or shp_record.estatus == 'no_aprobado' %}checked{% endif %}>
+                                            <label class="form-check-label" for="estatus6">
+                                                No aprobado <span class="badge bg-warning">Revisar</span>
+                                            </label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="radio" name="estatus" id="estatus7" value="aprobado" {% if shp_record.estatus == '7' or shp_record.estatus == 7 or shp_record.estatus == 'aprobado' %}checked{% endif %}>
+                                            <label class="form-check-label" for="estatus7">
+                                                Aprobado <span class="badge bg-success">Válido</span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Atributos adicionales del SHP -->
+                            {% if shp_record.atributos %}
+                            <div class="card mb-3">
+                                <div class="card-header bg-info bg-opacity-25">
+                                    <h5 class="mb-0">Atributos del SHP</h5>
+                                </div>
+                                <div class="card-body">
+                                    <div class="table-responsive">
+                                        <table class="table table-sm table-hover">
+                                            <thead>
+                                                <tr>
+                                                    <th>Atributo</th>
+                                                    <th>Valor</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {% for key, value in (shp_record.atributos|ensure_dict).items() %}
+                                                <tr>
+                                                    <td><strong>{{ key }}</strong></td>
+                                                    <td>{{ value }}</td>
+                                                </tr>
+                                                {% endfor %}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endif %}
+                            
+                            <div class="mt-4 d-flex">
+                                <button type="button" id="btnCancelar" class="btn btn-outline-secondary me-2">
+                                    <i class="bi bi-x"></i> Cancelar
+                                </button>
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="bi bi-save"></i> Guardar Cambios
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <div id="map" style="height: 550px; width: 100%; border-radius: 4px;"></div>
+                        </div>
+                    </div>
+                </form>
+                {% else %}
+                <div class="alert alert-danger">
+                    No se encontró el registro solicitado.
+                </div>
+                <a href="{{ url_for('validacion_rapida_shp', tab='lista') }}" class="btn btn-outline-primary">
+                    Volver a la lista
+                </a>
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- Scripts para Leaflet -->
+        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+        
+        <!-- Leaflet.fullscreen plugin -->
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.fullscreen@2.4.0/Control.FullScreen.css" />
+        <script src="https://cdn.jsdelivr.net/npm/leaflet.fullscreen@2.4.0/Control.FullScreen.js"></script>
+        
+        <!-- Leaflet.draw para edición de polígonos -->
+        <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" crossorigin=""/>
+        <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js" crossorigin=""></script>
+        
+        <!-- Leaflet.GeometryUtil para calcular áreas -->
+        <script src="https://unpkg.com/leaflet-geometryutil@0.10.1/src/leaflet.geometryutil.js" crossorigin=""></script>
+        
+        <!-- Turf.js para operaciones geométricas -->
+        <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+        
+        <style>
+            .edit-control-container {
+                margin-bottom: 5px;
+            }
+            .editing-mode-indicator {
+                position: absolute;
+                top: 10px;
+                left: 50px;
+                z-index: 1000;
+                background-color: rgba(255, 255, 255, 0.8);
+                padding: 5px 10px;
+                border-radius: 4px;
+                box-shadow: 0 1px 5px rgba(0,0,0,0.4);
+                display: none;
+                font-weight: bold;
+                color: #ff4500;
+            }
+            /* Estilos para el botón de pantalla completa */
+            .leaflet-control-fullscreen a {
+                background-color: #fff;
+                border-radius: 4px;
+                box-shadow: 0 1px 5px rgba(0,0,0,0.4);
+                transition: all 0.3s ease;
+            }
+            .leaflet-control-fullscreen a:hover {
+                background-color: #f4f4f4;
+                transform: scale(1.05);
+            }
+            .custom-leaflet-btn {
+                margin-bottom: 5px;
+                display: block;
+            }
+            .custom-leaflet-btn button {
+                width: 100%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 6px 10px;
+                font-weight: 500;
+                box-shadow: 0 1px 5px rgba(0,0,0,0.4);
+            }
+            .custom-leaflet-btn button i {
+                margin-right: 5px;
+            }
+            .edit-instructions {
+                position: absolute;
+                bottom: 20px;
+                left: 10px;
+                z-index: 1000;
+                background-color: rgba(255, 255, 255, 0.9);
+                padding: 10px;
+                border-radius: 4px;
+                box-shadow: 0 1px 5px rgba(0,0,0,0.4);
+                max-width: 300px;
+                font-size: 12px;
+                display: none;
+            }
+            .edit-instructions h5 {
+                margin-top: 0;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            .edit-instructions ul {
+                padding-left: 20px;
+                margin-bottom: 0;
+            }
+            .vertex-marker {
+                cursor: move;
+            }
+            .vertex-marker div {
+                transition: background-color 0.2s, border-color 0.2s, transform 0.2s;
+            }
+            .vertex-marker div:hover {
+                background-color: #ff4500;
+                border-color: white;
+                transform: scale(1.2);
+            }
+            /* Ocultar los controles de edición nativos de Leaflet.Draw */
+            .leaflet-draw-toolbar {
+                display: none !important;
+            }
+            .leaflet-draw-edit-edit, .leaflet-draw-edit-remove {
+                display: none !important;
+            }
+            .leaflet-draw {
+                display: none !important;
+            }
+        </style>
+        
+        <script>
+        // Helper function to parse WKT (Well-Known Text) geometry format
+        function parseWKT(wktString) {
+            if (!wktString || typeof wktString !== 'string') return null;
+            
+            // Trim any extra whitespace
+            wktString = wktString.trim();
+            
+            // Handle POINT format: POINT(lon lat)
+            if (wktString.startsWith('POINT')) {
+                var coordsStr = wktString.substring(wktString.indexOf('(') + 1, wktString.indexOf(')')).trim();
+                var coords = coordsStr.split(' ').map(parseFloat);
+                if (coords.length >= 2) {
+                    return [[coords[1], coords[0]]]; // Convert to [lat, lon] for Leaflet
+                }
+            }
+            // Handle POLYGON format: POLYGON((lon1 lat1, lon2 lat2, ...))
+            else if (wktString.startsWith('POLYGON')) {
+                var ringStr = wktString.substring(wktString.indexOf('((') + 2, wktString.indexOf('))')).trim();
+                var pointsArr = ringStr.split(',').map(function(pointStr) {
+                    var coords = pointStr.trim().split(' ').map(parseFloat);
+                    return [coords[1], coords[0]]; // Convert to [lat, lon] for Leaflet
+                });
+                return pointsArr;
+            }
+            // Handle LINESTRING format: LINESTRING(lon1 lat1, lon2 lat2, ...)
+            else if (wktString.startsWith('LINESTRING')) {
+                var lineStr = wktString.substring(wktString.indexOf('(') + 1, wktString.indexOf(')')).trim();
+                var pointsArr = lineStr.split(',').map(function(pointStr) {
+                    var coords = pointStr.trim().split(' ').map(parseFloat);
+                    return [coords[1], coords[0]]; // Convert to [lat, lon] for Leaflet
+                });
+                return pointsArr;
+            }
+            return null;
+        }
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            // Verificar que Leaflet está disponible
+            if (typeof L === 'undefined') {
+                console.error("Leaflet no está disponible");
+                return;
+            }
+            
+            // Inicializar variables
+            var map, polygon;
+            var editableLayers = new L.FeatureGroup();
+            var originalCoords = [];
+            var editingMode = false;
+            var drawingMode = false;
+            var customEditor = null;
+            var drawControl = null;
+            
+            // Inicializar mapa
+            map = L.map('map', {
+                center: [25.6866, -100.3161], // Centro en Monterrey por defecto
+                zoom: 5,
+                maxZoom: 18,
+                fullscreenControl: true,
+                fullscreenControlOptions: {
+                    position: 'topleft',
+                    title: 'Pantalla Completa',
+                    titleCancel: 'Salir de Pantalla Completa'
+                }
+            });
+            
+            // Añadir capa editable al mapa
+            map.addLayer(editableLayers);
+            
+            // Añadir diferentes capas base como opciones
+            var baseLayers = {
+                "OpenStreetMap": L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+                    maxZoom: 19
+                }),
+                "Esri World Imagery": L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                    attribution: 'Tiles &copy; Esri &mdash; Source: Esri',
+                    maxZoom: 18
+                }).addTo(map),
+                "CartoDB Dark": L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, &copy; <a href="https://carto.com/attributions">CARTO</a>',
+                    maxZoom: 19
+                })
+            };
+            
+            // Añadir control de capas para cambiar entre fondos de mapa
+            L.control.layers(baseLayers, {}).addTo(map);
+            
+            {% if coords_para_mapa %}
+            // Crear el polígono a partir de las coordenadas
+            try {
+                var coordenadas = {{ coords_para_mapa|tojson }};
+                console.log("Coordenadas originales del polígono:", coordenadas);
+                console.log("Tipo de datos:", typeof coordenadas);
+                
+                // Debug: mostrar información detallada para entender la estructura de datos
+                if (typeof coordenadas === 'object' && coordenadas !== null) {
+                    console.log("Es un objeto:", JSON.stringify(coordenadas).substring(0, 200) + "...");
+                } else if (typeof coordenadas === 'string') {
+                    console.log("Es un string:", coordenadas.substring(0, 200) + "...");
+                    try {
+                        // Intentar parsear si es JSON
+                        var testParse = JSON.parse(coordenadas);
+                        console.log("  - Parece ser un string JSON válido");
+                    } catch (e) {
+                        console.log("  - No es un string JSON válido");
+                    }
+                } else {
+                    console.log("Otro tipo de datos:", coordenadas);
+                }
+                
+                // Check if we received JSON data instead of direct coordinates
+                if (coordenadas && typeof coordenadas === 'string' && coordenadas.startsWith('{')) {
+                    try {
+                        // Try to parse the JSON string
+                        var jsonData = JSON.parse(coordenadas);
+                        console.log("JSON data detected:", jsonData);
+                        
+                        // Look for coordinates in common formats
+                        if (jsonData.coordinates || jsonData.coords || jsonData.geometry) {
+                            // Extract from standard GeoJSON format
+                            if (jsonData.geometry && jsonData.geometry.coordinates) {
+                                var geoCoords = jsonData.geometry.coordinates;
+                                if (jsonData.geometry.type === 'Polygon') {
+                                    // GeoJSON polygons have coordinates as [[[lng1,lat1],[lng2,lat2],...]]
+                                    coordenadas = geoCoords[0].map(function(coord) {
+                                        return [coord[1], coord[0]]; // Convert [lng,lat] to [lat,lng] for Leaflet
+                                    });
+                                } else if (jsonData.geometry.type === 'Point') {
+                                    // Handle point geometry
+                                    coordenadas = [[geoCoords[1], geoCoords[0]]]; // Convert [lng,lat] to [lat,lng]
+                                }
+                            } 
+                            // Direct coordinates array
+                            else if (jsonData.coordinates) {
+                                coordenadas = jsonData.coordinates;
+                            }
+                            // Try to extract from area_parce or other fields that might contain geometry
+                            else if (jsonData.area_parce && typeof jsonData.area_parce === 'object') {
+                                coordenadas = jsonData.area_parce;
+                            }
+                        } 
+                        // Check for WKT format strings in the data
+                        else if (jsonData.WKT || jsonData.wkt || jsonData.geom || jsonData.GEOM) {
+                            var wktString = jsonData.WKT || jsonData.wkt || jsonData.geom || jsonData.GEOM;
+                            var parsedCoords = parseWKT(wktString);
+                            if (parsedCoords) {
+                                coordenadas = parsedCoords;
+                                console.log("Found coordinates from WKT:", coordenadas);
+                            }
+                        }
+                                // Special handling for the specific format from the screenshot
+                                else if (jsonData.id && jsonData.area_parce) {
+                                    console.log("Found the specific JSON format with id and area_parce");
+                                    
+                                    // Try to extract geometry from area_parce 
+                                    // For this specific format, the area_parce field might have coordinate info
+                                    // or it might just be a number representing the area
+                                    
+                                    // Check if it's a string that looks like a WKT
+                                    if (typeof jsonData.area_parce === 'string' && 
+                                       (jsonData.area_parce.startsWith('POLYGON') || 
+                                        jsonData.area_parce.startsWith('POINT') || 
+                                        jsonData.area_parce.startsWith('LINESTRING'))) {
+                                        var parsedCoords = parseWKT(jsonData.area_parce);
+                                        if (parsedCoords) {
+                                            coordenadas = parsedCoords;
+                                            console.log("Found coordinates from area_parce as WKT:", coordenadas);
+                                        }
+                                    }
+                                    
+                                    // Special handling for the example format: "id": "16-064-398", "CVE_ENT": "16", etc.
+                                    // If the area_parce is a number, it likely doesn't contain geometry
+                                    if ((!coordenadas || coordenadas.length === 0) && 
+                                        (typeof jsonData.area_parce === 'number' || 
+                                         (typeof jsonData.area_parce === 'string' && !isNaN(parseFloat(jsonData.area_parce))))) {
+                                        
+                                        // This format has ID_POLIGON field in the format "PL-16-064-0398"
+                                        // Try to extract information from other fields
+                                        console.log("area_parce appears to be numeric, looking for geometry in other fields");
+                                        
+                                        // Check for COMENTARIO, it might contain geometry info
+                                        if (jsonData.COMENTARIO && typeof jsonData.COMENTARIO === 'string') {
+                                            if (jsonData.COMENTARIO.startsWith('POLYGON') || 
+                                                jsonData.COMENTARIO.startsWith('POINT') || 
+                                                jsonData.COMENTARIO.startsWith('LINESTRING')) {
+                                                
+                                                var parsedCoords = parseWKT(jsonData.COMENTARIO);
+                                                if (parsedCoords) {
+                                                    coordenadas = parsedCoords;
+                                                    console.log("Found coordinates from COMENTARIO as WKT:", coordenadas);
+                                                }
+                                            }
+                                        }
+                                        
+                                        // If still no coordinates found, there's a chance that this specific format
+                                        // requires geometric data to be fetched separately or computed from the CVE_ENT and CVE_MUN
+                                        if (!coordenadas || coordenadas.length === 0) {
+                                            console.log("Using fallback method for this JSON format - this may require configuration");
+                                            // Show an alert to notify the developer
+                                            console.warn("The JSON format with id:"+jsonData.id+" does not contain explicit geometry information. Backend changes may be required.");
+                                            alert("Este formato JSON no contiene información geométrica explícita. Es posible que se requieran cambios en el backend para obtener las coordenadas.");
+                                        }
+                                    }
+                                } else {
+                                    // As a fallback, try to find coordinates in any property that might be an array
+                                    var foundCoords = false;
+                                    Object.keys(jsonData).forEach(function(key) {
+                                        if (Array.isArray(jsonData[key]) && !foundCoords) {
+                                            var possibleCoords = jsonData[key];
+                                            // Check if it looks like coordinates (array of arrays with 2 numbers)
+                                            if (possibleCoords.length > 0 && 
+                                                Array.isArray(possibleCoords[0]) && 
+                                                possibleCoords[0].length === 2 &&
+                                                typeof possibleCoords[0][0] === 'number') {
+                                                coordenadas = possibleCoords;
+                                                foundCoords = true;
+                                                console.log("Found coordinates in field:", key);
+                                            }
+                                        }
+                                        // Also check for WKT in any string field
+                                        else if (typeof jsonData[key] === 'string' && 
+                                                (jsonData[key].startsWith('POLYGON') || 
+                                                 jsonData[key].startsWith('POINT') || 
+                                                 jsonData[key].startsWith('LINESTRING'))) {
+                                            var parsed = parseWKT(jsonData[key]);
+                                            if (parsed && !foundCoords) {
+                                                coordenadas = parsed;
+                                                foundCoords = true;
+                                                console.log("Found coordinates from field as WKT:", key, coordenadas);
+                                            }
+                                        }
+                                    });
+                                    
+                                    if (!foundCoords) {
+                                        console.error("Could not find coordinates in JSON data:", jsonData);
+                                        // Create alert to notify user
+                                        alert("No se pudieron encontrar coordenadas en los datos JSON. Por favor revise el formato del shapefile.");
+                                    }
+                                }
+                            } catch (jsonError) {
+                                console.error("Error parsing JSON data:", jsonError);
+                            }
+                        } 
+                        // Check if we have a WKT string directly 
+                        else if (coordenadas && typeof coordenadas === 'string' && 
+                                (coordenadas.startsWith('POLYGON') || 
+                                 coordenadas.startsWith('POINT') || 
+                                 coordenadas.startsWith('LINESTRING'))) {
+                            var parsedCoords = parseWKT(coordenadas);
+                            if (parsedCoords) {
+                                coordenadas = parsedCoords;
+                                console.log("Found coordinates from direct WKT string:", coordenadas);
+                            }
+                        }
+                
+                // Guardar una copia de las coordenadas originales
+                originalCoords = JSON.parse(JSON.stringify(coordenadas));
+                
+                if (coordenadas.length >= 3) {
+                    // Crear polígono
+                    polygon = L.polygon(coordenadas, {
+                        color: 'red',
+                        weight: 3,
+                        fillOpacity: 0.2
+                    });
+                    editableLayers.addLayer(polygon);
+                    
+                    // Ajustar vista al polígono
+                    map.fitBounds(polygon.getBounds());
+                    
+                    // Añadir popup con información
+                    polygon.bindPopup(`
+                        <strong>ID: {{ shp_record.shp_id }}</strong><br>
+                        <strong>Área:</strong> {{ '%.4f'|format(shp_record.area|float) }} ha<br>
+                        <strong>Origen:</strong> {{ shp_record.shp_origen }}
+                    `);
+                    
+                    // Calcular área geodésica en hectáreas
+                    try {
+                        var areaSqMeters = L.GeometryUtil.geodesicArea(polygon.getLatLngs()[0]);
+                        var areaHectares = areaSqMeters / 10000; // Convertir a hectáreas
+                        console.log("Área calculada:", areaHectares.toFixed(4), "hectáreas");
+                    } catch (e) {
+                        console.error("Error al calcular área:", e);
+                    }
+                    
+                    // Inicializar el campo de coordenadas con las coordenadas originales
+                    var coordText = coordenadas.map(function(latLng) {
+                        return latLng[0].toFixed(6) + "," + latLng[1].toFixed(6);
+                    }).join(' | ');
+                    document.getElementById('nuevas_coordenadas').value = coordText;
+                } else if (coordenadas.length === 1) {
+                    // Crear marcador para un solo punto
+                    var marker = L.marker(coordenadas[0], {
+                        icon: L.divIcon({
+                            className: 'single-point-marker',
+                            html: '<div style="width: 14px; height: 14px; background-color: red; border: 2px solid white; border-radius: 50%; box-shadow: 0 0 4px rgba(0,0,0,0.5);"></div>',
+                            iconSize: [14, 14],
+                            iconAnchor: [7, 7]
+                        })
+                    });
+                    editableLayers.addLayer(marker);
+                    map.setView(coordenadas[0], 14);
+                    
+                    // Añadir popup con información
+                    marker.bindPopup(`
+                        <strong>ID: {{ shp_record.shp_id }}</strong><br>
+                        <strong>Tipo:</strong> Punto<br>
+                        <strong>Origen:</strong> {{ shp_record.shp_origen }}
+                    `);
+                } else {
+                    console.error("Tipo de geometría no soportado o coordenadas insuficientes");
+                }
+            } catch (error) {
+                console.error("Error al cargar geometría:", error);
+            }
+            {% endif %}
+            
+            // Indicador de modo de edición
+            var editingIndicator = L.control({position: 'topleft'});
+            editingIndicator.onAdd = function(map) {
+                var div = L.DomUtil.create('div', 'editing-mode-indicator');
+                div.innerHTML = 'MODO EDICIÓN ACTIVO';
+                return div;
+            };
+            editingIndicator.addTo(map);
+            
+            // Instrucciones de edición
+            var editInstructions = L.control({position: 'bottomleft'});
+            editInstructions.onAdd = function(map) {
+                var div = L.DomUtil.create('div', 'edit-instructions');
+                div.innerHTML = `
+                    <h5>Cómo editar el polígono:</h5>
+                    <ul>
+                        <li><strong>Mover vértice:</strong> Haz clic y arrastra cualquier punto blanco</li>
+                        <li><strong>Eliminar vértice:</strong> Haz clic en un vértice mientras mantienes presionada la tecla Ctrl</li>
+                    </ul>
+                `;
+                return div;
+            };
+            editInstructions.addTo(map);
+            
+            // Boton personalizado para activar edición
+            var editButton = L.control({position: 'topright'});
+            editButton.onAdd = function(map) {
+                var div = L.DomUtil.create('div', 'edit-polygon-btn custom-leaflet-btn');
+                div.innerHTML = '<button type="button" class="btn btn-primary btn-sm" id="editPolygon"><i class="bi bi-pencil"></i> Editar Polígono</button>';
+                return div;
+            };
+            editButton.addTo(map);
+            
+            // Botón para dibujar nuevo polígono
+            var drawNewButton = L.control({position: 'topright'});
+            drawNewButton.onAdd = function(map) {
+                var div = L.DomUtil.create('div', 'draw-new-btn custom-leaflet-btn');
+                div.innerHTML = '<button type="button" class="btn btn-warning btn-sm" id="drawNewPolygon"><i class="bi bi-pencil-square"></i> Dibujar Nuevo Polígono</button>';
+                return div;
+            };
+            drawNewButton.addTo(map);
+            
+            // Botón para guardar cambios
+            var saveChangesBtn = L.control({position: 'topright'});
+            saveChangesBtn.onAdd = function(map) {
+                var div = L.DomUtil.create('div', 'save-changes-btn custom-leaflet-btn');
+                div.innerHTML = '<button type="button" class="btn btn-success btn-sm" id="savePolygonChanges" style="display:none;"><i class="bi bi-check-lg"></i> Guardar</button>';
+                return div;
+            };
+            saveChangesBtn.addTo(map);
+            
+            // Botón para cancelar cambios
+            var cancelChangesBtn = L.control({position: 'topright'});
+            cancelChangesBtn.onAdd = function(map) {
+                var div = L.DomUtil.create('div', 'cancel-changes-btn custom-leaflet-btn');
+                div.innerHTML = '<button type="button" class="btn btn-danger btn-sm" id="cancelPolygonChanges" style="display:none;"><i class="bi bi-x-lg"></i> Cancelar</button>';
+                return div;
+            };
+            cancelChangesBtn.addTo(map);
+            
+            // Crear un editor personalizado que solo permita mover vértices existentes
+            function createCustomVertexEditor(map, polygon) {
+                // Desactivar edición nativa
+                if (polygon.editing && polygon.editing.enabled()) {
+                    polygon.editing.disable();
+                }
+                
+                var markerGroup = new L.LayerGroup().addTo(map);
+                var vertexMarkers = [];
+                var vertices = polygon.getLatLngs()[0];
+                
+                // Crear un marcador para cada vértice del polígono
+                vertices.forEach(function(latlng, index) {
+                    var marker = L.marker(latlng, {
+                        draggable: true,
+                        icon: L.divIcon({
+                            className: 'vertex-marker',
+                            html: '<div style="width: 12px; height: 12px; background-color: white; border: 2px solid #333; border-radius: 50%;"></div>',
+                            iconSize: [12, 12],
+                            iconAnchor: [6, 6]
+                        })
+                    }).addTo(markerGroup);
+                    
+                    // Al arrastrar un marcador, actualizar el polígono
+                    marker.on('drag', function(e) {
+                        updatePolygon();
+                    });
+                    
+                    // Al empezar a arrastrar, cambiar el estilo
+                    marker.on('dragstart', function(e) {
+                        var markerElement = e.target._icon.querySelector('div');
+                        markerElement.style.backgroundColor = '#ff4500';
+                        markerElement.style.borderColor = 'white';
+                        markerElement.style.transform = 'scale(1.3)';
+                    });
+                    
+                    // Al terminar de arrastrar, restaurar estilo
+                    marker.on('dragend', function(e) {
+                        var markerElement = e.target._icon.querySelector('div');
+                        markerElement.style.backgroundColor = 'white';
+                        markerElement.style.borderColor = '#333';
+                        markerElement.style.transform = 'scale(1)';
+                        updatePolygon();
+                    });
+                    
+                    vertexMarkers.push(marker);
+                });
+                
+                // Función para actualizar el polígono basado en las posiciones actuales de los marcadores
+                function updatePolygon() {
+                    var newLatLngs = vertexMarkers.map(function(marker) {
+                        return marker.getLatLng();
+                    });
+                    polygon.setLatLngs(newLatLngs);
+                    
+                    // Calcular y actualizar el área digitalizada en tiempo real
+                    var areaSqMeters = L.GeometryUtil.geodesicArea(newLatLngs);
+                    var areaHectares = areaSqMeters / 10000; // Convertir a hectáreas
+                    document.getElementById('area').value = areaHectares.toFixed(4);
+                    
+                    // Actualizar el campo de coordenadas
+                    var coordText = newLatLngs.map(function(latLng) {
+                        return latLng.lat.toFixed(6) + "," + latLng.lng.toFixed(6);
+                    }).join(' | ');
+                    document.getElementById('nuevas_coordenadas').value = coordText;
+                }
+                
+                return {
+                    enable: function() {
+                        markerGroup.addTo(map);
+                        return this;
+                    },
+                    disable: function() {
+                        markerGroup.clearLayers();
+                        map.removeLayer(markerGroup);
+                        return this;
+                    },
+                    getMarkers: function() {
+                        return vertexMarkers;
+                    },
+                    updatePolygon: updatePolygon
+                };
+            }
+            
+            // Función para activar la edición del polígono
+            document.getElementById('editPolygon').addEventListener('click', function() {
+                editingMode = true;
+                
+                // Mostrar botones de guardar y cancelar
+                document.getElementById('savePolygonChanges').style.display = 'block';
+                document.getElementById('cancelPolygonChanges').style.display = 'block';
+                document.getElementById('editPolygon').style.display = 'none';
+                document.getElementById('drawNewPolygon').style.display = 'none';
+                
+                // Mostrar indicador de modo de edición e instrucciones
+                document.querySelector('.editing-mode-indicator').style.display = 'block';
+                document.querySelector('.edit-instructions').style.display = 'block';
+                
+                // Desactivar campos del formulario durante la edición
+                var formInputs = document.querySelectorAll('#formEditarShp input, #formEditarShp textarea, #formEditarShp select');
+                formInputs.forEach(function(input) {
+                    if (input.id !== 'area') {
+                        input.setAttribute('disabled', 'disabled');
+                    }
+                });
+                
+                // Desactivar botón de envío del formulario
+                var submitButton = document.querySelector('#formEditarShp button[type="submit"]');
+                if (submitButton) {
+                    submitButton.setAttribute('disabled', 'disabled');
+                }
+                
+                // Activar edición personalizada del polígono
+                editableLayers.eachLayer(function(layer) {
+                    if (layer instanceof L.Polygon) {
+                        // Cambiar estilo
+                        layer.setStyle({color: '#ff4500', weight: 3, fillOpacity: 0.3});
+                        
+                        // Desactivar cualquier edición existente
+                        if (layer.editing && layer.editing.enabled()) {
+                            layer.editing.disable();
+                        }
+                        
+                        // Crear y activar editor personalizado
+                        customEditor = createCustomVertexEditor(map, layer).enable();
+                    }
+                });
+            });
+            
+            // Botón para dibujar un nuevo polígono
+            document.getElementById('drawNewPolygon').addEventListener('click', function() {
+                editingMode = true;
+                drawingMode = true;
+                
+                // Mostrar botones de guardar y cancelar
+                document.getElementById('savePolygonChanges').style.display = 'block';
+                document.getElementById('cancelPolygonChanges').style.display = 'block';
+                document.getElementById('editPolygon').style.display = 'none';
+                document.getElementById('drawNewPolygon').style.display = 'none';
+                
+                // Mostrar indicadores
+                document.querySelector('.editing-mode-indicator').style.display = 'block';
+                document.querySelector('.editing-mode-indicator').innerHTML = 'DIBUJANDO NUEVO POLÍGONO';
+                document.querySelector('.edit-instructions').style.display = 'block';
+                document.querySelector('.edit-instructions').innerHTML = `
+                    <h5>Cómo dibujar un nuevo polígono:</h5>
+                    <ul>
+                        <li><strong>Añadir vértice:</strong> Haz clic en el mapa para añadir puntos</li>
+                        <li><strong>Finalizar polígono:</strong> Haz clic en el primer punto o doble clic en el último punto</li>
+                    </ul>
+                `;
+                
+                // Desactivar campos del formulario
+                var formInputs = document.querySelectorAll('#formEditarShp input, #formEditarShp textarea, #formEditarShp select');
+                formInputs.forEach(function(input) {
+                    if (input.id !== 'area') {
+                        input.setAttribute('disabled', 'disabled');
+                    }
+                });
+                
+                // Desactivar botón de envío del formulario
+                var submitButton = document.querySelector('#formEditarShp button[type="submit"]');
+                if (submitButton) {
+                    submitButton.setAttribute('disabled', 'disabled');
+                }
+                
+                // Guardar el polígono actual como referencia (no eliminarlo)
+                editableLayers.eachLayer(function(layer) {
+                    if (layer instanceof L.Polygon) {
+                        layer.setStyle({color: '#aaaaaa', weight: 2, fillOpacity: 0.1, dashArray: '5, 5'});
+                    }
+                });
+                
+                // Crear control de dibujo
+                drawControl = new L.Draw.Polygon(map, {
+                    shapeOptions: {
+                        color: '#ff4500',
+                        weight: 3,
+                        fillOpacity: 0.3
+                    }
+                });
+                
+                // Iniciar dibujo
+                drawControl.enable();
+            });
+            
+            // Configurar el evento draw:created para manejar nuevos polígonos
+            map.on('draw:created', function(e) {
+                if (e.layerType === 'polygon') {
+                    // Obtener el nuevo polígono
+                    var newPolygon = e.layer;
+                    
+                    // Eliminar polígonos anteriores
+                    editableLayers.clearLayers();
+                    editableLayers.addLayer(newPolygon);
+                    
+                    // Calcular y actualizar el área
+                    var areaSqMeters = L.GeometryUtil.geodesicArea(newPolygon.getLatLngs()[0]);
+                    var areaHectares = areaSqMeters / 10000;
+                    var areaFormateada = areaHectares.toFixed(4);
+                    
+                    // Actualizar campo de área
+                    document.getElementById('area').value = areaFormateada;
+                    
+                    // Actualizar campo de coordenadas
+                    var newLatLngs = newPolygon.getLatLngs()[0];
+                    var coordText = newLatLngs.map(function(latLng) {
+                        return latLng.lat.toFixed(6) + "," + latLng.lng.toFixed(6);
+                    }).join(' | ');
+                    document.getElementById('nuevas_coordenadas').value = coordText;
+                    
+                    // Guardar nueva geometría en formato WKT para enviar al servidor
+                    var wktPolygon = 'POLYGON((';
+                    wktPolygon += newLatLngs.map(function(point) {
+                        return point.lng + ' ' + point.lat;
+                    }).join(', ');
+                    wktPolygon += '))';
+                    
+                    // Si existe un campo oculto para la geometría WKT, actualizarlo
+                    var wktField = document.querySelector('input[name="wkt_geometry"]');
+                    if (wktField) {
+                        wktField.value = wktPolygon;
+                    } else {
+                        // Crear campo oculto si no existe
+                        wktField = document.createElement('input');
+                        wktField.type = 'hidden';
+                        wktField.name = 'wkt_geometry';
+                        wktField.value = wktPolygon;
+                        document.getElementById('formEditarShp').appendChild(wktField);
+                    }
+                    
+                    // Preparar para edición de vértices
+                    customEditor = createCustomVertexEditor(map, newPolygon).enable();
+                    
+                    // Desactivar modo de dibujo
+                    drawingMode = false;
+                    if (drawControl) {
+                        drawControl.disable();
+                        drawControl = null;
+                    }
+                }
+            });
+            
+            // Guardar cambios
+            document.getElementById('savePolygonChanges').addEventListener('click', function() {
+                // Si estamos en modo dibujo, desactivarlo
+                if (drawControl && drawingMode) {
+                    drawControl.disable();
+                    drawControl = null;
+                    drawingMode = false;
+                }
+                
+                // Obtener las coordenadas actualizadas del polígono
+                var updatedLatLngs = [];
+                
+                if (customEditor) {
+                    // Asegurar que el polígono tiene los datos más recientes
+                    customEditor.updatePolygon();
+                }
+                
+                // Obtener coordenadas del polígono
+                editableLayers.eachLayer(function(layer) {
+                    if (layer instanceof L.Polygon) {
+                        updatedLatLngs = layer.getLatLngs()[0];
+                    }
+                });
+                
+                // Actualizar área
+                var areaSqMeters = L.GeometryUtil.geodesicArea(updatedLatLngs);
+                var areaHectares = areaSqMeters / 10000;
+                document.getElementById('area').value = areaHectares.toFixed(4);
+                
+                // Actualizar campo de coordenadas
+                var coordText = updatedLatLngs.map(function(latLng) {
+                    return latLng.lat.toFixed(6) + "," + latLng.lng.toFixed(6);
+                }).join(' | ');
+                document.getElementById('nuevas_coordenadas').value = coordText;
+                
+                // Crear geometría WKT para enviar al servidor
+                var wktPolygon = 'POLYGON((';
+                wktPolygon += updatedLatLngs.map(function(point) {
+                    return point.lng + ' ' + point.lat;
+                }).join(', ');
+                wktPolygon += '))';
+                
+                // Actualizar campo oculto para la geometría WKT
+                var wktField = document.querySelector('input[name="wkt_geometry"]');
+                if (wktField) {
+                    wktField.value = wktPolygon;
+                } else {
+                    wktField = document.createElement('input');
+                    wktField.type = 'hidden';
+                    wktField.name = 'wkt_geometry';
+                    wktField.value = wktPolygon;
+                    document.getElementById('formEditarShp').appendChild(wktField);
+                }
+                
+                // Desactivar editor personalizado
+                if (customEditor) {
+                    customEditor.disable();
+                    customEditor = null;
+                }
+                
+                // Ocultar botones de guardar y cancelar, mostrar botones principales
+                document.getElementById('savePolygonChanges').style.display = 'none';
+                document.getElementById('cancelPolygonChanges').style.display = 'none';
+                document.getElementById('editPolygon').style.display = 'block';
+                document.getElementById('drawNewPolygon').style.display = 'block';
+                
+                // Ocultar indicadores
+                document.querySelector('.editing-mode-indicator').style.display = 'none';
+                document.querySelector('.edit-instructions').style.display = 'none';
+                editingMode = false;
+                
+                // Restaurar el estilo original del polígono
+                editableLayers.eachLayer(function(layer) {
+                    if (layer instanceof L.Polygon) {
+                        layer.setStyle({color: 'red', weight: 3, fillOpacity: 0.2});
+                    }
+                });
+                
+                // Reactivar campos del formulario
+                var formInputs = document.querySelectorAll('#formEditarShp input, #formEditarShp textarea, #formEditarShp select');
+                formInputs.forEach(function(input) {
+                    input.removeAttribute('disabled');
+                });
+                
+                // Reactivar botón de envío del formulario
+                var submitButton = document.querySelector('#formEditarShp button[type="submit"]');
+                if (submitButton) {
+                    submitButton.removeAttribute('disabled');
+                }
+                
+                // Actualizar coordenadas originales
+                originalCoords = JSON.parse(JSON.stringify(updatedLatLngs));
+                
+                alert('Geometría actualizada correctamente');
+            });
+            
+            // Cancelar cambios
+            document.getElementById('cancelPolygonChanges').addEventListener('click', function() {
+                // Si estamos en modo dibujo, desactivarlo
+                if (drawControl && drawingMode) {
+                    drawControl.disable();
+                    drawControl = null;
+                    drawingMode = false;
+                }
+                
+                // Desactivar editor personalizado
+                if (customEditor) {
+                    customEditor.disable();
+                    customEditor = null;
+                }
+                
+                // Eliminar el polígono actual y recrear el original
+                editableLayers.clearLayers();
+                if (originalCoords.length >= 3) {
+                    polygon = L.polygon(originalCoords, {color: 'red', weight: 3, fillOpacity: 0.2});
+                    editableLayers.addLayer(polygon);
+                } else if (originalCoords.length === 1) {
+                    var marker = L.marker(originalCoords[0]);
+                    editableLayers.addLayer(marker);
+                }
+                
+                // Ocultar botones de guardar y cancelar, mostrar botones principales
+                document.getElementById('savePolygonChanges').style.display = 'none';
+                document.getElementById('cancelPolygonChanges').style.display = 'none';
+                document.getElementById('editPolygon').style.display = 'block';
+                document.getElementById('drawNewPolygon').style.display = 'block';
+                
+                // Ocultar indicadores
+                document.querySelector('.editing-mode-indicator').style.display = 'none';
+                document.querySelector('.edit-instructions').style.display = 'none';
+                editingMode = false;
+                
+                // Reactivar campos del formulario
+                var formInputs = document.querySelectorAll('#formEditarShp input, #formEditarShp textarea, #formEditarShp select');
+                formInputs.forEach(function(input) {
+                    input.removeAttribute('disabled');
+                });
+                
+                // Reactivar botón de envío del formulario
+                var submitButton = document.querySelector('#formEditarShp button[type="submit"]');
+                if (submitButton) {
+                    submitButton.removeAttribute('disabled');
+                }
+                
+                alert('Cambios cancelados');
+            });
+            
+            // Botón de cancelar
+            document.getElementById('btnCancelar').addEventListener('click', function(e) {
+                e.preventDefault();
+                window.location.href = "{{ url_for('validacion_rapida_shp', tab='lista') }}";
+            });
+        });
+        </script>
+        
+        {% elif tab == 'generar' %}
+        <!-- Pestaña de Generar Archivos -->
+        <div class="card">
+            <div class="card-body">
+                <h3 class="mb-4">Generar Archivos</h3>
+                
+                {% if not shp_data %}
+                <div class="alert alert-warning">
+                    No hay datos disponibles para generar archivos. Por favor, cargue archivos SHP primero.
+                </div>
+                {% else %}
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle me-2"></i>
+                    Seleccione los registros y el formato de salida para generar los archivos procesados.
+                </div>
+                
+                <div class="row mb-4">
+                    <div class="col-md-4">
+                        <div class="card mb-3">
+                            <div class="card-header bg-light">
+                                <h5 class="mb-0">Seleccionar Polígonos</h5>
+                                <div class="btn-group mt-2">
+                                    <button type="button" class="btn btn-sm btn-outline-primary" id="seleccionarTodos">Seleccionar Todos</button>
+                                    <button type="button" class="btn btn-sm btn-outline-success" id="seleccionarEstatus7">Solo Aprobados</button>
+                                </div>
+                            </div>
+                            <div class="card-body polygon-selector" style="max-height: 400px; overflow-y: auto;">
+                                {% for row in shp_data %}
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input shp-checkbox" type="checkbox" value="{{ row.shp_id }}" id="shp-{{ row.shp_id }}">
+                                    <label class="form-check-label" for="shp-{{ row.shp_id }}">
+                                        <span class="badge bg-secondary me-1">{{ row.shp_origen }}</span>
+                                        {% if row.id_campo %}{{ row.id_campo }}{% else %}ID-{{ row.shp_id }}{% endif %}
+                                        
+                                        {% if row.estatus is defined %}
+                                        <small class="d-block mt-1">
+                                            <span class="badge 
+                                            {% if row.estatus == '7' or row.estatus == 7 or row.estatus == 'aprobado' %}bg-success
+                                            {% elif row.estatus == '6' or row.estatus == 6 or row.estatus == 'no_aprobado' %}bg-warning
+                                            {% else %}bg-secondary{% endif %}">
+                                                {% if row.estatus == '7' or row.estatus == 7 or row.estatus == 'aprobado' %}Aprobado
+                                                {% elif row.estatus == '6' or row.estatus == 6 or row.estatus == 'no_aprobado' %}No aprobado
+                                                {% else %}{{ row.estatus }}{% endif %}
+                                            </span>
+                                        </small>
+                                        {% endif %}
+                                    </label>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            <div class="card-footer">
+                                <div id="seleccion-contador">0 polígonos seleccionados</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-8">
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="mb-3">Opciones de Exportación</h5>
+                                
+                                <input type="hidden" id="formato" value="excel">
+                                <div class="alert alert-success mb-3">
+                                    <i class="bi bi-file-earmark-excel me-2"></i>
+                                    <strong>Formato de salida: Excel (.xlsx)</strong>
+                                    <p class="small mb-0 mt-1">Los datos serán exportados en formato Excel con todos los atributos como columnas separadas.</p>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label for="incluir_comentarios" class="form-check-label">
+                                        <input type="checkbox" id="incluir_comentarios" class="form-check-input" checked>
+                                        Incluir comentarios y estatus en los atributos
+                                    </label>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label for="filtro_estatus" class="form-label">Filtrar por estatus</label>
+                                    <select id="filtro_estatus" class="form-select">
+                                        <option value="todos">Todos los estatus</option>
+                                        <option value="aprobado">Solo Aprobados</option>
+                                        <option value="no_aprobado">Solo No aprobados</option>
+                                    </select>
+                                </div>
+                                
+                                <div class="alert alert-info">
+                                    <div class="d-flex">
+                                        <i class="bi bi-info-circle me-2" style="font-size: 1.2rem;"></i>
+                                        <div>
+                                            <h6 class="mb-1">Información sobre los archivos generados</h6>
+                                            <p class="small mb-0">Los archivos se generarán con los atributos originales más los campos de validación que haya añadido. Se incluirán en un archivo ZIP para su descarga.</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="d-flex justify-content-end mt-3">
+                                    <button type="button" id="btn-generar" class="btn btn-primary">
+                                        <i class="bi bi-file-earmark-zip me-1"></i> Generar Archivos
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="card mt-3">
+                            <div class="card-header bg-light">
+                                <h5 class="mb-0">Exportar todos los registros</h5>
+                            </div>
+                            <div class="card-body">
+                                <p>También puede generar un archivo Excel que contenga todos los registros con los atributos expandidos como columnas.</p>
+                                <div class="d-flex justify-content-end">
+                                    <button type="button" id="btn-generar-zip-completo" class="btn btn-success">
+                                        <i class="bi bi-file-earmark-excel me-1"></i> Exportar Excel completo
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        
+        <script>
+            document.addEventListener('DOMContentLoaded', function() {
+                // Seleccionar/deseleccionar todos los checkboxes
+                const btnSeleccionarTodos = document.getElementById('seleccionarTodos');
+                if (btnSeleccionarTodos) {
+                    btnSeleccionarTodos.addEventListener('click', function() {
+                        const checkboxes = document.querySelectorAll('.shp-checkbox');
+                        checkboxes.forEach(checkbox => {
+                            checkbox.checked = true;
+                        });
+                        updateSelectionCounter();
+                    });
+                }
+                
+                // Seleccionar solo estatus 7
+                const btnSeleccionarEstatus7 = document.getElementById('seleccionarEstatus7');
+                if (btnSeleccionarEstatus7) {
+                    btnSeleccionarEstatus7.addEventListener('click', function() {
+                        // Primero deseleccionar todos
+                        const allCheckboxes = document.querySelectorAll('.shp-checkbox');
+                        allCheckboxes.forEach(checkbox => {
+                            checkbox.checked = false;
+                        });
+                        
+                        // Luego seleccionar solo los que tienen estatus 7
+                        const checkboxLabels = document.querySelectorAll('.form-check-label');
+                        checkboxLabels.forEach(label => {
+                            const badgeElement = label.querySelector('.badge:not(.bg-secondary)');
+                            if (badgeElement && (badgeElement.textContent.trim().includes('7') || badgeElement.textContent.trim().includes('Aprobado'))) {
+                                // Obtener el id del polígono desde el atributo "for" del label
+                                const shpId = label.getAttribute('for');
+                                // Encontrar y marcar el checkbox correspondiente
+                                const checkbox = document.getElementById(shpId);
+                                if (checkbox) {
+                                    checkbox.checked = true;
+                                }
+                            }
+                        });
+                        
+                        // Actualizar contador
+                        updateSelectionCounter();
+                    });
+                }
+                
+                // Actualizar contador de selección
+                function updateSelectionCounter() {
+                    const checkboxes = document.querySelectorAll('.shp-checkbox:checked');
+                    const counter = document.getElementById('seleccion-contador');
+                    if (counter) {
+                        counter.textContent = `${checkboxes.length} polígonos seleccionados`;
+                    }
+                }
+                
+                // Escuchar cambios en checkboxes
+                const checkboxes = document.querySelectorAll('.shp-checkbox');
+                checkboxes.forEach(checkbox => {
+                    checkbox.addEventListener('change', updateSelectionCounter);
+                });
+                
+                // Inicializar contador
+                updateSelectionCounter();
+                
+                // Generar archivos
+                const btnGenerar = document.getElementById('btn-generar');
+                if (btnGenerar) {
+                    btnGenerar.addEventListener('click', function() {
+                        const selectedRows = Array.from(document.querySelectorAll('.shp-checkbox:checked')).map(cb => cb.value);
+                        const formato = document.getElementById('formato').value;
+                        const incluirComentarios = document.getElementById('incluir_comentarios').checked;
+                        const filtroEstatus = document.getElementById('filtro_estatus').value;
+                        
+                        if (selectedRows.length === 0) {
+                            alert('Por favor, seleccione al menos un polígono.');
+                            return;
+                        }
+                        
+                        // Redirigir a la URL de generación con los parámetros
+                        window.location.href = `{{ url_for('generar_shp_archivos') }}?formato=${formato}&incluir_comentarios=${incluirComentarios}&filtro_estatus=${filtroEstatus}&ids=${selectedRows.join(',')}`;
+                    });
+                }
+                
+                // Generar ZIP completo
+                const btnGenerarZipCompleto = document.getElementById('btn-generar-zip-completo');
+                if (btnGenerarZipCompleto) {
+                    btnGenerarZipCompleto.addEventListener('click', function() {
+                        if (confirm('¿Desea generar un ZIP con todos los shapefiles procesados? Esto puede tomar tiempo dependiendo de la cantidad de registros.')) {
+                            window.location.href = "{{ url_for('generar_shp_zip_completo') }}";
+                        }
+                    });
+                }
+            });
+        </script>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Modal de confirmación para eliminar -->
+<div class="modal fade" id="eliminarModal" tabindex="-1" aria-labelledby="eliminarModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="eliminarModalLabel">Confirmar eliminación</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        ¿Está seguro de que desea eliminar este registro? Esta acción no se puede deshacer.
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <form id="formEliminar" action="{{ url_for('eliminar_shp_record') }}" method="post">
+          <input type="hidden" id="shp_id_eliminar" name="shp_id">
+          <button type="submit" class="btn btn-danger">Eliminar</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function confirmarEliminar(shpId) {
+    document.getElementById('shp_id_eliminar').value = shpId;
+    var eliminarModal = new bootstrap.Modal(document.getElementById('eliminarModal'));
+    eliminarModal.show();
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Exportación de la lista
+    var btnExportarLista = document.getElementById('btnExportarLista');
+    if (btnExportarLista) {
+        btnExportarLista.addEventListener('click', function() {
+            window.location.href = "{{ url_for('exportar_shp_lista') }}";
+        });
+    }
+});
+</script>
+{% endblock %} 

@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, send_file, session
+from flask import Flask, render_template, request, redirect, url_for, flash, send_file, session, jsonify
 import os
 import pandas as pd
 import numpy as np
@@ -649,117 +649,60 @@ def validacion_poligonos(tab):
                                filename='')
     
     elif tab == 'editar':
-        row_index = request.args.get('id', type=int)
-        db_id = request.args.get('db_id', type=int)
-        
-        try:
-            # Si tenemos db_id, usamos la base de datos
-            if db_id is not None:
-                print(f"Editando polígono con ID de base de datos: {db_id}")
-                poligono = Poligono.query.get(db_id)
-                if poligono is None:
-                    flash('Registro no encontrado en la base de datos', 'error')
-                    return redirect(url_for('validacion_poligonos', tab='lista'))
-                
-                # Cargar datos directamente desde el objeto Poligono
-                row_data = {
-                    'ID_POLIGONO': poligono.id_poligono,
-                    'IF': poligono.if_val,
-                    'ID_CREDITO': poligono.id_credito,
-                    'ID_PERSONA': poligono.id_persona,
-                    'SUPERFICIE': poligono.superficie,
-                    'ESTADO': corregir_codificacion(poligono.estado),
-                    'MUNICIPIO': corregir_codificacion(poligono.municipio),
-                    'COORDENADAS': poligono.coordenadas, # Mantener coordenadas originales
-                    'COORDENADAS_DECIMALES_CORREGIDAS': poligono.coordenadas_corregidas, # Mantener el nombre usado en frontend
-                    'AREA_DIGITALIZADA': poligono.area_digitalizada, # Campo editable
-                    'ESTATUS': poligono.estatus,
-                    'COMENTARIOS': poligono.comentarios, # Campo editable
-                    'DESCRIPCION': poligono.descripcion, # Campo editable
-                    'db_id': poligono.id
-                }
-                
-                # Calcular área
-                area_ha = calcular_area_poligono(poligono.coordenadas_corregidas)
-                
-                # Formatear datos numéricos para la vista
-                row_data['AREA_CALCULADA'] = f"{area_ha:.4f}" # Área calculada a partir de coordenadas
-                
-                # Si ya hay un área digitalizada guardada, mostrarla formateada
-                if poligono.area_digitalizada is not None:
-                    row_data['AREA_DIGITALIZADA'] = f"{poligono.area_digitalizada:.4f}"
-                else:
-                    # Si no hay área guardada, usar la calculada
-                    row_data['AREA_DIGITALIZADA'] = row_data['AREA_CALCULADA']
-
-                # Asegurarse que los valores de estado y municipio no sean None
-                if not row_data['ESTADO']: row_data['ESTADO'] = ''
-                if not row_data['MUNICIPIO']: row_data['MUNICIPIO'] = ''
-                if not row_data['COMENTARIOS']: row_data['COMENTARIOS'] = ''
-                if not row_data['DESCRIPCION']: row_data['DESCRIPCION'] = ''
-                
-                # NUEVO: Obtener municipio y estado desde coordenadas si no están definidos
-                if (not row_data['ESTADO'] or not row_data['MUNICIPIO']) and poligono.coordenadas_corregidas:
-                    ubicacion = obtener_ubicacion_desde_poligono(poligono.coordenadas_corregidas)
-                    if ubicacion:
-                        # Solo actualizar si no están definidos
-                        if not row_data['MUNICIPIO']:
-                            row_data['MUNICIPIO'] = ubicacion['municipio']
-                        if not row_data['ESTADO']:
-                            row_data['ESTADO'] = ubicacion['estado']
+        shp_id = request.args.get('shp_id')
+        if shp_id:
+            conn = get_db_connection()
+            # Get the specific record
+            shp_record = conn.execute('SELECT * FROM shp_records WHERE shp_id = ?', 
+                                     (shp_id,)).fetchone()
+            
+            coords_para_mapa = None
+            if shp_record and shp_record['geometry_wkt']:
+                # Convert WKT geometry to coordinates for the map
+                try:
+                    from shapely import wkt
+                    geom = wkt.loads(shp_record['geometry_wkt'])
+                    
+                    if geom.geom_type == 'Point':
+                        coords_para_mapa = [[geom.y, geom.x]]  # [lat, lng] for Leaflet
+                    elif geom.geom_type in ['Polygon', 'MultiPolygon']:
+                        # For polygons, extract coordinates in the format Leaflet expects
+                        if geom.geom_type == 'Polygon':
+                            exterior_coords = list(geom.exterior.coords)
+                        else:  # MultiPolygon - use the first polygon
+                            exterior_coords = list(geom.geoms[0].exterior.coords)
                         
-                        # Agregar una bandera para indicar que se determinó automáticamente
-                        row_data['UBICACION_AUTO'] = True
-                
-                # Preprocesar coordenadas para el mapa
-                coords_para_mapa = []
-                if poligono.coordenadas_corregidas:
-                    try:
-                        coord_pairs = poligono.coordenadas_corregidas.split(' | ')
-                        for pair in coord_pairs:
-                            if ',' in pair:
-                                lat_str, lon_str = pair.split(',')
-                                lat = float(lat_str.strip())
-                                lon = float(lon_str.strip())
-                                coords_para_mapa.append([lat, lon])
-                    except Exception as e:
-                        print(f"Error al procesar coordenadas para mapa: {e}")
-
-                # Determinar columnas para edición (basado en lo que ahora está en row_data)
-                edit_columns = list(row_data.keys()) # Simplificado: mostrar todos los campos cargados
-
-                return render_template('validacion_poligonos.html',
-                                   tab=tab,
-                                   row_data=row_data,
-                                   row_index=row_index, # Mantener por compatibilidad si se necesita
-                                   db_id=db_id,
-                                   coords_para_mapa=coords_para_mapa,
-                                   columns=edit_columns) # Mostrar todas las columnas recuperadas
+                        # Convert to [lat, lng] format for Leaflet
+                        coords_para_mapa = [[y, x] for x, y in exterior_coords]
+                    
+                    # Convert SQLite row to dict for modification
+                    shp_record = dict(shp_record)
+                    
+                    # Handle the atributos JSON field if it exists
+                    if 'atributos' in shp_record and shp_record['atributos']:
+                        try:
+                            if isinstance(shp_record['atributos'], str):
+                                shp_record['atributos'] = json.loads(shp_record['atributos'])
+                        except json.JSONDecodeError as e:
+                            app.logger.error(f"Error parsing atributos JSON: {e}")
+                            # Ensure it's a dictionary, even if empty
+                            shp_record['atributos'] = {"error": "No se pudieron cargar los atributos correctamente"}
+                except Exception as e:
+                    app.logger.error(f"Error processing geometry or attributes: {e}")
+                    if shp_record:
+                        shp_record = dict(shp_record) if not isinstance(shp_record, dict) else shp_record
+                        if 'atributos' in shp_record and not isinstance(shp_record['atributos'], dict):
+                            # If it's not a dict, create a simple one with the value
+                            value = str(shp_record['atributos']) if shp_record['atributos'] is not None else ""
+                            shp_record['atributos'] = {"valor": value}
             
-            # Compatibilidad con el código anterior (se podría eliminar si ya no se usa)
-            elif row_index is not None and row_index < len(excel_data['data']):
-                print(f"Editando polígono desde memoria con índice: {row_index}")
-                row_data = excel_data['data'][row_index]
-                
-                # Calcular área
-                area_ha = calcular_area_poligono(row_data.get('COORDENADAS_DECIMALES_CORREGIDAS', ''))
-                row_data['AREA_DIGITALIZADA'] = f"{area_ha:.2f}"
-                
-                return render_template('validacion_poligonos.html', 
-                                   tab=tab, 
-                                   row_data=row_data,
-                                   row_index=row_index,
-                                   columns=excel_data['columns'])
+            conn.close()
             
-            else:
-                flash('Índice de fila inválido', 'error')
-                return redirect(url_for('validacion_poligonos', tab='lista'))
-        except Exception as e:
-            print(f"ERROR AL EDITAR: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            flash(f'Error al editar polígono: {str(e)}', 'error')
-            return redirect(url_for('validacion_poligonos', tab='lista'))
+            return render_template('validacion_rapida_shp.html', 
+                                  tab=tab, 
+                                  shp_id=shp_id,
+                                  shp_record=shp_record, 
+                                  coords_para_mapa=coords_para_mapa)
     
     elif tab == 'generar':
         try:
@@ -2810,6 +2753,716 @@ def generar_excel():
         traceback.print_exc()
         flash(f'Error al generar archivo Excel: {str(e)}', 'error')
         return redirect(url_for('validacion_poligonos', tab='generar'))
+
+# Import necessary modules for SHP handling
+import zipfile
+import tempfile
+import os
+import geopandas as gpd
+import pandas as pd
+from shapely.geometry import shape, Point, Polygon
+import json
+from werkzeug.utils import secure_filename
+
+# ------- Validación Rápida SHP Routes -------
+
+def safe_process_coordinates(geometry):
+    """Safely process geometry coordinates for display in the map."""
+    try:
+        # For standard shapefile polygons
+        if hasattr(geometry, 'exterior') and hasattr(geometry.exterior, 'coords'):
+            # Handle polygon geometry
+            exterior_coords = list(geometry.exterior.coords)
+            # Only take the first two coordinates (x,y) and ignore z or other dimensions if present
+            coords = [[y, x] for x, y in [(p[0], p[1]) for p in exterior_coords]]
+            return coords
+        
+        # For MultiPolygon geometries
+        elif hasattr(geometry, 'geoms'):
+            # Use the first polygon in the multipolygon
+            first_geom = geometry.geoms[0]
+            if hasattr(first_geom, 'exterior'):
+                exterior_coords = list(first_geom.exterior.coords)
+                # Only take the first two coordinates (x,y) and ignore z or other dimensions
+                coords = [[y, x] for x, y in [(p[0], p[1]) for p in exterior_coords]]
+                return coords
+        
+        # For Point geometries
+        elif geometry.geom_type == 'Point':
+            return [[geometry.y, geometry.x]]  # [lat, lng] for Leaflet
+        
+        # For LineString geometries
+        elif geometry.geom_type == 'LineString':
+            line_coords = list(geometry.coords)
+            # Only take the first two coordinates (x,y) and ignore z or other dimensions
+            coords = [[y, x] for x, y in [(p[0], p[1]) for p in line_coords]]
+            return coords
+        
+        # Return empty list if geometry type is not handled
+        print(f"Geometry type not handled: {geometry.geom_type}")
+        return []
+        
+    except Exception as e:
+        print(f"Error safely processing coordinates: {e}")
+        import traceback
+        traceback.print_exc()
+        return []
+
+@app.route('/validacion_rapida_shp')
+@app.route('/validacion_rapida_shp/<tab>')
+def validacion_rapida_shp(tab=None):
+    """
+    Main route for the SHP validation functionality.
+    Handles different tabs based on the parameter.
+    """
+    if not tab:
+        tab = 'cargar'
+    
+    # Get available SHP files and data
+    shp_data = []
+    shp_columns = []
+    shp_archivos = []
+    
+    # Query the database for SHP records
+    if tab in ['lista', 'generar']:
+        # Get filter parameter if available
+        shp_filter = request.args.get('shp_filter')
+        
+        # Connect to database
+        conn = get_db_connection()
+        
+        if shp_filter:
+            # Filter by SHP file name
+            shp_data = conn.execute('SELECT * FROM shp_records WHERE shp_origen = ?', 
+                                   (shp_filter,)).fetchall()
+        else:
+            # Get all records
+            shp_data = conn.execute('SELECT * FROM shp_records').fetchall()
+        
+        # Get list of unique SHP files
+        shp_archivos = conn.execute(
+            'SELECT DISTINCT shp_origen FROM shp_records ORDER BY shp_origen'
+        ).fetchall()
+        shp_archivos = [row['shp_origen'] for row in shp_archivos]
+        
+        # Get columns for display (excluding geometry data)
+        if shp_data:
+            shp_columns = [column for column in shp_data[0].keys() 
+                          if column not in ['shp_id', 'geometry_wkt', 'atributos']]
+        
+        conn.close()
+    
+    # Handle Edit tab
+    elif tab == 'editar':
+        shp_id = request.args.get('shp_id')
+        if shp_id:
+            conn = get_db_connection()
+            # Get the specific record
+            shp_record = conn.execute('SELECT * FROM shp_records WHERE shp_id = ?', 
+                                     (shp_id,)).fetchone()
+            
+            coords_para_mapa = None
+            if shp_record and shp_record['geometry_wkt']:
+                # Convert WKT geometry to coordinates for the map
+                try:
+                    from shapely import wkt
+                    geom = wkt.loads(shp_record['geometry_wkt'])
+                    
+                    # Use the safe processing function to handle various geometry types and formats
+                    coords_para_mapa = safe_process_coordinates(geom)
+                    
+                    # Convert SQLite row to dict for modification
+                    shp_record = dict(shp_record)
+                    
+                    # Handle the atributos JSON field if it exists
+                    if 'atributos' in shp_record and shp_record['atributos']:
+                        try:
+                            if isinstance(shp_record['atributos'], str):
+                                shp_record['atributos'] = json.loads(shp_record['atributos'])
+                        except json.JSONDecodeError as e:
+                            app.logger.error(f"Error parsing atributos JSON: {e}")
+                            # Ensure it's a dictionary, even if empty
+                            shp_record['atributos'] = {"error": "No se pudieron cargar los atributos correctamente"}
+                except Exception as e:
+                    app.logger.error(f"Error processing geometry or attributes: {e}")
+                    if shp_record:
+                        shp_record = dict(shp_record) if not isinstance(shp_record, dict) else shp_record
+                        if 'atributos' in shp_record and not isinstance(shp_record['atributos'], dict):
+                            # If it's not a dict, create a simple one with the value
+                            value = str(shp_record['atributos']) if shp_record['atributos'] is not None else ""
+                            shp_record['atributos'] = {"valor": value}
+            
+            conn.close()
+            
+            return render_template('validacion_rapida_shp.html', 
+                                  tab=tab, 
+                                  shp_id=shp_id,
+                                  shp_record=shp_record, 
+                                  coords_para_mapa=coords_para_mapa)
+    
+    return render_template('validacion_rapida_shp.html', 
+                          tab=tab, 
+                          shp_data=shp_data,
+                          shp_columns=shp_columns,
+                          shp_archivos=shp_archivos)
+
+@app.route('/cargar_shp_zip', methods=['POST'])
+def cargar_shp_zip():
+    """
+    Handle the upload of a ZIP file containing SHP files.
+    Extract the ZIP, process each SHP, and store in database.
+    """
+    if 'archivo' not in request.files:
+        flash('No se seleccionó ningún archivo')
+        return redirect(url_for('validacion_rapida_shp', tab='cargar'))
+    
+    archivo = request.files['archivo']
+    
+    if archivo.filename == '':
+        flash('No se seleccionó ningún archivo')
+        return redirect(url_for('validacion_rapida_shp', tab='cargar'))
+    
+    if not archivo.filename.endswith('.zip'):
+        flash('El archivo debe ser un archivo ZIP')
+        return redirect(url_for('validacion_rapida_shp', tab='cargar'))
+    
+    # Create a temporary directory to extract the ZIP
+    with tempfile.TemporaryDirectory() as temp_dir:
+        zip_path = os.path.join(temp_dir, secure_filename(archivo.filename))
+        archivo.save(zip_path)
+        
+        # Extract the ZIP file
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall(temp_dir)
+        
+        # Función recursiva para extraer ZIPs anidados
+        def extract_nested_zips(directory):
+            # Buscar todos los archivos ZIP en el directorio actual
+            zip_files = []
+            for root, dirs, files in os.walk(directory):
+                for file in files:
+                    if file.endswith('.zip'):
+                        zip_files.append(os.path.join(root, file))
+            
+            # Si no hay archivos ZIP, terminar la recursión
+            if not zip_files:
+                return
+            
+            # Mantener un registro de los ZIPs ya procesados para evitar duplicados
+            processed_zips = set()
+            
+            # Extraer cada archivo ZIP encontrado
+            for zip_file in zip_files:
+                try:
+                    # Evitar procesar el mismo archivo ZIP más de una vez
+                    if zip_file in processed_zips:
+                        continue
+                    
+                    processed_zips.add(zip_file)
+                    
+                    # Crear un subdirectorio para la extracción basado en el nombre del ZIP
+                    extract_dir = os.path.join(os.path.dirname(zip_file), 
+                                              os.path.basename(zip_file).replace('.zip', ''))
+                    os.makedirs(extract_dir, exist_ok=True)
+                    
+                    # Extraer el ZIP
+                    with zipfile.ZipFile(zip_file, 'r') as zip_ref:
+                        zip_ref.extractall(extract_dir)
+                    
+                    # Eliminar el ZIP original después de extraerlo para evitar duplicados
+                    try:
+                        os.remove(zip_file)
+                    except Exception as remove_error:
+                        app.logger.error(f"Error removing zip after extraction: {remove_error}")
+                except Exception as e:
+                    app.logger.error(f"Error extracting nested ZIP {zip_file}: {e}")
+            
+            # Buscar nuevos archivos ZIP después de la extracción
+            new_zip_files = []
+            for root, dirs, files in os.walk(directory):
+                for file in files:
+                    if file.endswith('.zip'):
+                        new_zip_files.append(os.path.join(root, file))
+            
+            # Si hay nuevos archivos ZIP, extraerlos recursivamente
+            if new_zip_files:
+                extract_nested_zips(directory)
+        
+        # Extraer recursivamente todos los ZIPs anidados
+        extract_nested_zips(temp_dir)
+        
+        # Find all SHP files in the extracted directory
+        shp_files = []
+        for root, dirs, files in os.walk(temp_dir):
+            for file in files:
+                if file.endswith('.shp'):
+                    shp_files.append(os.path.join(root, file))
+        
+        if not shp_files:
+            flash('No se encontraron archivos SHP en el ZIP')
+            return redirect(url_for('validacion_rapida_shp', tab='cargar'))
+        
+        # Conjunto para rastrear geometrías ya procesadas y evitar duplicados
+        processed_geometries = set()
+        
+        # Process each SHP file
+        registros_procesados = 0
+        
+        conn = get_db_connection()
+        
+        for shp_file in shp_files:
+            try:
+                # Read the shapefile using GeoPandas
+                gdf = gpd.read_file(shp_file)
+                
+                # Get the shapefile name without path and extension
+                shp_origen = os.path.basename(shp_file).replace('.shp', '')
+                
+                # Process each record in the shapefile
+                for idx, row in gdf.iterrows():
+                    # Convert geometry to WKT (Well-Known Text) for storage
+                    geometry_wkt = row.geometry.wkt
+                    
+                    # Calculate area in hectares for polygons
+                    area = None
+                    if row.geometry.geom_type in ['Polygon', 'MultiPolygon']:
+                        # Convert to GeoSeries with correct CRS for area calculation
+                        gs = gpd.GeoSeries([row.geometry], crs=gdf.crs)
+                        # Convert to UTM for accurate area calculation
+                        gs_utm = gs.to_crs('+proj=utm +zone=14 +datum=WGS84 +units=m +no_defs')
+                        # Calculate area in hectares
+                        area = gs_utm.area.values[0] / 10000  # m² to hectares
+                    
+                    # Store all other attributes as JSON
+                    atributos = {}
+                    for col in gdf.columns:
+                        if col != 'geometry':
+                            # Convert non-JSON serializable types
+                            if isinstance(row[col], (int, float, str, bool)) or row[col] is None:
+                                atributos[col] = row[col]
+                            else:
+                                atributos[col] = str(row[col])
+                    
+                    # Find ID field if available
+                    id_campo = None
+                    for key in ['ID', 'FID', 'OBJECTID', 'id', 'fid', 'objectid']:
+                        if key in atributos:
+                            id_campo = atributos[key]
+                            break
+                    
+                    # Find municipality and state if available
+                    municipio = None
+                    estado = None
+                    for key in ['MUNICIPIO', 'municipio', 'MUN', 'mun']:
+                        if key in atributos:
+                            municipio = atributos[key]
+                            break
+                    
+                    for key in ['ESTADO', 'estado', 'EDO', 'edo']:
+                        if key in atributos:
+                            estado = atributos[key]
+                            break
+                    
+                    # Crear una firma única para detectar duplicados (WKT + área + estado)
+                    geometry_signature = f"{geometry_wkt}|{area}|{estado}"
+                    
+                    # Verificar si esta geometría ya fue procesada
+                    if geometry_signature in processed_geometries:
+                        print(f"Geometría duplicada detectada, saltando: {geometry_signature[:50]}...")
+                        continue
+                    
+                    # Marcar esta geometría como procesada
+                    processed_geometries.add(geometry_signature)
+                    
+                    # Insert into database
+                    conn.execute('''
+                        INSERT INTO shp_records 
+                        (shp_origen, geometry_wkt, area, id_campo, atributos, municipio, estado, comentario, estatus)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (
+                        shp_origen,
+                        geometry_wkt,
+                        area,
+                        id_campo,
+                        json.dumps(atributos),
+                        municipio,
+                        estado,
+                        '',  # Default empty comment
+                        'no_aprobado'  # Default status is no_aprobado (previously 6)
+                    ))
+                    
+                    registros_procesados += 1
+            
+            except Exception as e:
+                flash(f'Error al procesar el archivo {os.path.basename(shp_file)}: {str(e)}')
+                app.logger.error(f"Error processing SHP: {e}")
+                conn.rollback()
+                continue
+        
+        conn.commit()
+        conn.close()
+        
+        if registros_procesados > 0:
+            flash(f'Archivo procesado correctamente. {registros_procesados} registros importados.')
+            return redirect(url_for('validacion_rapida_shp', tab='lista'))
+        else:
+            flash('No se pudo procesar ningún registro desde los archivos SHP.')
+            return redirect(url_for('validacion_rapida_shp', tab='cargar'))
+
+@app.route('/actualizar_shp_record', methods=['POST'])
+def actualizar_shp_record():
+    """
+    Update an SHP record with new information (comments, status, and geometry if provided).
+    """
+    shp_id = request.form.get('shp_id')
+    comentario = request.form.get('comentario', '')
+    estatus = request.form.get('estatus', '6')
+    
+    # Optional fields that might be editable
+    municipio = request.form.get('municipio')
+    estado = request.form.get('estado')
+    
+    # Get the area and wkt_geometry from the form
+    area = request.form.get('area')
+    wkt_geometry = request.form.get('wkt_geometry')
+    
+    # Get new coordinates if provided
+    nuevas_coordenadas = request.form.get('nuevas_coordenadas')
+    
+    if not shp_id:
+        flash('ID de registro no válido')
+        return redirect(url_for('validacion_rapida_shp', tab='lista'))
+    
+    conn = get_db_connection()
+    
+    # First, get the current record to retain any values we're not updating
+    current_record = conn.execute('SELECT * FROM shp_records WHERE shp_id = ?', (shp_id,)).fetchone()
+    
+    if not current_record:
+        conn.close()
+        flash('Registro no encontrado')
+        return redirect(url_for('validacion_rapida_shp', tab='lista'))
+    
+    # Keep original values if not provided
+    if municipio is None:
+        municipio = current_record['municipio']
+    if estado is None:
+        estado = current_record['estado']
+    
+    # Update geometry and area if provided
+    if wkt_geometry:
+        try:
+            # If we have a new geometry, update the record with it and the new area
+            conn.execute('''
+                UPDATE shp_records
+                SET comentario = ?, estatus = ?, municipio = ?, estado = ?, 
+                    geometry_wkt = ?, area = ?, nuevas_coordenadas = ?
+                WHERE shp_id = ?
+            ''', (comentario, estatus, municipio, estado, wkt_geometry, area, nuevas_coordenadas, shp_id))
+        except Exception as e:
+            conn.close()
+            flash(f'Error al actualizar la geometría: {str(e)}')
+            return redirect(url_for('validacion_rapida_shp', tab='editar', shp_id=shp_id))
+    else:
+        # Update just the attributes without changing geometry
+        conn.execute('''
+            UPDATE shp_records
+            SET comentario = ?, estatus = ?, municipio = ?, estado = ?, nuevas_coordenadas = ?
+            WHERE shp_id = ?
+        ''', (comentario, estatus, municipio, estado, nuevas_coordenadas, shp_id))
+    
+    conn.commit()
+    conn.close()
+    
+    flash('Registro actualizado correctamente')
+    return redirect(url_for('validacion_rapida_shp', tab='lista'))
+
+@app.route('/eliminar_shp_record', methods=['POST'])
+def eliminar_shp_record():
+    """
+    Delete an SHP record from the database.
+    """
+    shp_id = request.form.get('shp_id')
+    
+    if not shp_id:
+        flash('ID de registro no válido')
+        return redirect(url_for('validacion_rapida_shp', tab='lista'))
+    
+    conn = get_db_connection()
+    conn.execute('DELETE FROM shp_records WHERE shp_id = ?', (shp_id,))
+    conn.commit()
+    conn.close()
+    
+    flash('Registro eliminado correctamente')
+    return redirect(url_for('validacion_rapida_shp', tab='lista'))
+
+@app.route('/exportar_shp_lista')
+def exportar_shp_lista():
+    """
+    Export the SHP records list to Excel.
+    """
+    # Get filter parameter if available
+    shp_filter = request.args.get('shp_filter')
+    
+    conn = get_db_connection()
+    
+    if shp_filter:
+        # Filter by SHP file name
+        records = conn.execute('SELECT * FROM shp_records WHERE shp_origen = ?', 
+                              (shp_filter,)).fetchall()
+    else:
+        # Get all records
+        records = conn.execute('SELECT * FROM shp_records').fetchall()
+    
+    conn.close()
+    
+    if not records:
+        flash('No hay registros para exportar')
+        return redirect(url_for('validacion_rapida_shp', tab='lista'))
+    
+    # Create a DataFrame with the records
+    data = []
+    for record in records:
+        # Skip geometry WKT to keep the excel clean
+        row_data = {k: v for k, v in dict(record).items() if k != 'geometry_wkt'}
+        
+        # Parse the JSON attributes
+        if 'atributos' in row_data and row_data['atributos']:
+            try:
+                atributos = json.loads(row_data['atributos'])
+                for key, value in atributos.items():
+                    row_data[f'attr_{key}'] = value
+            except:
+                pass
+        
+        data.append(row_data)
+    
+    df = pd.DataFrame(data)
+    
+    # Create a temporary file for the Excel
+    with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as temp_file:
+        excel_path = temp_file.name
+        df.to_excel(excel_path, index=False)
+    
+    # Return the file as attachment
+    return send_file(
+        excel_path,
+        as_attachment=True,
+        download_name='registros_shp.xlsx'
+    )
+
+@app.route('/generar_shp_archivos')
+def generar_shp_archivos():
+    """
+    Generate Excel file with all SHP records data
+    """
+    incluir_comentarios = request.args.get('incluir_comentarios', 'true') == 'true'
+    filtro_estatus = request.args.get('filtro_estatus', 'todos')
+    ids = request.args.get('ids', '')
+    
+    if ids:
+        id_list = ids.split(',')
+    else:
+        flash('No se seleccionaron registros')
+        return redirect(url_for('validacion_rapida_shp', tab='generar'))
+    
+    # Query the database for selected records
+    conn = get_db_connection()
+    
+    placeholders = ','.join(['?'] * len(id_list))
+    
+    if filtro_estatus != 'todos':
+        # Handle both old numeric and new string status values
+        status_values = []
+        if filtro_estatus == 'aprobado':
+            status_values = ['7', 7, 'aprobado']  # Include both old and new values
+        elif filtro_estatus == 'no_aprobado':
+            status_values = ['6', 6, 'no_aprobado']  # Include both old and new values
+        else:
+            status_values = [filtro_estatus]  # Use the value as is
+            
+        # Create placeholders for status values
+        status_placeholders = ','.join(['?'] * len(status_values))
+        
+        query = f'''
+            SELECT * FROM shp_records 
+            WHERE shp_id IN ({placeholders}) AND estatus IN ({status_placeholders})
+        '''
+        # Combine ID list and status values for the query parameters
+        params = id_list + status_values
+        records = conn.execute(query, params).fetchall()
+    else:
+        query = f'''
+            SELECT * FROM shp_records 
+            WHERE shp_id IN ({placeholders})
+        '''
+        records = conn.execute(query, id_list).fetchall()
+    
+    conn.close()
+    
+    if not records:
+        flash('No se encontraron registros con los criterios seleccionados')
+        return redirect(url_for('validacion_rapida_shp', tab='generar'))
+    
+    # Create Excel with all records
+    data = []
+    
+    for record in records:
+        # Skip geometry_wkt field to keep the Excel clean
+        row_data = {k: v for k, v in dict(record).items() if k != 'geometry_wkt'}
+        
+        # Parse the JSON attributes and add them as individual columns
+        if 'atributos' in row_data and row_data['atributos']:
+            try:
+                atributos = json.loads(row_data['atributos'])
+                for key, value in atributos.items():
+                    # Add attributes without prefix
+                    row_data[key] = value
+                
+                # Remove the original JSON string to avoid duplication
+                del row_data['atributos']
+            except Exception as e:
+                print(f"Error parsing JSON attributes: {e}")
+                # Keep the original column if parsing fails
+        
+        data.append(row_data)
+    
+    df = pd.DataFrame(data)
+    
+    # Create a temporary file for the Excel
+    with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as temp_file:
+        excel_path = temp_file.name
+        df.to_excel(excel_path, index=False)
+    
+    # Return the file as attachment
+    return send_file(
+        excel_path,
+        as_attachment=True,
+        download_name='registros_shp.xlsx'
+    )
+
+@app.route('/generar_shp_zip_completo')
+def generar_shp_zip_completo():
+    """
+    Generate a complete Excel file with all SHP records, expanding attributes into columns.
+    """
+    # Query all records from database
+    conn = get_db_connection()
+    records = conn.execute('SELECT * FROM shp_records').fetchall()
+    conn.close()
+    
+    if not records:
+        flash('No hay registros para procesar')
+        return redirect(url_for('validacion_rapida_shp', tab='generar'))
+    
+    # Create Excel with all records
+    data = []
+    
+    # Track all possible JSON attributes to ensure all records have all columns
+    all_attributes = set()
+    
+    # First pass - extract all possible attribute names from all records
+    for record in records:
+        if record['atributos']:
+            try:
+                atributos = json.loads(record['atributos'])
+                for key in atributos.keys():
+                    all_attributes.add(key)
+            except Exception as e:
+                print(f"Error parsing JSON attributes: {e}")
+    
+    # Second pass - create complete data rows with all attributes
+    for record in records:
+        # Skip geometry_wkt field to keep the Excel clean
+        row_data = {k: v for k, v in dict(record).items() if k != 'geometry_wkt'}
+        
+        # Parse the JSON attributes and add them as individual columns
+        attr_values = {}
+        if 'atributos' in row_data and row_data['atributos']:
+            try:
+                atributos = json.loads(row_data['atributos'])
+                # Initialize all possible attributes as None
+                for attr in all_attributes:
+                    attr_values[attr] = None
+                
+                # Set values for attributes present in this record
+                for key, value in atributos.items():
+                    attr_values[key] = value
+                
+                # Remove the original JSON string to avoid duplication
+                del row_data['atributos']
+            except Exception as e:
+                print(f"Error parsing JSON attributes for record {record['shp_id']}: {e}")
+        
+        # Combine base record data with attribute data
+        row_data.update(attr_values)
+        data.append(row_data)
+    
+    df = pd.DataFrame(data)
+    
+    # Create a temporary file for the Excel
+    with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as temp_file:
+        excel_path = temp_file.name
+        df.to_excel(excel_path, index=False)
+    
+    # Return the file as attachment
+    return send_file(
+        excel_path,
+        as_attachment=True,
+        download_name='todos_registros_shp.xlsx'
+    )
+
+# Add a database initialization function to create the SHP records table if it doesn't exist
+def get_db_connection():
+    """Create a connection to the SQLite database for SHP records."""
+    import sqlite3
+    conn = sqlite3.connect('shp_records.db')
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def init_shp_db():
+    """
+    Initialize the database table for SHP records if it doesn't exist.
+    """
+    conn = get_db_connection()
+    
+    # Create the table if it doesn't exist
+    conn.execute('''
+    CREATE TABLE IF NOT EXISTS shp_records (
+        shp_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        shp_origen TEXT NOT NULL,
+        geometry_wkt TEXT NOT NULL,
+        area REAL,
+        id_campo TEXT,
+        atributos TEXT,
+        municipio TEXT,
+        estado TEXT,
+        comentario TEXT,
+        estatus TEXT,
+        nuevas_coordenadas TEXT
+    )
+    ''')
+    
+    conn.commit()
+    conn.close()
+
+# Call the initialization function when the app starts
+init_shp_db()
+
+# Filtro personalizado para convertir strings JSON a diccionarios
+@app.template_filter('ensure_dict')
+def ensure_dict(value):
+    """Asegura que el valor es un diccionario. Si es un string JSON, intenta convertirlo."""
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            # Si no es un JSON válido, devuelve un diccionario con el string como valor
+            return {"valor": value}
+    # Si no es ni dict ni str, devuelve un diccionario vacío
+    return {}
 
 if __name__ == '__main__':
     app.run(debug=True)
