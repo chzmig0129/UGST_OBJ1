@@ -3505,17 +3505,154 @@ init_shp_db()
 # Filtro personalizado para convertir strings JSON a diccionarios
 @app.template_filter('ensure_dict')
 def ensure_dict(value):
-    """Asegura que el valor es un diccionario. Si es un string JSON, intenta convertirlo."""
+    """
+    Asegura que el valor es un diccionario. Si es una cadena JSON, la parsea.
+    Si ya es un diccionario, lo devuelve tal como está.
+    Si es otra cosa, devuelve un diccionario vacío.
+    """
     if isinstance(value, dict):
         return value
-    if isinstance(value, str):
+    elif isinstance(value, str):
         try:
             return json.loads(value)
-        except json.JSONDecodeError:
-            # Si no es un JSON válido, devuelve un diccionario con el string como valor
-            return {"valor": value}
-    # Si no es ni dict ni str, devuelve un diccionario vacío
-    return {}
+        except (json.JSONDecodeError, ValueError):
+            return {}
+    else:
+        return {}
+
+@app.route('/get-poligonos-actuales-traslapes/<int:polygon_id>')
+def get_poligonos_actuales_traslapes(polygon_id):
+    """Endpoint para detectar y devolver polígonos actuales que traslapan con el polígono dado"""
+    try:
+        from shapely.geometry import Polygon
+        import json
+        
+        # Buscar el polígono actual en la base de datos
+        poligono_actual = Poligono.query.get(polygon_id)
+        if poligono_actual is None:
+            return jsonify({'error': 'Polígono no encontrado'}), 404
+            
+        # Obtener coordenadas del polígono actual
+        coordenadas_corregidas = poligono_actual.coordenadas_corregidas
+        if not coordenadas_corregidas:
+            return jsonify({'error': 'El polígono no tiene coordenadas válidas'}), 400
+        
+        # Convertir coordenadas del polígono actual a geometría
+        def coordenadas_a_geometria(coord_str):
+            """Convierte string de coordenadas a geometría Shapely"""
+            try:
+                coords_list = coord_str.split(' | ')
+                puntos = []
+                for coord in coords_list:
+                    if ',' in coord:
+                        lat, lon = coord.strip().split(',')
+                        puntos.append((float(lon.strip()), float(lat.strip())))  # Shapely usa (lon, lat)
+                
+                if len(puntos) >= 3:
+                    return Polygon(puntos)
+                else:
+                    return None
+            except Exception as e:
+                print(f"Error al convertir coordenadas a geometría: {e}")
+                return None
+        
+        def coordenadas_a_geojson_coords(coord_str):
+            """Convierte string de coordenadas a coordenadas de GeoJSON"""
+            try:
+                coords_list = coord_str.split(' | ')
+                puntos = []
+                for coord in coords_list:
+                    if ',' in coord:
+                        lat, lon = coord.strip().split(',')
+                        puntos.append([float(lon.strip()), float(lat.strip())])  # GeoJSON usa [lon, lat]
+                
+                if len(puntos) >= 3:
+                    # Cerrar el polígono si no está cerrado
+                    if puntos[0] != puntos[-1]:
+                        puntos.append(puntos[0])
+                    return [puntos]  # GeoJSON Polygon requiere array de arrays
+                else:
+                    return None
+            except Exception as e:
+                print(f"Error al convertir coordenadas a GeoJSON: {e}")
+                return None
+        
+        geometria_actual = coordenadas_a_geometria(coordenadas_corregidas)
+        if geometria_actual is None:
+            return jsonify({'error': 'No se pudo procesar la geometría del polígono actual'}), 400
+        
+        # Obtener todos los demás polígonos de la base de datos
+        otros_poligonos = Poligono.query.filter(Poligono.id != polygon_id).all()
+        
+        # Lista para almacenar polígonos que traslapan
+        poligonos_traslapados = []
+        features_geojson = []
+        
+        # Verificar traslapes con cada polígono
+        for otro_poligono in otros_poligonos:
+            if not otro_poligono.coordenadas_corregidas:
+                continue
+                
+            otra_geometria = coordenadas_a_geometria(otro_poligono.coordenadas_corregidas)
+            if otra_geometria is None:
+                continue
+            
+            # Verificar si hay traslape
+            try:
+                if geometria_actual.intersects(otra_geometria) and not geometria_actual.touches(otra_geometria):
+                    # Hay traslape (intersección pero no solo tocándose)
+                    poligono_info = {
+                        'id': otro_poligono.id,
+                        'id_poligono': otro_poligono.id_poligono or f"DB_{otro_poligono.id}",
+                        'area': otro_poligono.area_digitalizada or 0,
+                        'estado': otro_poligono.estado or '',
+                        'municipio': otro_poligono.municipio or ''
+                    }
+                    poligonos_traslapados.append(poligono_info)
+                    
+                    # Crear feature GeoJSON para este polígono
+                    geojson_coords = coordenadas_a_geojson_coords(otro_poligono.coordenadas_corregidas)
+                    if geojson_coords:
+                        feature = {
+                            "type": "Feature",
+                            "properties": {
+                                "id": otro_poligono.id,
+                                "id_poligono": otro_poligono.id_poligono or f"DB_{otro_poligono.id}",
+                                "area": otro_poligono.area_digitalizada or 0,
+                                "estado": otro_poligono.estado or '',
+                                "municipio": otro_poligono.municipio or '',
+                                "tipo": "actual_traslapado"  # Identificador para aplicar estilo diferente
+                            },
+                            "geometry": {
+                                "type": "Polygon",
+                                "coordinates": geojson_coords
+                            }
+                        }
+                        features_geojson.append(feature)
+                        
+            except Exception as e:
+                print(f"Error al verificar traslape con polígono {otro_poligono.id}: {e}")
+                continue
+        
+        # Crear GeoJSON completo
+        geojson_data = {
+            "type": "FeatureCollection",
+            "features": features_geojson
+        }
+        
+        # Preparar respuesta
+        respuesta = {
+            'poligonos_traslapados': poligonos_traslapados,
+            'total': len(poligonos_traslapados),
+            'geojson': geojson_data
+        }
+        
+        print(f"Polígonos actuales traslapados encontrados: {len(poligonos_traslapados)}")
+        return jsonify(respuesta)
+        
+    except Exception as e:
+        print(f"Error al detectar traslapes entre polígonos actuales: {e}")
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True)

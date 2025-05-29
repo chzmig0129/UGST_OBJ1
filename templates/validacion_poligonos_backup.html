@@ -320,44 +320,6 @@
                         
                         <div class="col-md-6">
                             <div id="map" style="height: 550px; width: 100%; border-radius: 4px;"></div>
-                            
-                            <!-- Controles de Visibilidad de Capas -->
-                            <div class="mt-3">
-                                <div class="card">
-                                    <div class="card-header py-2">
-                                        <h6 class="mb-0"><i class="bi bi-layers"></i> Control de Capas</h6>
-                                    </div>
-                                    <div class="card-body py-2">
-                                        <div class="row">
-                                            <div class="col-md-6">
-                                                <div class="form-check form-switch mb-2">
-                                                    <input class="form-check-input" type="checkbox" id="toggleHistoricos" checked>
-                                                    <label class="form-check-label" for="toggleHistoricos">
-                                                        <span style="color: #ff8c00; font-weight: bold;">●</span> Polígonos Históricos
-                                                    </label>
-                                                </div>
-                                                <div class="form-check form-switch mb-2">
-                                                    <input class="form-check-input" type="checkbox" id="toggleActuales" checked>
-                                                    <label class="form-check-label" for="toggleActuales">
-                                                        <span style="color: #d63031; font-weight: bold;">●</span> Polígonos Actuales
-                                                    </label>
-                                                </div>
-                                            </div>
-                                            <div class="col-md-6">
-                                                <div class="form-check form-switch mb-2">
-                                                    <input class="form-check-input" type="checkbox" id="togglePoligonoActual" checked>
-                                                    <label class="form-check-label" for="togglePoligonoActual">
-                                                        <span style="color: #0066cc; font-weight: bold;">●</span> Polígono Actual
-                                                    </label>
-                                                </div>
-                                                <button type="button" class="btn btn-outline-primary btn-sm" id="zoomToPoligono">
-                                                    <i class="bi bi-zoom-in"></i> Zoom al Polígono
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
                         </div>
                     </div>
                 </form>
@@ -682,15 +644,6 @@
             var editableLayers = new L.FeatureGroup();
             map.addLayer(editableLayers);
             
-            // Variables globales para capas de polígonos
-            var historicoLayerGroup = new L.LayerGroup();
-            var actualesLayerGroup = new L.LayerGroup();
-            var poligonoActualLayer = editableLayers; // El polígono actual está en editableLayers
-            
-            // Agregar capas al mapa
-            map.addLayer(historicoLayerGroup);
-            map.addLayer(actualesLayerGroup);
-            
             // Variables para guardar el polígono
             var polygon;
             var originalCoords = [];
@@ -742,7 +695,7 @@
                     originalCoords = JSON.parse(JSON.stringify(coordenadas));
                     
                     // Crear el polígono y añadirlo a la capa editable
-                    polygon = L.polygon(coordenadas, {color: '#0066cc', weight: 3, fillOpacity: 0.2});
+                    polygon = L.polygon(coordenadas, {color: 'red', weight: 3, fillOpacity: 0.2});
                     editableLayers.addLayer(polygon);
                     
                     // Ajustar el mapa para mostrar todo el polígono
@@ -789,7 +742,7 @@
                     var marker1 = L.marker(coordenadas[0], {
                         icon: L.divIcon({
                             className: 'two-point-marker',
-                            html: '<div style="width: 14px; height: 14px; background-color: #0066cc; border: 2px solid white; border-radius: 50%; box-shadow: 0 0 4px rgba(0,0,0,0.5);"></div>',
+                            html: '<div style="width: 14px; height: 14px; background-color: red; border: 2px solid white; border-radius: 50%; box-shadow: 0 0 4px rgba(0,0,0,0.5);"></div>',
                             iconSize: [14, 14],
                             iconAnchor: [7, 7]
                         })
@@ -799,7 +752,7 @@
                     var marker2 = L.marker(coordenadas[1], {
                         icon: L.divIcon({
                             className: 'two-point-marker',
-                            html: '<div style="width: 14px; height: 14px; background-color: #0066cc; border: 2px solid white; border-radius: 50%; box-shadow: 0 0 4px rgba(0,0,0,0.5);"></div>',
+                            html: '<div style="width: 14px; height: 14px; background-color: red; border: 2px solid white; border-radius: 50%; box-shadow: 0 0 4px rgba(0,0,0,0.5);"></div>',
                             iconSize: [14, 14],
                             iconAnchor: [7, 7]
                         })
@@ -814,7 +767,7 @@
                     editableLayers.addLayer(marker2);
                     
                     // Dibujar una línea entre los dos puntos (opcional)
-                    var linea = L.polyline([coordenadas[0], coordenadas[1]], {color: '#0066cc', weight: 2, dashArray: '5, 5'});
+                    var linea = L.polyline([coordenadas[0], coordenadas[1]], {color: 'red', weight: 2, dashArray: '5, 5'});
                     editableLayers.addLayer(linea);
                     
                     // Calcular el punto medio para centrar el mapa
@@ -850,7 +803,7 @@
                     var singleMarker = L.marker(coordenadas[0], {
                         icon: L.divIcon({
                             className: 'single-point-marker',
-                            html: '<div style="width: 14px; height: 14px; background-color: #0066cc; border: 2px solid white; border-radius: 50%; box-shadow: 0 0 4px rgba(0,0,0,0.5);"></div>',
+                            html: '<div style="width: 14px; height: 14px; background-color: red; border: 2px solid white; border-radius: 50%; box-shadow: 0 0 4px rgba(0,0,0,0.5);"></div>',
                             iconSize: [14, 14],
                             iconAnchor: [7, 7]
                         })
@@ -978,19 +931,21 @@
                         var idField = data.id_field;
                         
                         // Eliminar capas históricas anteriores si existieran
-                        historicoLayerGroup.clearLayers();
+                        if (window.historicoLayer) {
+                            map.removeLayer(window.historicoLayer);
+                        }
                         
                         // Para almacenar los IDs de los polígonos históricos
                         var historicalPolygonIds = [];
                         
                         // Crear nueva capa con los polígonos históricos
-                        var historicoLayer = L.geoJSON(data.geojson, {
+                        window.historicoLayer = L.geoJSON(data.geojson, {
                             style: function (feature) {
                                 return {
-                                    color: "#ff8c00",  // Color naranja para históricos
+                                    color: "#007bff",
                                     weight: 2,
-                                    opacity: 0.8,
-                                    fillOpacity: 0.3
+                                    opacity: 0.7,
+                                    fillOpacity: 0.1
                                 };
                             },
                             onEachFeature: function (feature, layer) {
@@ -1013,7 +968,7 @@
                                 }
                                 layer.bindTooltip(tooltipContent);
                             }
-                        }).addTo(historicoLayerGroup);
+                        }).addTo(map);
                         
                         // Actualizar el dropdown de IDs históricos
                         var descripcionSelect = document.getElementById('DescripcionSelect');
@@ -1105,9 +1060,6 @@
                         if (data.geojson && data.geojson.features && data.geojson.features.length > 0) {
                             console.log("Dibujando polígonos actuales traslapados en el mapa...");
                             
-                            // Limpiar capas actuales anteriores
-                            actualesLayerGroup.clearLayers();
-                            
                             // Crear capa para polígonos actuales traslapados con estilo diferente
                             var poligonosActualesLayer = L.geoJSON(data.geojson, {
                                 style: function(feature) {
@@ -1164,8 +1116,8 @@
                                 }
                             });
                             
-                            // Añadir la capa al grupo de capas actuales
-                            poligonosActualesLayer.addTo(actualesLayerGroup);
+                            // Añadir la capa al mapa
+                            poligonosActualesLayer.addTo(map);
                             
                             // Guardar referencia para poder removerla después si es necesario
                             if (!window.poligonosActualesLayers) {
@@ -1931,7 +1883,7 @@
                 // Restaurar el estilo original del polígono
                 editableLayers.eachLayer(function(layer) {
                     if (layer instanceof L.Polygon) {
-                        layer.setStyle({color: '#0066cc', weight: 3, fillOpacity: 0.2});
+                        layer.setStyle({color: 'red', weight: 3, fillOpacity: 0.2});
                     }
                 });
                 
@@ -1996,7 +1948,7 @@
                 editableLayers.clearLayers();
                 
                 // Recrear el polígono con las coordenadas originales
-                polygon = L.polygon(originalCoords, {color: '#0066cc'});
+                polygon = L.polygon(originalCoords, {color: 'red'});
                 editableLayers.addLayer(polygon);
                 
                 // Ocultar botones de guardar y cancelar, mostrar botones de editar y dibujar nuevo
@@ -2072,102 +2024,6 @@
             
             // Inicializar el botón de edición al cargar la página
             setTimeout(reiniciarBotonEdicion, 300);
-            
-            // Event listeners para controles de visibilidad de capas
-            var toggleHistoricos = document.getElementById('toggleHistoricos');
-            var toggleActuales = document.getElementById('toggleActuales');
-            var togglePoligonoActual = document.getElementById('togglePoligonoActual');
-            var zoomToPoligono = document.getElementById('zoomToPoligono');
-            
-            if (toggleHistoricos) {
-                toggleHistoricos.addEventListener('change', function() {
-                    if (this.checked) {
-                        map.addLayer(historicoLayerGroup);
-                    } else {
-                        map.removeLayer(historicoLayerGroup);
-                    }
-                });
-            }
-            
-            if (toggleActuales) {
-                toggleActuales.addEventListener('change', function() {
-                    if (this.checked) {
-                        map.addLayer(actualesLayerGroup);
-                    } else {
-                        map.removeLayer(actualesLayerGroup);
-                    }
-                });
-            }
-            
-            if (togglePoligonoActual) {
-                togglePoligonoActual.addEventListener('change', function() {
-                    if (this.checked) {
-                        map.addLayer(poligonoActualLayer);
-                    } else {
-                        map.removeLayer(poligonoActualLayer);
-                    }
-                });
-            }
-            
-            if (zoomToPoligono) {
-                zoomToPoligono.addEventListener('click', function() {
-                    // Hacer zoom al polígono actual si existe
-                    if (polygon && polygon.getBounds) {
-                        map.fitBounds(polygon.getBounds(), {padding: [20, 20]});
-                    } else if (editableLayers.getLayers().length > 0) {
-                        // Si hay capas en editableLayers, hacer zoom a esas
-                        map.fitBounds(editableLayers.getBounds(), {padding: [20, 20]});
-                    } else {
-                        console.log("No hay polígono actual para hacer zoom");
-                        
-                        // Mostrar toast informativo
-                        var toastHTML = `
-                        <div class="toast-container position-fixed bottom-0 end-0 p-3">
-                          <div class="toast show" role="alert" aria-live="assertive" aria-atomic="true">
-                            <div class="toast-header">
-                              <strong class="me-auto">Información</strong>
-                              <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
-                            </div>
-                            <div class="toast-body">
-                              No hay un polígono actual visible en el mapa.
-                            </div>
-                          </div>
-                        </div>`;
-                        
-                        var toastDiv = document.createElement('div');
-                        toastDiv.innerHTML = toastHTML;
-                        document.body.appendChild(toastDiv);
-                        
-                        setTimeout(function() {
-                            toastDiv.remove();
-                        }, 3000);
-                    }
-                });
-            }
-            
-            // Función para limpiar los controles no deseados de Leaflet.Draw
-            function cleanupLeafletDrawControls() {
-                // Ocultar cualquier control de edición nativo que pueda haber aparecido
-                var leafletDrawControls = document.querySelectorAll('.leaflet-draw');
-                leafletDrawControls.forEach(function(control) {
-                    control.style.display = 'none';
-                });
-                
-                // Asegurarse de que nuestros controles personalizados están visibles
-                var editPolygonBtn = document.getElementById('editPolygon');
-                var drawNewPolygonBtn = document.getElementById('drawNewPolygon');
-                if (editPolygonBtn && !editingMode) {
-                    editPolygonBtn.style.display = 'block';
-                }
-                if (drawNewPolygonBtn && !editingMode) {
-                    drawNewPolygonBtn.style.display = 'block';
-                }
-                
-                // Ocultar cualquier otro control de edición que pueda aparecer
-                document.querySelectorAll('.leaflet-draw-edit-edit, .leaflet-draw-edit-remove').forEach(function(el) {
-                    el.style.display = 'none';
-                });
-            }
         }
         
         document.getElementById('btnCancelar').addEventListener('click', function(e) {
