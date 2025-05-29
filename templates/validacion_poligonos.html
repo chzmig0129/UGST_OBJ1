@@ -180,7 +180,7 @@
             <div class="card-body">
                 <h3 class="mb-4">Editar Polígono: polygon-{{ row_index if row_index is defined else '0' }}</h3>
                 
-                {% if row_data %}
+                {% if poligono_data %}
                 <form action="{{ url_for('actualizar_fila') }}" method="post" id="formEditarPoligono">
                     {% if db_id is defined %}
                     <input type="hidden" name="db_id" value="{{ db_id }}">
@@ -194,12 +194,13 @@
                                 <div class="col-md-6">
                                     <label for="Area_reportada" class="form-label">Área Reportada</label>
                                     <input type="text" class="form-control" id="Area_reportada" name="SUPERFICIE" 
-                                           value="{{ row_data.get('SUPERFICIE', '0') }}">
+                                           value="{{ poligono_data.get('SUPERFICIE', '0') }}">
                                 </div>
                                 <div class="col-md-6">
                                     <label for="Area_digitalizada" class="form-label">Área Digitalizada (ha)</label>
                                     <input type="text" class="form-control" id="Area_digitalizada" name="AREA_DIGITALIZADA" 
-                                           value="{{ row_data.get('AREA_DIGITALIZADA', '0.0') }}">
+                                           pattern="[0-9]+(\.[0-9]+)?" title="Ingrese un número válido (ej: 123.456)" 
+                                           value="{{ poligono_data.get('AREA_DIGITALIZADA', '0.0') }}">
                                     <small class="text-muted">Calculada geodésicamente</small>
                                 </div>
                             </div>
@@ -209,8 +210,8 @@
                                     <label for="Estado" class="form-label">Estado</label>
                                     <div class="input-group">
                                         <input type="text" class="form-control" id="Estado" name="ESTADO" 
-                                            value="{{ row_data.get('ESTADO', '') }}">
-                                        {% if row_data.get('UBICACION_AUTO') %}
+                                            value="{{ poligono_data.get('ESTADO', '') }}">
+                                        {% if poligono_data.get('UBICACION_AUTO') %}
                                         <span class="input-group-text" title="Detectado automáticamente"><i class="bi bi-geo-alt-fill text-success"></i></span>
                                         {% endif %}
                                     </div>
@@ -219,8 +220,8 @@
                                     <label for="Municipio" class="form-label">Municipio</label>
                                     <div class="input-group">
                                         <input type="text" class="form-control" id="Municipio" name="MUNICIPIO" 
-                                            value="{{ row_data.get('MUNICIPIO', '') }}">
-                                        {% if row_data.get('UBICACION_AUTO') %}
+                                            value="{{ poligono_data.get('MUNICIPIO', '') }}">
+                                        {% if poligono_data.get('UBICACION_AUTO') %}
                                         <span class="input-group-text" title="Detectado automáticamente"><i class="bi bi-geo-alt-fill text-success"></i></span>
                                         {% endif %}
                                     </div>
@@ -230,7 +231,7 @@
                             <div class="mb-3">
                                 <label for="COORDENADAS_DECIMALES_CORREGIDAS" class="form-label">Coordenadas (Formato decimal)</label>
                                 <textarea class="form-control" id="COORDENADAS_DECIMALES_CORREGIDAS" name="COORDENADAS_DECIMALES_CORREGIDAS" 
-                                          rows="3">{{ row_data.get('COORDENADAS_DECIMALES_CORREGIDAS', '') }}</textarea>
+                                          rows="3">{{ poligono_data.get('COORDENADAS_DECIMALES_CORREGIDAS', '') }}</textarea>
                                 <small class="text-muted">Formato: latitud,longitud | latitud,longitud | ...</small>
                             </div>
                             
@@ -252,7 +253,7 @@
                                         <option value="PARCELAS SEPARADAS">PARCELAS SEPARADAS</option>
                                         <option value="POLÍGONO TRASLAPADO CON">POLÍGONO TRASLAPADO CON</option>
                                     </select>
-                                    <textarea class="form-control" id="Comentarios" name="COMENTARIOS" rows="2">{{ row_data.get('COMENTARIOS', '') }}</textarea>
+                                    <textarea class="form-control" id="Comentarios" name="COMENTARIOS" rows="2">{{ poligono_data.get('COMENTARIOS', '') }}</textarea>
                                 </div>
                             </div>
                             
@@ -263,7 +264,7 @@
                                         <option value="">-- Seleccionar ID de polígono histórico --</option>
                                         <!-- Opciones de IDs históricos se cargarán dinámicamente -->
                                     </select>
-                                    <textarea class="form-control" id="Descripcion" name="DESCRIPCION" rows="2">{{ row_data.get('DESCRIPCION', '') }}</textarea>
+                                    <textarea class="form-control" id="Descripcion" name="DESCRIPCION" rows="2">{{ poligono_data.get('DESCRIPCION', '') }}</textarea>
                                 </div>
                             </div>
                             
@@ -271,13 +272,13 @@
                                 <div class="col-12">
                                     <label class="form-label">Estatus</label>
                                     <div class="form-check">
-                                        <input class="form-check-input" type="radio" name="ESTATUS" id="Estatus6" value="6" {% if row_data.get('ESTATUS') == '6' or row_data.get('ESTATUS') == 6 %}checked{% endif %}>
+                                        <input class="form-check-input" type="radio" name="ESTATUS" id="Estatus6" value="6" {% if poligono_data.get('ESTATUS') == '6' or poligono_data.get('ESTATUS') == 6 %}checked{% endif %}>
                                         <label class="form-check-label" for="Estatus6">
                                             Estatus 6
                                         </label>
                                     </div>
                                     <div class="form-check">
-                                        <input class="form-check-input" type="radio" name="ESTATUS" id="Estatus7" value="7" {% if row_data.get('ESTATUS') == '7' or row_data.get('ESTATUS') == 7 %}checked{% endif %}>
+                                        <input class="form-check-input" type="radio" name="ESTATUS" id="Estatus7" value="7" {% if poligono_data.get('ESTATUS') == '7' or poligono_data.get('ESTATUS') == 7 %}checked{% endif %}>
                                         <label class="form-check-label" for="Estatus7">
                                             Estatus 7
                                         </label>
@@ -441,6 +442,10 @@
         
         <script>
         document.addEventListener('DOMContentLoaded', function() {
+            // Inicialización global de variables de control
+            window.editingMode = false;
+            window.drawingMode = false;
+            
             // Código para el dropdown de comentarios predefinidos
             const comentariosSelect = document.getElementById('ComentariosSelect');
             const comentariosTextarea = document.getElementById('Comentarios');
@@ -637,7 +642,13 @@
             // Variables para guardar el polígono
             var polygon;
             var originalCoords = [];
-            var editingMode = false;
+            // Usar la variable global editingMode en lugar de declarar una local
+            if (typeof window.editingMode === 'undefined') {
+                window.editingMode = false;
+            }
+            if (typeof window.drawingMode === 'undefined') {
+                window.drawingMode = false;
+            }
             
             // Configurar opciones de edición pero NO inicializar el control
             var drawOptions = {
@@ -1248,11 +1259,25 @@
             var formEl = document.getElementById('formEditarPoligono');
             if (formEl) {
                 formEl.addEventListener('submit', function(e) {
-                    if (editingMode) {
+                    console.log('Intento de envío del formulario. editingMode:', window.editingMode);
+                    
+                    // Usar window.editingMode en lugar de la variable local
+                    if (window.editingMode === true) {
                         e.preventDefault();
                         alert('Por favor guarde o cancele la edición del polígono antes de guardar los cambios del formulario.');
                         return false;
                     }
+                    
+                    // Verificar y mostrar las coordenadas que se van a enviar
+                    var coordsField = document.getElementById('COORDENADAS_DECIMALES_CORREGIDAS');
+                    if (coordsField) {
+                        console.log('Coordenadas que se enviarán al servidor:', coordsField.value);
+                        console.log('Nombre del campo:', coordsField.name);
+                    }
+                    
+                    // Permitir el envío normal si no estamos en modo de edición
+                    console.log('Formulario enviado normalmente');
+                    return true;
                 });
             }
             
@@ -1579,13 +1604,16 @@
                     var newCoords = newLatLngs.map(function(latLng) {
                         return latLng.lat.toFixed(6) + ',' + latLng.lng.toFixed(6);
                     }).join(' | ');
-                    console.log("Nuevas coordenadas:", newCoords);
+                    console.log("Nuevas coordenadas del polígono dibujado:", newCoords);
                     
                     var coordsField = document.getElementById('COORDENADAS_DECIMALES_CORREGIDAS');
                     if(coordsField) {
                         coordsField.value = newCoords;
                         highlightField('COORDENADAS_DECIMALES_CORREGIDAS');
-                        console.log("Campo de coordenadas actualizado:", newCoords);
+                        console.log("Campo de coordenadas actualizado exitosamente:", newCoords);
+                        
+                        // Verificar que el valor se guardó correctamente
+                        console.log("Valor actual del campo después de la actualización:", coordsField.value);
                         
                         // Guardar el valor como atributo de datos para asegurar que no se pierda
                         coordsField.setAttribute('data-polygon-coords', newCoords);
@@ -1651,17 +1679,26 @@
                     }
                 });
                 
+                console.log("Coordenadas actualizadas del polígono:", updatedLatLngs);
+                
                 // Formatear las coordenadas para guardarlas
                 var updatedCoords = updatedLatLngs.map(function(latLng) {
                     return latLng.lat.toFixed(6) + ',' + latLng.lng.toFixed(6);
                 }).join(' | ');
                 
+                console.log("Coordenadas formateadas para guardar:", updatedCoords);
+                
                 // Actualizar el campo de texto con las nuevas coordenadas
                 var coordsField = document.getElementById('COORDENADAS_DECIMALES_CORREGIDAS');
-                coordsField.value = updatedCoords;
-                
-                // Guardar el valor como atributo de datos para asegurar que no se pierda
-                coordsField.setAttribute('data-polygon-coords', updatedCoords);
+                if(coordsField) {
+                    coordsField.value = updatedCoords;
+                    console.log("Campo COORDENADAS_DECIMALES_CORREGIDAS actualizado con:", updatedCoords);
+                    
+                    // Guardar el valor como atributo de datos para asegurar que no se pierda
+                    coordsField.setAttribute('data-polygon-coords', updatedCoords);
+                } else {
+                    console.error("No se encontró el campo COORDENADAS_DECIMALES_CORREGIDAS");
+                }
                 
                 // Asegurar que el área también esté actualizada
                 var areaSqMeters = L.GeometryUtil.geodesicArea(updatedLatLngs);
@@ -1696,7 +1733,7 @@
                 // Ocultar indicador de modo de edición e instrucciones
                 document.querySelector('.editing-mode-indicator').style.display = 'none';
                 document.querySelector('.edit-instructions').style.display = 'none';
-                editingMode = false;
+                window.editingMode = false;  // Usar window.editingMode para asegurar alcance global
                 
                 // Restaurar el estilo original del polígono
                 editableLayers.eachLayer(function(layer) {
@@ -1778,7 +1815,7 @@
                 // Ocultar indicador de modo de edición e instrucciones
                 document.querySelector('.editing-mode-indicator').style.display = 'none';
                 document.querySelector('.edit-instructions').style.display = 'none';
-                editingMode = false;
+                window.editingMode = false;  // Usar window.editingMode para asegurar alcance global
                 
                 // Reactivar botones del formulario
                 var formInputs = document.querySelectorAll('#formEditarPoligono input, #formEditarPoligono textarea, #formEditarPoligono select');

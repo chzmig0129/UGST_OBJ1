@@ -611,12 +611,12 @@ def validacion_poligonos(tab):
                     'ESTADO': corregir_codificacion(p.estado),
                     'MUNICIPIO': corregir_codificacion(p.municipio),
                     'COORDENADAS': p.coordenadas,
-                    'COORDENADAS_CORREGIDAS': p.coordenadas_corregidas,
+                    'COORDENADAS_DECIMALES_CORREGIDAS': p.coordenadas_corregidas,  # Cambiado para coincidir con el template
                     'AREA_DIGITALIZADA': p.area_digitalizada,
                     'ESTATUS': p.estatus,
                     'COMENTARIOS': p.comentarios,
                     'DESCRIPCION': p.descripcion,
-                    'db_id': p.id # ID de la base de datos
+                    'db_id': p.id
                 }
                 # Ya no es necesario cargar JSON ni usar setdefault,
                 # los atributos no presentes en BD serán None por defecto.
@@ -625,7 +625,7 @@ def validacion_poligonos(tab):
             # --- Definir columnas fijas para la vista de lista ---
             columns_to_display = [
                 'ID_POLIGONO', 'IF', 'ID_CREDITO', 'ID_PERSONA', 'SUPERFICIE',
-                'ESTADO', 'MUNICIPIO', 'COORDENADAS', 'COORDENADAS_CORREGIDAS',
+                'ESTADO', 'MUNICIPIO', 'COORDENADAS', 'COORDENADAS_DECIMALES_CORREGIDAS',
                 'AREA_DIGITALIZADA', 'ESTATUS', 'COMENTARIOS', 'DESCRIPCION', 'db_id'
             ]
             # --- FIN: Definir columnas fijas ---
@@ -649,60 +649,82 @@ def validacion_poligonos(tab):
                                filename='')
     
     elif tab == 'editar':
-        shp_id = request.args.get('shp_id')
-        if shp_id:
-            conn = get_db_connection()
-            # Get the specific record
-            shp_record = conn.execute('SELECT * FROM shp_records WHERE shp_id = ?', 
-                                     (shp_id,)).fetchone()
-            
-            coords_para_mapa = None
-            if shp_record and shp_record['geometry_wkt']:
-                # Convert WKT geometry to coordinates for the map
-                try:
-                    from shapely import wkt
-                    geom = wkt.loads(shp_record['geometry_wkt'])
-                    
-                    if geom.geom_type == 'Point':
-                        coords_para_mapa = [[geom.y, geom.x]]  # [lat, lng] for Leaflet
-                    elif geom.geom_type in ['Polygon', 'MultiPolygon']:
-                        # For polygons, extract coordinates in the format Leaflet expects
-                        if geom.geom_type == 'Polygon':
-                            exterior_coords = list(geom.exterior.coords)
-                        else:  # MultiPolygon - use the first polygon
-                            exterior_coords = list(geom.geoms[0].exterior.coords)
-                        
-                        # Convert to [lat, lng] format for Leaflet
-                        coords_para_mapa = [[y, x] for x, y in exterior_coords]
-                    
-                    # Convert SQLite row to dict for modification
-                    shp_record = dict(shp_record)
-                    
-                    # Handle the atributos JSON field if it exists
-                    if 'atributos' in shp_record and shp_record['atributos']:
-                        try:
-                            if isinstance(shp_record['atributos'], str):
-                                shp_record['atributos'] = json.loads(shp_record['atributos'])
-                        except json.JSONDecodeError as e:
-                            app.logger.error(f"Error parsing atributos JSON: {e}")
-                            # Ensure it's a dictionary, even if empty
-                            shp_record['atributos'] = {"error": "No se pudieron cargar los atributos correctamente"}
-                except Exception as e:
-                    app.logger.error(f"Error processing geometry or attributes: {e}")
-                    if shp_record:
-                        shp_record = dict(shp_record) if not isinstance(shp_record, dict) else shp_record
-                        if 'atributos' in shp_record and not isinstance(shp_record['atributos'], dict):
-                            # If it's not a dict, create a simple one with the value
-                            value = str(shp_record['atributos']) if shp_record['atributos'] is not None else ""
-                            shp_record['atributos'] = {"valor": value}
-            
-            conn.close()
-            
-            return render_template('validacion_rapida_shp.html', 
-                                  tab=tab, 
-                                  shp_id=shp_id,
-                                  shp_record=shp_record, 
-                                  coords_para_mapa=coords_para_mapa)
+        db_id = request.args.get('db_id')
+        if db_id:
+            try:
+                # Buscar el polígono en la base de datos por su ID
+                poligono = Poligono.query.get(int(db_id))
+                
+                if poligono is None:
+                    flash('Polígono no encontrado', 'error')
+                    return redirect(url_for('validacion_poligonos', tab='lista'))
+                
+                # Preparar coordenadas para el mapa
+                coords_para_mapa = []
+                if poligono.coordenadas_corregidas:
+                    try:
+                        # Parsear las coordenadas corregidas para el mapa
+                        coord_pairs = poligono.coordenadas_corregidas.split(' | ')
+                        for pair in coord_pairs:
+                            if ',' in pair:
+                                lat, lon = pair.split(',')
+                                coords_para_mapa.append([float(lat.strip()), float(lon.strip())])
+                    except Exception as e:
+                        print(f"Error al procesar coordenadas para el mapa: {e}")
+                        coords_para_mapa = []
+                
+                # Detectar ubicación automáticamente si el estado y municipio están vacíos
+                ubicacion_auto = False
+                estado_detectado = poligono.estado
+                municipio_detectado = poligono.municipio
+                
+                if (not estado_detectado or not municipio_detectado) and poligono.coordenadas_corregidas:
+                    print("Detectando ubicación automáticamente...")
+                    ubicacion = obtener_ubicacion_desde_poligono(poligono.coordenadas_corregidas)
+                    if ubicacion:
+                        if not estado_detectado:
+                            estado_detectado = ubicacion['estado']
+                            ubicacion_auto = True
+                        if not municipio_detectado:
+                            municipio_detectado = ubicacion['municipio']
+                            ubicacion_auto = True
+                        print(f"Ubicación detectada: {municipio_detectado}, {estado_detectado}")
+                
+                # Crear diccionario con datos del polígono para la plantilla
+                poligono_data = {
+                    'ID_POLIGONO': poligono.id_poligono,
+                    'IF': poligono.if_val,
+                    'ID_CREDITO': poligono.id_credito,
+                    'ID_PERSONA': poligono.id_persona,
+                    'SUPERFICIE': poligono.superficie,
+                    'ESTADO': corregir_codificacion(estado_detectado) or '',
+                    'MUNICIPIO': corregir_codificacion(municipio_detectado) or '',
+                    'COORDENADAS': poligono.coordenadas,
+                    'COORDENADAS_DECIMALES_CORREGIDAS': poligono.coordenadas_corregidas,  # Cambiado para coincidir con el template
+                    'AREA_DIGITALIZADA': poligono.area_digitalizada,
+                    'ESTATUS': poligono.estatus,
+                    'COMENTARIOS': poligono.comentarios,
+                    'DESCRIPCION': poligono.descripcion,
+                    'db_id': poligono.id,
+                    'UBICACION_AUTO': ubicacion_auto  # Bandera para mostrar que se detectó automáticamente
+                }
+                
+                return render_template('validacion_poligonos.html', 
+                                      tab=tab, 
+                                      db_id=db_id,
+                                      poligono_data=poligono_data, 
+                                      coords_para_mapa=coords_para_mapa)
+            except ValueError:
+                flash('ID de polígono inválido', 'error')
+                return redirect(url_for('validacion_poligonos', tab='lista'))
+            except Exception as e:
+                print(f"Error al cargar polígono para edición: {e}")
+                flash('Error al cargar el polígono para edición', 'error')
+                return redirect(url_for('validacion_poligonos', tab='lista'))
+        else:
+            # Si no hay db_id, redirigir a la lista
+            flash('No se especificó qué polígono editar', 'warning')
+            return redirect(url_for('validacion_poligonos', tab='lista'))
     
     elif tab == 'generar':
         try:
@@ -722,7 +744,7 @@ def validacion_poligonos(tab):
                     'ESTADO': corregir_codificacion(p.estado),
                     'MUNICIPIO': corregir_codificacion(p.municipio),
                     'COORDENADAS': p.coordenadas,
-                    'COORDENADAS_CORREGIDAS': p.coordenadas_corregidas,
+                    'COORDENADAS_DECIMALES_CORREGIDAS': p.coordenadas_corregidas,  # Cambiado para coincidir con el template
                     'AREA_DIGITALIZADA': p.area_digitalizada,
                     'ESTATUS': p.estatus,
                     'COMENTARIOS': p.comentarios,
@@ -2854,51 +2876,82 @@ def validacion_rapida_shp(tab=None):
     
     # Handle Edit tab
     elif tab == 'editar':
-        shp_id = request.args.get('shp_id')
-        if shp_id:
-            conn = get_db_connection()
-            # Get the specific record
-            shp_record = conn.execute('SELECT * FROM shp_records WHERE shp_id = ?', 
-                                     (shp_id,)).fetchone()
-            
-            coords_para_mapa = None
-            if shp_record and shp_record['geometry_wkt']:
-                # Convert WKT geometry to coordinates for the map
-                try:
-                    from shapely import wkt
-                    geom = wkt.loads(shp_record['geometry_wkt'])
-                    
-                    # Use the safe processing function to handle various geometry types and formats
-                    coords_para_mapa = safe_process_coordinates(geom)
-                    
-                    # Convert SQLite row to dict for modification
-                    shp_record = dict(shp_record)
-                    
-                    # Handle the atributos JSON field if it exists
-                    if 'atributos' in shp_record and shp_record['atributos']:
-                        try:
-                            if isinstance(shp_record['atributos'], str):
-                                shp_record['atributos'] = json.loads(shp_record['atributos'])
-                        except json.JSONDecodeError as e:
-                            app.logger.error(f"Error parsing atributos JSON: {e}")
-                            # Ensure it's a dictionary, even if empty
-                            shp_record['atributos'] = {"error": "No se pudieron cargar los atributos correctamente"}
-                except Exception as e:
-                    app.logger.error(f"Error processing geometry or attributes: {e}")
-                    if shp_record:
-                        shp_record = dict(shp_record) if not isinstance(shp_record, dict) else shp_record
-                        if 'atributos' in shp_record and not isinstance(shp_record['atributos'], dict):
-                            # If it's not a dict, create a simple one with the value
-                            value = str(shp_record['atributos']) if shp_record['atributos'] is not None else ""
-                            shp_record['atributos'] = {"valor": value}
-            
-            conn.close()
-            
-            return render_template('validacion_rapida_shp.html', 
-                                  tab=tab, 
-                                  shp_id=shp_id,
-                                  shp_record=shp_record, 
-                                  coords_para_mapa=coords_para_mapa)
+        db_id = request.args.get('db_id')
+        if db_id:
+            try:
+                # Buscar el polígono en la base de datos por su ID
+                poligono = Poligono.query.get(int(db_id))
+                
+                if poligono is None:
+                    flash('Polígono no encontrado', 'error')
+                    return redirect(url_for('validacion_poligonos', tab='lista'))
+                
+                # Preparar coordenadas para el mapa
+                coords_para_mapa = []
+                if poligono.coordenadas_corregidas:
+                    try:
+                        # Parsear las coordenadas corregidas para el mapa
+                        coord_pairs = poligono.coordenadas_corregidas.split(' | ')
+                        for pair in coord_pairs:
+                            if ',' in pair:
+                                lat, lon = pair.split(',')
+                                coords_para_mapa.append([float(lat.strip()), float(lon.strip())])
+                    except Exception as e:
+                        print(f"Error al procesar coordenadas para el mapa: {e}")
+                        coords_para_mapa = []
+                
+                # Detectar ubicación automáticamente si el estado y municipio están vacíos
+                ubicacion_auto = False
+                estado_detectado = poligono.estado
+                municipio_detectado = poligono.municipio
+                
+                if (not estado_detectado or not municipio_detectado) and poligono.coordenadas_corregidas:
+                    print("Detectando ubicación automáticamente...")
+                    ubicacion = obtener_ubicacion_desde_poligono(poligono.coordenadas_corregidas)
+                    if ubicacion:
+                        if not estado_detectado:
+                            estado_detectado = ubicacion['estado']
+                            ubicacion_auto = True
+                        if not municipio_detectado:
+                            municipio_detectado = ubicacion['municipio']
+                            ubicacion_auto = True
+                        print(f"Ubicación detectada: {municipio_detectado}, {estado_detectado}")
+                
+                # Crear diccionario con datos del polígono para la plantilla
+                poligono_data = {
+                    'ID_POLIGONO': poligono.id_poligono,
+                    'IF': poligono.if_val,
+                    'ID_CREDITO': poligono.id_credito,
+                    'ID_PERSONA': poligono.id_persona,
+                    'SUPERFICIE': poligono.superficie,
+                    'ESTADO': corregir_codificacion(estado_detectado) or '',
+                    'MUNICIPIO': corregir_codificacion(municipio_detectado) or '',
+                    'COORDENADAS': poligono.coordenadas,
+                    'COORDENADAS_DECIMALES_CORREGIDAS': poligono.coordenadas_corregidas,  # Cambiado para coincidir con el template
+                    'AREA_DIGITALIZADA': poligono.area_digitalizada,
+                    'ESTATUS': poligono.estatus,
+                    'COMENTARIOS': poligono.comentarios,
+                    'DESCRIPCION': poligono.descripcion,
+                    'db_id': poligono.id,
+                    'UBICACION_AUTO': ubicacion_auto  # Bandera para mostrar que se detectó automáticamente
+                }
+                
+                return render_template('validacion_poligonos.html', 
+                                      tab=tab, 
+                                      db_id=db_id,
+                                      poligono_data=poligono_data, 
+                                      coords_para_mapa=coords_para_mapa)
+            except ValueError:
+                flash('ID de polígono inválido', 'error')
+                return redirect(url_for('validacion_poligonos', tab='lista'))
+            except Exception as e:
+                print(f"Error al cargar polígono para edición: {e}")
+                flash('Error al cargar el polígono para edición', 'error')
+                return redirect(url_for('validacion_poligonos', tab='lista'))
+        else:
+            # Si no hay db_id, redirigir a la lista
+            flash('No se especificó qué polígono editar', 'warning')
+            return redirect(url_for('validacion_poligonos', tab='lista'))
     
     return render_template('validacion_rapida_shp.html', 
                           tab=tab, 
