@@ -106,6 +106,7 @@ class Poligono(db.Model):
     estatus = db.Column(db.Text, nullable=True) # Estatus (si existe)
     comentarios = db.Column(db.Text, nullable=True) # Comentarios editables
     descripcion = db.Column(db.Text, nullable=True) # Nueva columna para descripción
+    orden = db.Column(db.Text, nullable=True) # Nueva columna para número de orden
     # Metadata
     fecha_creacion = db.Column(db.DateTime, default=datetime.utcnow)
     fecha_modificacion = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -144,7 +145,7 @@ with app.app_context():
             'id', 'id_poligono', 'if_val', 'id_credito', 'id_persona',
             'superficie', 'estado', 'municipio', 'coordenadas',
             'coordenadas_corregidas', 'area_digitalizada', 'estatus',
-            'comentarios', 'descripcion', 'fecha_creacion', 'fecha_modificacion'
+            'comentarios', 'descripcion', 'orden', 'fecha_creacion', 'fecha_modificacion'
         }
         current_db_columns = set(column_names)
         
@@ -616,6 +617,7 @@ def validacion_poligonos(tab):
                     'ESTATUS': p.estatus,
                     'COMENTARIOS': p.comentarios,
                     'DESCRIPCION': p.descripcion,
+                    'ORDEN': p.orden,
                     'db_id': p.id
                 }
                 # Ya no es necesario cargar JSON ni usar setdefault,
@@ -626,7 +628,7 @@ def validacion_poligonos(tab):
             columns_to_display = [
                 'ID_POLIGONO', 'IF', 'ID_CREDITO', 'ID_PERSONA', 'SUPERFICIE',
                 'ESTADO', 'MUNICIPIO', 'COORDENADAS', 'COORDENADAS_DECIMALES_CORREGIDAS',
-                'AREA_DIGITALIZADA', 'ESTATUS', 'COMENTARIOS', 'DESCRIPCION', 'db_id'
+                'AREA_DIGITALIZADA', 'ESTATUS', 'COMENTARIOS', 'DESCRIPCION', 'ORDEN', 'db_id'
             ]
             # --- FIN: Definir columnas fijas ---
 
@@ -705,6 +707,7 @@ def validacion_poligonos(tab):
                     'ESTATUS': poligono.estatus,
                     'COMENTARIOS': poligono.comentarios,
                     'DESCRIPCION': poligono.descripcion,
+                    'ORDEN': poligono.orden,
                     'db_id': poligono.id,
                     'UBICACION_AUTO': ubicacion_auto  # Bandera para mostrar que se detectó automáticamente
                 }
@@ -749,6 +752,7 @@ def validacion_poligonos(tab):
                     'ESTATUS': p.estatus,
                     'COMENTARIOS': p.comentarios,
                     'DESCRIPCION': p.descripcion,
+                    'ORDEN': p.orden,
                     'db_id': p.id
                 }
                 data.append(datos)
@@ -988,6 +992,7 @@ def actualizar_fila():
                 elif campo_form == 'ESTATUS': atributo_modelo = 'estatus'
                 elif campo_form == 'COMENTARIOS': atributo_modelo = 'comentarios'
                 elif campo_form == 'DESCRIPCION': atributo_modelo = 'descripcion'
+                elif campo_form == 'ORDEN': atributo_modelo = 'orden'
                 # Añadir más mapeos si se agregan más campos editables
 
                 if atributo_modelo:
@@ -996,7 +1001,8 @@ def actualizar_fila():
                         if atributo_modelo in ['superficie', 'area_digitalizada']:
                             valor_actualizado = float(valor_form) if valor_form.strip() else None
                         else:
-                            valor_actualizado = valor_form
+                            # Para campos de texto, usar None en lugar de strings vacíos o 'None'
+                            valor_actualizado = valor_form.strip() if valor_form.strip() and valor_form.strip().lower() != 'none' else None
                         setattr(poligono, atributo_modelo, valor_actualizado)
                         print(f"Actualizado {atributo_modelo} a: {valor_actualizado}")
                     except ValueError:
@@ -1126,6 +1132,7 @@ def diagnostico_poligono(db_id):
         'estatus': poligono.estatus,
         'comentarios': poligono.comentarios,
         'descripcion': poligono.descripcion,
+        'orden': poligono.orden,
         'fecha_creacion': str(poligono.fecha_creacion),
         'fecha_modificacion': str(poligono.fecha_modificacion)
     }
@@ -1151,15 +1158,18 @@ def get_historico_poligonos():
         
         # Asegurar que tenemos el campo ID_POLIGON (si existe)
         id_field = None
+        orden_field = None
         for field in historico_gdf.columns:
             if field.upper() == 'ID_POLIGON':
                 id_field = field
-                break
+            elif field.upper() in ['ORDEN', 'ORDER']:
+                orden_field = field
             
-        # Agregar información sobre el campo de ID para facilitar el etiquetado en el frontend
+        # Agregar información sobre el campo de ID y orden para facilitar el etiquetado en el frontend
         respuesta = {
             'geojson': geojson_data,
-            'id_field': id_field
+            'id_field': id_field,
+            'orden_field': orden_field
         }
         
         return jsonify(respuesta)
@@ -1247,17 +1257,20 @@ def get_historico_poligonos_radio(polygon_id):
         # Convertir a GeoJSON
         geojson_data = json.loads(historico_filtrado.to_json())
         
-        # Asegurar que tenemos el campo ID_POLIGON (si existe)
+        # Asegurar que tenemos el campo ID_POLIGON y ORDEN (si existen)
         id_field = None
+        orden_field = None
         for field in historico_filtrado.columns:
             if field.upper() == 'ID_POLIGON':
                 id_field = field
-                break
+            elif field.upper() in ['ORDEN', 'ORDER']:
+                orden_field = field
             
-        # Agregar información sobre el campo de ID y contador
+        # Agregar información sobre el campo de ID, orden y contador
         respuesta = {
             'geojson': geojson_data,
             'id_field': id_field,
+            'orden_field': orden_field,
             'total': len(historico_filtrado),
             'radio_km': 5.0
         }
@@ -1506,6 +1519,54 @@ def generar_paquete_completo():
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
+@app.route('/generar_shapefile_unico', methods=['POST'])
+def generar_shapefile_unico():
+    """Ruta para generar un único shapefile con todos los polígonos seleccionados"""
+    try:
+        data = request.get_json()
+        selected_rows = data.get('selected_rows', [])
+        
+        if not selected_rows:
+            return jsonify({'error': 'No se seleccionaron filas'}), 400
+        
+        # Obtener polígonos de la base de datos
+        poligonos = []
+        for row_id in selected_rows:
+            try:
+                row_id = int(row_id)
+                poligono = Poligono.query.get(row_id)
+                
+                if poligono:
+                    poligonos.append(poligono)
+                else:
+                    print(f"Polígono con ID {row_id} no encontrado")
+                    
+            except Exception as e:
+                print(f"Error al recuperar polígono {row_id}: {e}")
+                continue
+        
+        if not poligonos:
+            return jsonify({'error': 'No se encontraron polígonos válidos'}), 400
+        
+        # Generar shapefile único con todos los polígonos
+        shapefile_bytes = generar_shapefile_unificado(poligonos, 'poligonos_unificados')
+        
+        if not shapefile_bytes:
+            return jsonify({'error': 'Error al generar el shapefile'}), 500
+        
+        return send_file(
+            shapefile_bytes,
+            mimetype='application/zip',
+            as_attachment=True,
+            download_name='poligonos_unificados.zip'
+        )
+    
+    except Exception as e:
+        print(f"Error general: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
 def generar_shapefile_individual(poligono, nombre_archivo):
     """Genera un archivo shapefile para un polígono individual"""
     try:
@@ -1528,6 +1589,33 @@ def generar_shapefile_individual(poligono, nombre_archivo):
             w.field('AREA_HA', 'N', 10, 4)
             w.field('ESTATUS', 'C', 10)
             w.field('COMENT', 'C', 254)
+            w.field('DESCRIP', 'C', 254)  # Campo para descripción
+            w.field('ORDEN', 'C', 100)    # Campo para número de orden
+            
+            # Función auxiliar para limpiar campos de texto que pueden tener saltos de línea
+            def limpiar_campo_texto(valor):
+                """Limpia un campo de texto reemplazando saltos de línea con comas y eliminando caracteres problemáticos"""
+                if valor is None:
+                    return ''
+                
+                # Convertir a string si no lo es
+                valor_str = str(valor)
+                
+                # Reemplazar saltos de línea con comas y espacios
+                valor_limpio = valor_str.replace('\n', ', ').replace('\r\n', ', ').replace('\r', ', ')
+                
+                # Reemplazar múltiples comas seguidas con una sola coma
+                import re
+                valor_limpio = re.sub(r',\s*,+', ', ', valor_limpio)
+                
+                # Eliminar comas al inicio y al final
+                valor_limpio = valor_limpio.strip(', ')
+                
+                # Reemplazar caracteres problemáticos que pueden causar errores en DBF
+                valor_limpio = valor_limpio.replace('\t', ' ')  # Reemplazar tabs con espacios
+                valor_limpio = re.sub(r'\s+', ' ', valor_limpio)  # Reemplazar múltiples espacios con uno solo
+                
+                return valor_limpio
             
             # Obtener coordenadas del polígono
             coords = []
@@ -1552,22 +1640,36 @@ def generar_shapefile_individual(poligono, nombre_archivo):
                 
                 print(f"Coordenadas procesadas para shapefile: {coords}")
             
+            # Limpiar todos los campos de texto antes de escribirlos al DBF
+            id_poligono_limpio = limpiar_campo_texto(poligono.id_poligono)[:40]
+            if_val_limpio = limpiar_campo_texto(poligono.if_val)[:40]
+            id_credito_limpio = limpiar_campo_texto(poligono.id_credito)[:40]
+            id_persona_limpio = limpiar_campo_texto(poligono.id_persona)[:40]
+            estado_limpio = limpiar_campo_texto(corregir_codificacion(poligono.estado))[:40]
+            municipio_limpio = limpiar_campo_texto(corregir_codificacion(poligono.municipio))[:40]
+            estatus_limpio = limpiar_campo_texto(poligono.estatus)[:10]
+            comentarios_limpio = limpiar_campo_texto(poligono.comentarios)[:254]
+            descripcion_limpio = limpiar_campo_texto(poligono.descripcion)[:254]
+            orden_limpio = limpiar_campo_texto(poligono.orden)[:100]
+            
             # Si no hay suficientes coordenadas, usar un punto
             if len(coords) < 3:
                 if len(coords) == 1:
                     # Crear un punto
                     w.point(coords[0][0], coords[0][1])
                     w.record(
-                        poligono.id_poligono or '',
-                        poligono.if_val or '',
-                        poligono.id_credito or '',
-                        poligono.id_persona or '',
+                        id_poligono_limpio,
+                        if_val_limpio,
+                        id_credito_limpio,
+                        id_persona_limpio,
                         poligono.superficie or 0,
-                        corregir_codificacion(poligono.estado) or '',
-                        corregir_codificacion(poligono.municipio) or '',
+                        estado_limpio,
+                        municipio_limpio,
                         poligono.area_digitalizada or 0,
-                        poligono.estatus or '',
-                        poligono.comentarios or ''
+                        estatus_limpio,
+                        comentarios_limpio,
+                        descripcion_limpio,
+                        orden_limpio
                     )
                 else:
                     # No hay coordenadas válidas
@@ -1576,16 +1678,18 @@ def generar_shapefile_individual(poligono, nombre_archivo):
                 # Crear un polígono
                 w.poly([coords])
                 w.record(
-                    poligono.id_poligono or '',
-                    poligono.if_val or '',
-                    poligono.id_credito or '',
-                    poligono.id_persona or '',
+                    id_poligono_limpio,
+                    if_val_limpio,
+                    id_credito_limpio,
+                    id_persona_limpio,
                     poligono.superficie or 0,
-                    corregir_codificacion(poligono.estado) or '',
-                    corregir_codificacion(poligono.municipio) or '',
+                    estado_limpio,
+                    municipio_limpio,
                     poligono.area_digitalizada or 0,
-                    poligono.estatus or '',
-                    poligono.comentarios or ''
+                    estatus_limpio,
+                    comentarios_limpio,
+                    descripcion_limpio,
+                    orden_limpio
                 )
             
             # Guardar el shapefile
@@ -1839,6 +1943,157 @@ def generar_ficha_tecnica(poligono, nombre_archivo):
     
     except Exception as e:
         print(f"Error al generar ficha técnica: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+def generar_shapefile_unificado(poligonos, nombre_archivo):
+    """Genera un único archivo shapefile con todos los polígonos especificados"""
+    try:
+        # Crear un objeto de memoria para el archivo ZIP
+        zip_buffer = io.BytesIO()
+        
+        # Crear un directorio temporal para los archivos del shapefile
+        with tempfile.TemporaryDirectory() as tempdir:
+            # Crear el writer de shapefile
+            w = shapefile.Writer(os.path.join(tempdir, nombre_archivo))
+            
+            # Definir campos de atributos
+            w.field('ID_POLIG', 'C', 40)
+            w.field('IF', 'C', 40)
+            w.field('ID_CRED', 'C', 40)
+            w.field('ID_PERS', 'C', 40)
+            w.field('SUPERF', 'N', 10, 4)
+            w.field('ESTADO', 'C', 40)
+            w.field('MUNICIP', 'C', 40)
+            w.field('AREA_HA', 'N', 10, 4)
+            w.field('ESTATUS', 'C', 10)
+            w.field('COMENT', 'C', 254)
+            w.field('DESCRIP', 'C', 254)  # Campo para descripción
+            w.field('ORDEN', 'C', 100)    # Campo para número de orden
+            
+            # Función auxiliar para limpiar campos de texto que pueden tener saltos de línea
+            def limpiar_campo_texto(valor):
+                """Limpia un campo de texto reemplazando saltos de línea con comas y eliminando caracteres problemáticos"""
+                if valor is None:
+                    return ''
+                
+                # Convertir a string si no lo es
+                valor_str = str(valor)
+                
+                # Reemplazar saltos de línea con comas y espacios
+                valor_limpio = valor_str.replace('\n', ', ').replace('\r\n', ', ').replace('\r', ', ')
+                
+                # Reemplazar múltiples comas seguidas con una sola coma
+                import re
+                valor_limpio = re.sub(r',\s*,+', ', ', valor_limpio)
+                
+                # Eliminar comas al inicio y al final
+                valor_limpio = valor_limpio.strip(', ')
+                
+                # Reemplazar caracteres problemáticos que pueden causar errores en DBF
+                valor_limpio = valor_limpio.replace('\t', ' ')  # Reemplazar tabs con espacios
+                valor_limpio = re.sub(r'\s+', ' ', valor_limpio)  # Reemplazar múltiples espacios con uno solo
+                
+                return valor_limpio
+            
+            # Procesar cada polígono
+            for poligono in poligonos:
+                # Obtener coordenadas del polígono
+                coords = []
+                if poligono.coordenadas_corregidas:
+                    # Verificar qué separador usa: ' | ' o '|'
+                    if ' | ' in poligono.coordenadas_corregidas:
+                        pares = poligono.coordenadas_corregidas.split(' | ')
+                    else:
+                        pares = poligono.coordenadas_corregidas.split('|')
+                    
+                    for par in pares:
+                        par = par.strip()
+                        if par and ',' in par:
+                            try:
+                                partes = par.split(',')
+                                lat = float(partes[0].strip())
+                                lon = float(partes[1].strip())
+                                coords.append([lon, lat])  # Shapefile usa [lon, lat]
+                            except (ValueError, IndexError) as e:
+                                print(f"Error al procesar coordenada {par}: {e}")
+                                continue
+                    
+                    print(f"Coordenadas procesadas para polígono {poligono.id}: {coords}")
+                
+                # Limpiar todos los campos de texto antes de escribirlos al DBF
+                id_poligono_limpio = limpiar_campo_texto(poligono.id_poligono)[:40]
+                if_val_limpio = limpiar_campo_texto(poligono.if_val)[:40]
+                id_credito_limpio = limpiar_campo_texto(poligono.id_credito)[:40]
+                id_persona_limpio = limpiar_campo_texto(poligono.id_persona)[:40]
+                estado_limpio = limpiar_campo_texto(corregir_codificacion(poligono.estado))[:40]
+                municipio_limpio = limpiar_campo_texto(corregir_codificacion(poligono.municipio))[:40]
+                estatus_limpio = limpiar_campo_texto(poligono.estatus)[:10]
+                comentarios_limpio = limpiar_campo_texto(poligono.comentarios)[:254]
+                descripcion_limpio = limpiar_campo_texto(poligono.descripcion)[:254]
+                orden_limpio = limpiar_campo_texto(poligono.orden)[:100]
+                
+                # Si no hay suficientes coordenadas, usar un punto o saltar
+                if len(coords) < 3:
+                    if len(coords) == 1:
+                        # Crear un punto
+                        w.point(coords[0][0], coords[0][1])
+                        w.record(
+                            id_poligono_limpio,
+                            if_val_limpio,
+                            id_credito_limpio,
+                            id_persona_limpio,
+                            poligono.superficie or 0,
+                            estado_limpio,
+                            municipio_limpio,
+                            poligono.area_digitalizada or 0,
+                            estatus_limpio,
+                            comentarios_limpio,
+                            descripcion_limpio,
+                            orden_limpio
+                        )
+                    else:
+                        # No hay coordenadas válidas, saltar este polígono
+                        print(f"Saltando polígono {poligono.id} - coordenadas insuficientes")
+                        continue
+                else:
+                    # Crear un polígono
+                    w.poly([coords])
+                    w.record(
+                        id_poligono_limpio,
+                        if_val_limpio,
+                        id_credito_limpio,
+                        id_persona_limpio,
+                        poligono.superficie or 0,
+                        estado_limpio,
+                        municipio_limpio,
+                        poligono.area_digitalizada or 0,
+                        estatus_limpio,
+                        comentarios_limpio,
+                        descripcion_limpio,
+                        orden_limpio
+                    )
+            
+            # Guardar el shapefile
+            w.close()
+            
+            # Crear archivo .prj para la proyección (WGS84)
+            with open(os.path.join(tempdir, f'{nombre_archivo}.prj'), 'w') as prj:
+                prj.write('GEOGCS["GCS_WGS_1984",DATUM["D_WGS_1984",SPHEROID["WGS_1984",6378137.0,298.257223563]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]]')
+            
+            # Comprimir todos los archivos en un ZIP
+            with zipfile.ZipFile(zip_buffer, 'w') as zf:
+                for filename in os.listdir(tempdir):
+                    filepath = os.path.join(tempdir, filename)
+                    zf.write(filepath, filename)
+        
+        # Regresar al inicio del buffer
+        zip_buffer.seek(0)
+        return zip_buffer
+    
+    except Exception as e:
+        print(f"Error al generar shapefile unificado: {e}")
         import traceback
         traceback.print_exc()
         return None
@@ -2725,7 +2980,7 @@ def generar_paquete_completo_con_plantilla():
 
 @app.route('/generar_excel', methods=['GET'])
 def generar_excel():
-    """Ruta para generar un archivo Excel con todos los registros de la base de datos"""
+    """Ruta para generar un archivo Excel con todos los registros de la base de datos - réplica completa"""
     try:
         # Obtener todos los polígonos de la base de datos
         poligonos = Poligono.query.all()
@@ -2734,29 +2989,81 @@ def generar_excel():
             flash('No hay datos disponibles para generar el archivo Excel', 'warning')
             return redirect(url_for('validacion_poligonos', tab='generar'))
         
-        # Crear un DataFrame con las columnas específicas requeridas
+        # Crear un DataFrame con TODAS las columnas de la base de datos
         data = []
         for p in poligonos:
             datos = {
+                'ID_POLIGONO': p.id_poligono,
+                'IF': p.if_val,
                 'ID_CREDITO': p.id_credito,
                 'ID_PERSONA': p.id_persona,
-                'SUPERFICIE': p.area_digitalizada,  # Renombrar superficie_digitalizada a SUPERFICIE
-                'ID_POLIGONO': p.id_poligono,
-                'ESTATUS': p.estatus,
-                'COMENTARIO': p.comentarios,
-                'DESCRIPCION': p.descripcion
+                'SUPERFICIE': p.superficie,  # Superficie original
+                'ESTADO': corregir_codificacion(p.estado) if p.estado else '',
+                'MUNICIPIO': corregir_codificacion(p.municipio) if p.municipio else '',
+                'COORDENADAS': p.coordenadas if p.coordenadas else '',
+                'COORDENADAS_DECIMALES_CORREGIDAS': p.coordenadas_corregidas if p.coordenadas_corregidas else '',
+                'AREA_DIGITALIZADA': p.area_digitalizada if p.area_digitalizada else 0.0,
+                'ESTATUS': p.estatus if p.estatus else '',
+                'COMENTARIOS': p.comentarios if p.comentarios else '',
+                'DESCRIPCION': p.descripcion if p.descripcion else '',
+                'ORDEN': p.orden if p.orden else '',
+                'FECHA_CREACION': p.fecha_creacion.strftime('%Y-%m-%d %H:%M:%S') if p.fecha_creacion else '',
+                'FECHA_MODIFICACION': p.fecha_modificacion.strftime('%Y-%m-%d %H:%M:%S') if p.fecha_modificacion else '',
+                'DB_ID': p.id  # ID interno de la base de datos
             }
             data.append(datos)
         
         # Crear un DataFrame de pandas con los datos
         df = pd.DataFrame(data)
         
+        # Reordenar las columnas para que las más importantes estén primero
+        columnas_ordenadas = [
+            'ID_POLIGONO', 'IF', 'ID_CREDITO', 'ID_PERSONA', 'SUPERFICIE', 
+            'ESTADO', 'MUNICIPIO', 'COORDENADAS', 'COORDENADAS_DECIMALES_CORREGIDAS',
+            'AREA_DIGITALIZADA', 'ESTATUS', 'COMENTARIOS', 'DESCRIPCION', 'ORDEN',
+            'FECHA_CREACION', 'FECHA_MODIFICACION', 'DB_ID'
+        ]
+        
+        # Verificar que todas las columnas existen antes de reordenar
+        columnas_existentes = [col for col in columnas_ordenadas if col in df.columns]
+        df = df[columnas_existentes]
+        
         # Crear un objeto BytesIO para guardar el Excel en memoria
         excel_file = io.BytesIO()
         
         # Guardar el DataFrame como un archivo Excel
         with pd.ExcelWriter(excel_file, engine='openpyxl') as writer:
-            df.to_excel(writer, index=False, sheet_name='Polígonos')
+            df.to_excel(writer, index=False, sheet_name='Polígonos_BD')
+            
+            # Obtener el workbook y worksheet para aplicar formato
+            workbook = writer.book
+            worksheet = writer.sheets['Polígonos_BD']
+            
+            # Aplicar formato a las cabeceras
+            from openpyxl.styles import Font, PatternFill, Alignment
+            
+            header_font = Font(bold=True, color="FFFFFF")
+            header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+            header_alignment = Alignment(horizontal="center", vertical="center")
+            
+            # Aplicar estilo a la primera fila (cabeceras)
+            for cell in worksheet[1]:
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = header_alignment
+            
+            # Ajustar el ancho de las columnas
+            for column in worksheet.columns:
+                max_length = 0
+                column_letter = column[0].column_letter
+                for cell in column:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                adjusted_width = min(max_length + 2, 50)  # Máximo 50 caracteres
+                worksheet.column_dimensions[column_letter].width = adjusted_width
         
         # Preparar el archivo para la descarga
         excel_file.seek(0)
@@ -2765,7 +3072,7 @@ def generar_excel():
         return send_file(
             excel_file,
             as_attachment=True,
-            download_name='poligonos_export.xlsx',
+            download_name=f'base_datos_poligonos_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx',
             mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         )
         
@@ -3519,6 +3826,15 @@ def ensure_dict(value):
             return {}
     else:
         return {}
+
+@app.template_filter('clean_none')
+def clean_none(value):
+    """
+    Limpiar valores None y convertirlos a strings vacíos
+    """
+    if value is None or str(value).lower() == 'none':
+        return ''
+    return str(value)
 
 @app.route('/get-poligonos-actuales-traslapes/<int:polygon_id>')
 def get_poligonos_actuales_traslapes(polygon_id):
