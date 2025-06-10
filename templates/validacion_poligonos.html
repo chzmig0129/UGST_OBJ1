@@ -319,7 +319,16 @@
         <!-- Pestaña de Editar Polígono -->
         <div class="card">
             <div class="card-body">
-                <h3 class="mb-4">Editar Polígono: polygon-{{ row_index if row_index is defined else '0' }}</h3>
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h3 class="mb-0">Editar Polígono: polygon-{{ row_index if row_index is defined else '0' }}</h3>
+                    <div class="badge bg-info" id="registro-info">
+                        {% if db_id is defined %}
+                            Registro ID: {{ db_id }}
+                        {% elif row_index is defined %}
+                            Registro: {{ row_index + 1 }}
+                        {% endif %}
+                    </div>
+                </div>
                 
                 {% if poligono_data %}
                 <form action="{{ url_for('actualizar_fila') }}" method="post" id="formEditarPoligono">
@@ -385,6 +394,7 @@
                                         <option value="NO CUMPLE CON LA SUPERFICIE">NO CUMPLE CON LA SUPERFICIE</option>
                                         <option value="NO COINCIDE LA SUPERFICIE">NO COINCIDE LA SUPERFICIE</option>
                                         <option value="NO SE PUEDE DIGITALIZAR">NO SE PUEDE DIGITALIZAR</option>
+                                        <option value="SE ENCUENTRA EN HISTORICO">SE ENCUENTRA EN HISTORICO</option>
                                     </select>
                                     <textarea class="form-control" id="Comentarios" name="COMENTARIOS" rows="2">{{ poligono_data.get('COMENTARIOS', '') if poligono_data.get('COMENTARIOS') != None else '' }}</textarea>
                                 </div>
@@ -468,8 +478,11 @@
                                 <button type="button" id="btnCancelar" class="btn btn-outline-secondary me-2">
                                     <i class="bi bi-x"></i> Cancelar
                                 </button>
-                                <button type="submit" class="btn btn-primary">
+                                <button type="submit" class="btn btn-primary me-2">
                                     <i class="bi bi-save"></i> Guardar Cambios
+                                </button>
+                                <button type="button" id="btnGuardarSiguiente" class="btn btn-success">
+                                    <i class="bi bi-save"></i><i class="bi bi-arrow-right ms-1"></i> Guardar y Siguiente
                                 </button>
                             </div>
                         </div>
@@ -578,6 +591,33 @@
                 background-image: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9ImN1cnJlbnRDb2xvciIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIGNsYXNzPSJmZWF0aGVyIGZlYXRoZXItbWF4aW1pemUiPjxwYXRoIGQ9Ik04IDN2M2EyIDIgMCAwIDEtMiAySDNtMTggMGgtM2EyIDIgMCAwIDEtMi0yVjNtMCAxOHYtM2EyIDIgMCAwIDEgMi0yaDNNMyAxNmgzYTIgMiAwIDAgMSAyIDJ2MyI+PC9wYXRoPjwvc3ZnPg==);
             }
             /* Fin estilos pantalla completa */
+            
+            /* Estilos para tooltips personalizados */
+            .custom-tooltip {
+                background-color: rgba(255, 140, 0, 0.9) !important;
+                border: 1px solid #ff8c00 !important;
+                border-radius: 4px !important;
+                color: white !important;
+                font-size: 12px !important;
+                padding: 6px 8px !important;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.3) !important;
+            }
+            
+            .custom-tooltip-actual {
+                background-color: rgba(214, 48, 49, 0.9) !important;
+                border: 1px solid #d63031 !important;
+                border-radius: 4px !important;
+                color: white !important;
+                font-size: 12px !important;
+                padding: 6px 8px !important;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.3) !important;
+            }
+            
+            .custom-tooltip::before,
+            .custom-tooltip-actual::before {
+                border-color: transparent !important;
+            }
+            
             .custom-leaflet-btn {
                 margin-bottom: 5px;
                 display: block;
@@ -1211,7 +1251,7 @@
                                     opacity: 0.8,
                                     fillOpacity: 0.3,
                                     pane: 'tilePane', // Usar un pane con menor prioridad
-                                    interactive: false // Hacer no interactivos para que no bloqueen el polígono actual
+                                    interactive: true // Permitir interacción para tooltips
                                 };
                             },
                             onEachFeature: function (feature, layer) {
@@ -1251,8 +1291,33 @@
                                     }
                                 }
                                 if (tooltipContent) {
-                                    layer.bindTooltip(tooltipContent);
+                                    layer.bindTooltip(tooltipContent, {
+                                        permanent: false,
+                                        direction: 'auto',
+                                        opacity: 0.9,
+                                        className: 'custom-tooltip'
+                                    });
                                 }
+                                
+                                // Añadir efectos de hover para mejorar la experiencia
+                                layer.on('mouseover', function(e) {
+                                    var layer = e.target;
+                                    layer.setStyle({
+                                        weight: 3,
+                                        opacity: 1,
+                                        fillOpacity: 0.5
+                                    });
+                                    layer.bringToFront();
+                                });
+                                
+                                layer.on('mouseout', function(e) {
+                                    var layer = e.target;
+                                    layer.setStyle({
+                                        weight: 2,
+                                        opacity: 0.8,
+                                        fillOpacity: 0.3
+                                    });
+                                });
                             }
                         }).addTo(historicoLayerGroup);
                         
@@ -1369,10 +1434,27 @@
                                         dashArray: '5,5', // Línea punteada para distinguir de históricos
                                         fillOpacity: 0.5,
                                         pane: 'shadowPane', // Usar un pane con menor prioridad que overlayPane
-                                        interactive: false // Hacer no interactivos para que no bloqueen el polígono actual
+                                        interactive: true // Permitir interacción para tooltips y popups
                                     };
                                 },
                                 onEachFeature: function(feature, layer) {
+                                    // Crear tooltip rápido para información básica
+                                    var tooltipContent = '';
+                                    if (feature.properties.id_poligono) {
+                                        tooltipContent += '<b>ID:</b> ' + feature.properties.id_poligono;
+                                    }
+                                    if (feature.properties.area) {
+                                        tooltipContent += '<br><b>Área:</b> ' + parseFloat(feature.properties.area).toFixed(4) + ' ha';
+                                    }
+                                    if (tooltipContent) {
+                                        layer.bindTooltip(tooltipContent, {
+                                            permanent: false,
+                                            direction: 'auto',
+                                            opacity: 0.9,
+                                            className: 'custom-tooltip-actual'
+                                        });
+                                    }
+                                    
                                     // Crear popup con información del polígono actual traslapado
                                     var popupContent = '<div class="popup-content">';
                                     popupContent += '<h6><strong>Polígono Actual Traslapado</strong></h6>';
@@ -1404,6 +1486,7 @@
                                             weight: 4,
                                             fillOpacity: 0.7
                                         });
+                                        layer.bringToFront();
                                     });
                                     
                                     layer.on('mouseout', function(e) {
@@ -2833,6 +2916,70 @@
         document.getElementById('btnCancelar').addEventListener('click', function(e) {
             e.preventDefault(); // Prevenir comportamiento por defecto
             window.location.href = "{{ url_for('validacion_poligonos', tab='lista') }}";
+        });
+
+        // Botón "Guardar y pasar a siguiente registro"
+        document.getElementById('btnGuardarSiguiente').addEventListener('click', function(e) {
+            e.preventDefault(); // Prevenir comportamiento por defecto
+            
+            // Verificar si hay ediciones pendientes del polígono
+            if (window.editingMode === true) {
+                alert('Por favor guarde o cancele la edición del polígono antes de continuar.');
+                return;
+            }
+            
+            // Obtener el formulario
+            var form = document.getElementById('formEditarPoligono');
+            if (!form) {
+                alert('Error: No se encontró el formulario.');
+                return;
+            }
+            
+            // Cambiar el texto del botón para mostrar progreso
+            var btnSiguiente = document.getElementById('btnGuardarSiguiente');
+            var textoOriginal = btnSiguiente.innerHTML;
+            btnSiguiente.innerHTML = '<i class="bi bi-hourglass-split"></i> Guardando y pasando al siguiente...';
+            btnSiguiente.disabled = true;
+            
+            // Agregar un campo oculto para indicar que queremos ir al siguiente registro
+            var hiddenInput = document.createElement('input');
+            hiddenInput.type = 'hidden';
+            hiddenInput.name = 'guardar_y_siguiente';
+            hiddenInput.value = 'true';
+            form.appendChild(hiddenInput);
+            
+            // Mostrar un mensaje temporal
+            var toastHTML = `
+            <div class="toast-container position-fixed bottom-0 end-0 p-3">
+              <div class="toast show" role="alert" aria-live="assertive" aria-atomic="true">
+                <div class="toast-header">
+                  <strong class="me-auto">Procesando</strong>
+                  <small>Ahora</small>
+                </div>
+                <div class="toast-body">
+                  <div class="d-flex align-items-center">
+                    <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                    <span>Guardando cambios y pasando al siguiente registro...</span>
+                  </div>
+                </div>
+              </div>
+            </div>`;
+            
+            var toastDiv = document.createElement('div');
+            toastDiv.innerHTML = toastHTML;
+            document.body.appendChild(toastDiv);
+            
+            // Timeout de seguridad para restaurar el botón si algo falla
+            setTimeout(function() {
+                btnSiguiente.innerHTML = textoOriginal;
+                btnSiguiente.disabled = false;
+                if (toastDiv.parentNode) {
+                    toastDiv.parentNode.removeChild(toastDiv);
+                }
+            }, 5000);
+            
+            // Enviar el formulario
+            form.submit();
         });
 
         // Función para calcular y actualizar automáticamente el Estatus basado en la diferencia de áreas

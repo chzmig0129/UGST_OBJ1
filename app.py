@@ -1042,6 +1042,19 @@ def actualizar_fila():
                 db.session.commit()
                 print("Cambios guardados exitosamente en la base de datos")
                 flash('Cambios guardados correctamente en la base de datos', 'success')
+                
+                # Verificar si el usuario quiere ir al siguiente registro
+                if 'guardar_y_siguiente' in request.form:
+                    # Buscar el siguiente registro en la base de datos
+                    siguiente_poligono = Poligono.query.filter(Poligono.id > db_id).order_by(Poligono.id.asc()).first()
+                    
+                    if siguiente_poligono:
+                        flash('Pasando al siguiente registro...', 'info')
+                        return redirect(url_for('validacion_poligonos', tab='editar', db_id=siguiente_poligono.id))
+                    else:
+                        flash('No hay más registros. Este era el último.', 'warning')
+                        return redirect(url_for('validacion_poligonos', tab='lista'))
+                
             except Exception as db_error:
                 print(f"Error al guardar en la base de datos: {db_error}")
                 db.session.rollback()
@@ -1073,6 +1086,25 @@ def actualizar_fila():
                 # Ya no recalculamos el área basada en coordenadas
             
             flash('Cambios guardados correctamente (modo memoria)', 'success')
+            
+            # Verificar si el usuario quiere ir al siguiente registro
+            if 'guardar_y_siguiente' in request.form:
+                # Buscar el siguiente registro en memoria
+                siguiente_indice = row_index + 1
+                if siguiente_indice < len(excel_data['data']):
+                    siguiente_row = excel_data['data'][siguiente_indice]
+                    siguiente_db_id = siguiente_row.get('db_id')
+                    
+                    if siguiente_db_id:
+                        flash('Pasando al siguiente registro...', 'info')
+                        return redirect(url_for('validacion_poligonos', tab='editar', db_id=siguiente_db_id))
+                    else:
+                        flash('Pasando al siguiente registro...', 'info')
+                        return redirect(url_for('validacion_poligonos', tab='editar', row_index=siguiente_indice))
+                else:
+                    flash('No hay más registros. Este era el último.', 'warning')
+                    return redirect(url_for('validacion_poligonos', tab='lista'))
+            
             return redirect(url_for('validacion_poligonos', tab='lista'))
         
         else:
