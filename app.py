@@ -107,6 +107,7 @@ class Poligono(db.Model):
     comentarios = db.Column(db.Text, nullable=True) # Comentarios editables
     descripcion = db.Column(db.Text, nullable=True) # Nueva columna para descripción
     orden = db.Column(db.Text, nullable=True) # Nueva columna para número de orden
+    se_modifico = db.Column(db.Text, default='No') # Campo para indicar si se modificó el polígono en el mapa
     # Metadata
     fecha_creacion = db.Column(db.DateTime, default=datetime.utcnow)
     fecha_modificacion = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -145,7 +146,7 @@ with app.app_context():
             'id', 'id_poligono', 'if_val', 'id_credito', 'id_persona',
             'superficie', 'estado', 'municipio', 'coordenadas',
             'coordenadas_corregidas', 'area_digitalizada', 'estatus',
-            'comentarios', 'descripcion', 'orden', 'fecha_creacion', 'fecha_modificacion'
+            'comentarios', 'descripcion', 'orden', 'se_modifico', 'fecha_creacion', 'fecha_modificacion'
         }
         current_db_columns = set(column_names)
         
@@ -1140,6 +1141,35 @@ def get_original_coords(row_index):
         })
     else:
         return jsonify({'error': 'Índice inválido'}), 404
+
+@app.route('/marcar-como-modificado', methods=['POST'])
+def marcar_como_modificado():
+    """Endpoint para marcar un polígono como modificado cuando se edita en el mapa"""
+    try:
+        data = request.get_json()
+        db_id = data.get('db_id')
+        
+        if db_id is None:
+            return jsonify({'error': 'ID de polígono no proporcionado'}), 400
+        
+        # Buscar el polígono en la base de datos
+        poligono = Poligono.query.get(db_id)
+        if poligono is None:
+            return jsonify({'error': 'Polígono no encontrado'}), 404
+        
+        # Marcar como modificado
+        poligono.se_modifico = 'Sí'
+        poligono.fecha_modificacion = datetime.utcnow()
+        
+        # Guardar cambios
+        db.session.commit()
+        
+        return jsonify({'success': True, 'message': 'Polígono marcado como modificado'})
+        
+    except Exception as e:
+        print(f"Error al marcar como modificado: {str(e)}")
+        db.session.rollback()
+        return jsonify({'error': f'Error al marcar como modificado: {str(e)}'}), 500
 
 @app.route('/diagnostico-poligono/<int:db_id>')
 def diagnostico_poligono(db_id):
@@ -3039,6 +3069,7 @@ def generar_excel():
                 'COMENTARIOS': p.comentarios if p.comentarios else '',
                 'DESCRIPCION': p.descripcion if p.descripcion else '',
                 'ORDEN': p.orden if p.orden else '',
+                'SE_MODIFICO': p.se_modifico if p.se_modifico else 'No',
                 'FECHA_CREACION': p.fecha_creacion.strftime('%Y-%m-%d %H:%M:%S') if p.fecha_creacion else '',
                 'FECHA_MODIFICACION': p.fecha_modificacion.strftime('%Y-%m-%d %H:%M:%S') if p.fecha_modificacion else '',
                 'DB_ID': p.id  # ID interno de la base de datos
@@ -3053,7 +3084,7 @@ def generar_excel():
             'ID_POLIGONO', 'IF', 'ID_CREDITO', 'ID_PERSONA', 'SUPERFICIE', 
             'ESTADO', 'MUNICIPIO', 'COORDENADAS', 'COORDENADAS_DECIMALES_CORREGIDAS',
             'AREA_DIGITALIZADA', 'ESTATUS', 'COMENTARIOS', 'DESCRIPCION', 'ORDEN',
-            'FECHA_CREACION', 'FECHA_MODIFICACION', 'DB_ID'
+            'SE_MODIFICO', 'FECHA_CREACION', 'FECHA_MODIFICACION', 'DB_ID'
         ]
         
         # Verificar que todas las columnas existen antes de reordenar

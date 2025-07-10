@@ -2093,6 +2093,29 @@
                         
                         console.log('Nuevo vértice agregado en posición:', closestSegment.insertIndex);
                         
+                        // Marcar el polígono como modificado en la base de datos
+                        var dbId = {% if db_id is defined %}{{ db_id }}{% else %}null{% endif %};
+                        if (dbId) {
+                            fetch('/marcar-como-modificado', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({db_id: dbId})
+                            })
+                            .then(response => response.json())
+                            .then(data => {
+                                if (data.success) {
+                                    console.log('Polígono marcado como modificado en la base de datos');
+                                } else {
+                                    console.error('Error al marcar como modificado:', data.error);
+                                }
+                            })
+                            .catch(error => {
+                                console.error('Error al marcar como modificado:', error);
+                            });
+                        }
+                        
                         // Desactivar el modo de agregar vértice
                         disable();
                         
@@ -2544,6 +2567,29 @@
                         drawControl = null;
                     }
                     
+                    // Marcar el polígono como modificado en la base de datos
+                    var dbId = {% if db_id is defined %}{{ db_id }}{% else %}null{% endif %};
+                    if (dbId) {
+                        fetch('/marcar-como-modificado', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({db_id: dbId})
+                        })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.success) {
+                                console.log('Polígono marcado como modificado en la base de datos');
+                            } else {
+                                console.error('Error al marcar como modificado:', data.error);
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error al marcar como modificado:', error);
+                        });
+                    }
+                    
                     // Notificar al usuario de la actualización
                     alert("Polígono dibujado. Se han actualizado las coordenadas y el área digitalizada.");
                     
@@ -2621,6 +2667,29 @@
                 // Añadir un efecto visual de actualización a los campos
                 highlightField('COORDENADAS_DECIMALES_CORREGIDAS');
                 highlightField('Area_digitalizada');
+                
+                // Marcar el polígono como modificado en la base de datos
+                var dbId = {% if db_id is defined %}{{ db_id }}{% else %}null{% endif %};
+                if (dbId) {
+                    fetch('/marcar-como-modificado', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({db_id: dbId})
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            console.log('Polígono marcado como modificado en la base de datos');
+                        } else {
+                            console.error('Error al marcar como modificado:', data.error);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error al marcar como modificado:', error);
+                    });
+                }
                 
                 // Desactivar editor personalizado
                 if (customEditor) {
