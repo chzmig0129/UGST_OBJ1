@@ -10,7 +10,7 @@ def get_historico_poligonos():
     """Endpoint para cargar y devolver los polígonos históricos como GeoJSON"""
     try:
         # Ruta al archivo shapefile histórico
-        historico_shapefile = "data/HISTORICO_ORDEN_40"
+        historico_shapefile = "data/MEGA_CAPA_V1_OL"
         
         # Leer el shapefile con geopandas
         historico_gdf = gpd.read_file(historico_shapefile)

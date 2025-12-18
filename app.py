@@ -1206,7 +1206,7 @@ def get_historico_poligonos():
     """Endpoint para cargar y devolver los polígonos históricos como GeoJSON"""
     try:
         # Ruta al archivo shapefile histórico
-        historico_shapefile = "data/HISTORICO_ORDEN_40.shp"
+        historico_shapefile = "data/MEGA_CAPA_V1_OL.shp"
         
         # Leer el shapefile con geopandas
         historico_gdf = gpd.read_file(historico_shapefile)
@@ -1266,7 +1266,7 @@ def get_historico_poligonos_radio(polygon_id):
         lon_ref = float(first_point[1])
         
         # Ruta al archivo shapefile histórico
-        historico_shapefile = "data/HISTORICO_ORDEN_40.shp"
+        historico_shapefile = "data/MEGA_CAPA_V1_OL.shp"
         
         # Leer el shapefile con geopandas
         historico_gdf = gpd.read_file(historico_shapefile)
