@@ -8,13 +8,13 @@ def import_pymupdf():
     try:
         import fitz
         if hasattr(fitz, 'open'):
-            print(f"✅ fitz importado correctamente con método 'open' disponible")
+            print(f"[OK] fitz importado correctamente con método 'open' disponible")
             print(f"   - Versión: {getattr(fitz, 'version', 'desconocida')}")
             return True
         else:
-            print(f"❌ fitz importado pero sin método 'open'")
+            print(f"[ERROR] fitz importado pero sin método 'open'")
     except ImportError:
-        print(f"❌ ImportError: No se pudo importar 'fitz'")
+        print(f"[ERROR] ImportError: No se pudo importar 'fitz'")
     
     # Si llegamos aquí, no pudimos importar fitz correctamente
     # Crear clase dummy como último recurso
@@ -27,7 +27,7 @@ def import_pymupdf():
             return None
     
     # Asignar la clase dummy a fitz
-    print("❌ Usando versión simulada de fitz como último recurso")
+    print("[ERROR] Usando versión simulada de fitz como último recurso")
     fitz = DummyFitz()
     return False
 
@@ -59,10 +59,10 @@ def garantizar_pymupdf():
         if hasattr(fitz, 'open'):
             return True
         else:
-            print("❌ Error: fitz importado pero sin método 'open'")
+            print("[ERROR] Error: fitz importado pero sin método 'open'")
             return False
     except ImportError:
-        print("❌ Error: No se pudo importar fitz")
+        print("[ERROR] Error: No se pudo importar fitz")
         return False
 
 def verificar_instalacion_pymupdf():
