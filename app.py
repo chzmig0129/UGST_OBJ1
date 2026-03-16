@@ -23,6 +23,7 @@ from shapefile_utils import plot_shapefile_to_png
 from utils.pdf_generator import (generar_ficha_tecnica_desde_plantilla, verificar_instalacion_pymupdf, 
                                 generar_ficha_tecnica_fallback, generar_ficha_tecnica_simple, 
                                 garantizar_pymupdf, import_pymupdf)
+from utils.coord_utils import limpiar_coordenadas_raw, parsear_decimal_con_letra, clasificar_coordenadas, fue_limpiado
 import shutil
 import math
 
@@ -108,6 +109,8 @@ class Poligono(db.Model):
     descripcion = db.Column(db.Text, nullable=True) # Nueva columna para descripción
     orden = db.Column(db.Text, nullable=True) # Nueva columna para número de orden
     se_modifico = db.Column(db.Text, default='No') # Campo para indicar si se modificó el polígono en el mapa
+    coord_status = db.Column(db.Text, nullable=True, default='pendiente')  # ok, limpiado, utm_no_soportado, dms_compacto, punto_unico, menos_3_vertices, sin_coordenadas, signos_raros, zonas_utm_inconsistentes
+    coord_status_detalle = db.Column(db.Text, nullable=True)  # Human-readable message explaining why coords can't render
     # Metadata
     fecha_creacion = db.Column(db.DateTime, default=datetime.utcnow)
     fecha_modificacion = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -146,7 +149,8 @@ with app.app_context():
             'id', 'id_poligono', 'if_val', 'id_credito', 'id_persona',
             'superficie', 'estado', 'municipio', 'coordenadas',
             'coordenadas_corregidas', 'area_digitalizada', 'estatus',
-            'comentarios', 'descripcion', 'orden', 'se_modifico', 'fecha_creacion', 'fecha_modificacion'
+            'comentarios', 'descripcion', 'orden', 'se_modifico', 'coord_status', 'coord_status_detalle',
+            'fecha_creacion', 'fecha_modificacion'
         }
         current_db_columns = set(column_names)
         
@@ -326,6 +330,13 @@ def procesar_coordenadas_dms(fila):
     for coord_pair in coord_list:
         coord_pair = coord_pair.strip()
         if not coord_pair:
+            continue
+        
+        # Check for decimal-with-letter format (e.g., 17.12656N,-101.75740)
+        decimal_letter_result = parsear_decimal_con_letra(coord_pair)
+        if decimal_letter_result:
+            coords_decimales.append(decimal_letter_result)
+            print(f"Par procesado decimal+letra: {coord_pair} -> {decimal_letter_result}")
             continue
         
         # Casos especiales: coordenadas tipo 18°4811.1N,103°5102.7W
@@ -615,6 +626,8 @@ def validacion_poligonos(tab):
                     'COORDENADAS': p.coordenadas,
                     'COORDENADAS_DECIMALES_CORREGIDAS': p.coordenadas_corregidas,  # Cambiado para coincidir con el template
                     'AREA_DIGITALIZADA': p.area_digitalizada,
+                    'COORD_STATUS': p.coord_status,
+                    'COORD_STATUS_DETALLE': p.coord_status_detalle,
                     'ESTATUS': p.estatus,
                     'COMENTARIOS': p.comentarios,
                     'DESCRIPCION': p.descripcion,
@@ -629,7 +642,7 @@ def validacion_poligonos(tab):
             columns_to_display = [
                 'ID_POLIGONO', 'IF', 'ID_CREDITO', 'ID_PERSONA', 'SUPERFICIE',
                 'ESTADO', 'MUNICIPIO', 'COORDENADAS', 'COORDENADAS_DECIMALES_CORREGIDAS',
-                'AREA_DIGITALIZADA', 'ESTATUS', 'COMENTARIOS', 'DESCRIPCION', 'ORDEN', 'db_id'
+                'AREA_DIGITALIZADA', 'COORD_STATUS', 'ESTATUS', 'COMENTARIOS', 'DESCRIPCION', 'ORDEN', 'db_id'
             ]
             # --- FIN: Definir columnas fijas ---
 
@@ -710,7 +723,9 @@ def validacion_poligonos(tab):
                     'DESCRIPCION': poligono.descripcion,
                     'ORDEN': poligono.orden,
                     'db_id': poligono.id,
-                    'UBICACION_AUTO': ubicacion_auto  # Bandera para mostrar que se detectó automáticamente
+                    'UBICACION_AUTO': ubicacion_auto,  # Bandera para mostrar que se detectó automáticamente
+                    'COORD_STATUS': poligono.coord_status,
+                    'COORD_STATUS_DETALLE': poligono.coord_status_detalle
                 }
                 
                 return render_template('validacion_poligonos.html', 
@@ -750,6 +765,8 @@ def validacion_poligonos(tab):
                     'COORDENADAS': p.coordenadas,
                     'COORDENADAS_DECIMALES_CORREGIDAS': p.coordenadas_corregidas,  # Cambiado para coincidir con el template
                     'AREA_DIGITALIZADA': p.area_digitalizada,
+                    'COORD_STATUS': p.coord_status,
+                    'COORD_STATUS_DETALLE': p.coord_status_detalle,
                     'ESTATUS': p.estatus,
                     'COMENTARIOS': p.comentarios,
                     'DESCRIPCION': p.descripcion,
@@ -820,10 +837,16 @@ def cargar_excel():
             filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
             archivo.save(filepath)
             
-            # Leer el archivo Excel
-            print(f"Leyendo archivo Excel: {filename}")
-            df = pd.read_excel(filepath)
-            print(f"Columnas encontradas en el Excel: {df.columns.tolist()}")
+            # Leer el archivo (Excel o CSV)
+            file_extension = filename.rsplit('.', 1)[1].lower()
+            print(f"Leyendo archivo: {filename} (tipo: {file_extension})")
+            
+            if file_extension == 'csv':
+                df = pd.read_csv(filepath, encoding='utf-8-sig')
+            else:
+                df = pd.read_excel(filepath)
+            
+            print(f"Columnas encontradas en el archivo: {df.columns.tolist()}")
             
             # Normalizar nombres de columnas (eliminar espacios, convertir a mayúsculas)
             df.columns = [col.strip().upper().replace(' ', '_') for col in df.columns]
@@ -833,16 +856,10 @@ def cargar_excel():
             required_columns = {'IF', 'ID_CREDITO', 'ID_PERSONA', 'ID_POLIGONO', 'SUPERFICIE', 'COORDENADAS'}
             actual_columns = set(df.columns)
             
-            if actual_columns != required_columns:
-                missing_cols = required_columns - actual_columns
-                extra_cols = actual_columns - required_columns
-                error_parts = []
-                if missing_cols:
-                    error_parts.append(f"Faltan columnas: {', '.join(sorted(list(missing_cols)))}")
-                if extra_cols:
-                    error_parts.append(f"Hay columnas extra: {', '.join(sorted(list(extra_cols)))}")
-
-                error_msg = f"El excel no sigue el formato. Favor de verificar el nombre de las columnas. Columnas requeridas: {', '.join(sorted(list(required_columns)))}. Detalles: {'. '.join(error_parts)}"
+            # Solo verificar que existan las columnas requeridas (permitir columnas extra)
+            missing_cols = required_columns - actual_columns
+            if missing_cols:
+                error_msg = f"El archivo no contiene todas las columnas requeridas. Faltan columnas: {', '.join(sorted(list(missing_cols)))}. Columnas requeridas: {', '.join(sorted(list(required_columns)))}"
                 flash(error_msg, 'error')
                 return redirect(url_for('validacion_poligonos', tab='cargar'))
             # --- FIN: Validar columnas requeridas ---
@@ -861,8 +878,33 @@ def cargar_excel():
             #         return redirect(url_for('validacion_poligonos'))
             
             # Procesar coordenadas
+            # Step 1: Clean raw coordinates
+            df['COORDENADAS_LIMPIAS'] = df['COORDENADAS'].apply(lambda x: limpiar_coordenadas_raw(str(x)) if pd.notna(x) else '')
+
+            # Step 2: Process cleaned coordinates (use COORDENADAS_LIMPIAS instead of COORDENADAS)
+            # We need to temporarily replace COORDENADAS with the cleaned version for procesar_coordenadas_dms
+            df['COORDENADAS_ORIGINAL'] = df['COORDENADAS']  # Save original
+            df['COORDENADAS'] = df['COORDENADAS_LIMPIAS']  # Use cleaned for processing
             df['COORDENADAS_DECIMALES'] = df.apply(procesar_coordenadas_dms, axis=1)
+            df['COORDENADAS'] = df['COORDENADAS_ORIGINAL']  # Restore original
             df['COORDENADAS_DECIMALES_CORREGIDAS'] = df['COORDENADAS_DECIMALES'].apply(corregir_longitud)
+
+            # Step 3: Classify coordinate quality
+            df['COORD_STATUS'] = ''
+            df['COORD_STATUS_DETALLE'] = ''
+            for idx in df.index:
+                original = str(df.at[idx, 'COORDENADAS_ORIGINAL']) if pd.notna(df.at[idx, 'COORDENADAS_ORIGINAL']) else ''
+                procesada = str(df.at[idx, 'COORDENADAS_DECIMALES_CORREGIDAS']) if pd.notna(df.at[idx, 'COORDENADAS_DECIMALES_CORREGIDAS']) else ''
+                limpia = str(df.at[idx, 'COORDENADAS_LIMPIAS']) if pd.notna(df.at[idx, 'COORDENADAS_LIMPIAS']) else ''
+                
+                status, detalle = clasificar_coordenadas(original, procesada)
+                
+                # If it was cleaned and status is ok, mark as 'limpiado'
+                if status == 'ok' and fue_limpiado(original, limpia):
+                    status = 'limpiado'
+                
+                df.at[idx, 'COORD_STATUS'] = status
+                df.at[idx, 'COORD_STATUS_DETALLE'] = detalle if detalle else ''
             
             # No calculamos el área aquí, la dejamos como None inicialmente
             # df['AREA_DIGITALIZADA'] = areas
@@ -905,7 +947,9 @@ def cargar_excel():
                         area_digitalizada=None, # Se inicializa como None
                         estatus=str(row.get('ESTATUS', '')), # Añadir si existe en Excel
                         comentarios=None,        # Se inicializa como None
-                        descripcion=str(row.get('DESCRIPCION', ''))  # Añadir descripción
+                        descripcion=str(row.get('DESCRIPCION', '')),  # Añadir descripción
+                        coord_status=str(row.get('COORD_STATUS', 'pendiente')),
+                        coord_status_detalle=str(row.get('COORD_STATUS_DETALLE', ''))
                         # datos_json ya no existe
                     )
                     db.session.add(poligono)
@@ -942,7 +986,7 @@ def cargar_excel():
             traceback.print_exc()
             return redirect(url_for('validacion_poligonos'))
     
-    flash('Formato de archivo no permitido. Solo se aceptan .xlsx o .xls', 'error')
+    flash('Formato de archivo no permitido. Solo se aceptan .xlsx, .xls o .csv', 'error')
     return redirect(url_for('validacion_poligonos'))
 
 @app.route('/actualizar-fila', methods=['POST'])
@@ -1390,7 +1434,7 @@ def obtener_ubicacion_desde_poligono(coordenadas_str):
 
 def allowed_file(filename):
     return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in {'xlsx', 'xls'}
+           filename.rsplit('.', 1)[1].lower() in {'xlsx', 'xls', 'csv'}
 
 @app.route('/generar_shapefiles', methods=['POST'])
 def generar_shapefiles():

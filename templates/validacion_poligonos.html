@@ -254,6 +254,8 @@
                                         <th class="bg-info text-white" style="min-width: 200px; max-width: 250px;">{{ col }}</th>
                                     {% elif col == 'AREA_DIGITALIZADA' %}
                                         <th class="bg-success text-white" style="min-width: 120px;">{{ col }} (ha)</th>
+                                    {% elif col == 'COORD_STATUS' %}
+                                        <th class="bg-primary text-white" style="min-width: 150px;">{{ col }}</th> {# Coord status column #}
                                     {% elif col in ['ESTADO', 'MUNICIPIO', 'ESTATUS'] %}
                                         <th class="bg-light" style="min-width: 100px;">{{ col }}</th> {# Newly added columns #}
                                     {% elif col == 'COMENTARIOS' %}
@@ -278,7 +280,20 @@
                                         <td>
                                     {% endif %}
                                         {# Display values, handle None #}
-                                        {% if row[col] is not none and row[col] != '' %}
+                                        {% if col == 'COORD_STATUS' %}
+                                            {% set status = row[col] %}
+                                            {% if status == 'ok' or status == 'limpiado' %}
+                                                <span class="badge bg-success" title="{{ row.get('COORD_STATUS_DETALLE', '') }}">{{ status }}</span>
+                                            {% elif status == 'utm_no_soportado' or status == 'dms_compacto' or status == 'zonas_utm_inconsistentes' %}
+                                                <span class="badge bg-warning text-dark" title="{{ row.get('COORD_STATUS_DETALLE', '') }}">{{ status }}</span>
+                                            {% elif status == 'punto_unico' or status == 'menos_3_vertices' or status == 'sin_coordenadas' or status == 'error_conversion' %}
+                                                <span class="badge bg-danger" title="{{ row.get('COORD_STATUS_DETALLE', '') }}">{{ status }}</span>
+                                            {% elif status == 'pendiente' or not status %}
+                                                <span class="badge bg-secondary">pendiente</span>
+                                            {% else %}
+                                                <span class="badge bg-info">{{ status }}</span>
+                                            {% endif %}
+                                        {% elif row[col] is not none and row[col] != '' %}
                                             {% if col == 'AREA_DIGITALIZADA' %}
                                                 {{ "%.2f"|format(row[col]|float) }} ha
                                             {% else %}
@@ -488,6 +503,37 @@
                         </div>
                         
                         <div class="col-md-6">
+                            {% if poligono_data is defined and poligono_data.COORD_STATUS and poligono_data.COORD_STATUS not in ['ok', 'limpiado', 'pendiente'] %}
+                            <div class="alert alert-warning alert-dismissible fade show" role="alert" style="margin-bottom: 10px;">
+                                <div class="d-flex align-items-start">
+                                    <div class="me-3" style="font-size: 2rem;">⚠️</div>
+                                    <div>
+                                        <h5 class="alert-heading mb-1">No se puede mostrar el polígono en el mapa</h5>
+                                        <p class="mb-1">{{ poligono_data.COORD_STATUS_DETALLE }}</p>
+                                        <hr class="my-2">
+                                        <p class="mb-0 small">
+                                            <strong>Estado:</strong> <span class="badge bg-warning text-dark">{{ poligono_data.COORD_STATUS }}</span>
+                                            <br>
+                                            <strong>Tip:</strong> Puede usar el botón <em>"Dibujar Nuevo Polígono"</em> en el mapa para crear la geometría manualmente.
+                                        </p>
+                                    </div>
+                                </div>
+                                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                            </div>
+                            {% endif %}
+
+                            {% if coords_para_mapa is defined and coords_para_mapa|length < 3 and (poligono_data is not defined or poligono_data.COORD_STATUS in ['ok', 'limpiado', 'pendiente', '', none]) %}
+                            <div class="alert alert-info alert-dismissible fade show" role="alert" style="margin-bottom: 10px;">
+                                <div class="d-flex align-items-center">
+                                    <div class="me-2" style="font-size: 1.5rem;">ℹ️</div>
+                                    <div>
+                                        <p class="mb-0">No hay suficientes coordenadas para dibujar un polígono (se necesitan mínimo 3 vértices). Puede dibujar uno manualmente usando el botón <em>"Dibujar Nuevo Polígono"</em>.</p>
+                                    </div>
+                                </div>
+                                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                            </div>
+                            {% endif %}
+
                             <div id="map" style="height: 550px; width: 100%; border-radius: 4px;"></div>
                             
                             <!-- Controles de Visibilidad de Capas -->
@@ -1138,21 +1184,15 @@
                     console.error("Error al crear marcador para la coordenada única:", error);
                 }
             } else {
-                console.error("No se pudo crear el polígono o marcador: coordenadas insuficientes o inválidas");
+                console.log("No valid coordinates for polygon rendering. coord_status: {{ poligono_data.COORD_STATUS if poligono_data is defined else 'unknown' }}");
                 
-                // Mostrar mensaje en el mapa
-                var mapElement = document.getElementById('map');
-                if (mapElement) {
-                    var alertDiv = document.createElement('div');
-                    alertDiv.className = 'alert alert-warning';
-                    alertDiv.style.position = 'absolute';
-                    alertDiv.style.top = '10px';
-                    alertDiv.style.left = '10px';
-                    alertDiv.style.zIndex = '1000';
-                    alertDiv.style.padding = '10px';
-                    alertDiv.style.borderRadius = '4px';
-                    alertDiv.innerHTML = "No hay coordenadas válidas para mostrar. Por favor, ingrese al menos una coordenada.";
-                    mapElement.appendChild(alertDiv);
+                // Center map on Mexico if no valid coords
+                map.setView([23.6345, -102.5528], 5);
+                
+                // Set area to 0 since there's no polygon
+                var areaField = document.getElementById('Area_digitalizada');
+                if (areaField && !areaField.value) {
+                    areaField.value = "0.0000";
                 }
             }
             
