@@ -3896,6 +3896,35 @@ def init_shp_db():
 # Call the initialization function when the app starts
 init_shp_db()
 
+def init_validacion_15k_db():
+    """
+    Initialize the database table for 15K validation results if it doesn't exist.
+    Reuses the same shp_records.db database as init_shp_db().
+    """
+    conn = get_db_connection()
+
+    conn.execute('''
+    CREATE TABLE IF NOT EXISTS validacion_15k (
+        val_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        idx INTEGER NOT NULL UNIQUE,
+        id_poligon_validacion TEXT,
+        id_credito_validacion TEXT,
+        nombre_zip TEXT,
+        estatus TEXT DEFAULT 'pendiente',
+        id_poligon_historico TEXT,
+        mega_idx INTEGER,
+        overlap_pct REAL,
+        fecha_validacion TIMESTAMP,
+        validado_por TEXT DEFAULT 'usuario'
+    )
+    ''')
+
+    conn.commit()
+    conn.close()
+
+# Call the initialization function when the app starts
+init_validacion_15k_db()
+
 # Filtro personalizado para convertir strings JSON a diccionarios
 @app.template_filter('ensure_dict')
 def ensure_dict(value):
