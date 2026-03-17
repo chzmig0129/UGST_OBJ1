@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "server",
+  "dolt_database": "UGST_OBJ1",
+  "project_id": "95c575af-652c-428f-8c19-50b31cf0e83e"
+}
