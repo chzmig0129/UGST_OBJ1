@@ -4284,20 +4284,26 @@ def api_analizador_total():
     return jsonify({'total': len(validacion_gdf)})
 
 
-@app.route('/api/analizador/poligono/<int:idx>')
-def api_analizador_poligono(idx):
+def calcular_traslapes(idx):
+    """Helper: computes overlap analysis for validacion_gdf[idx] against mega_gdf.
+
+    Returns a dict with keys: poligono, matches, match_features, resumen.
+    Raises ValueError if idx is out of range.
+    Raises RuntimeError if shapefiles are not loaded.
+    """
     if validacion_gdf is None or mega_gdf is None:
-        return jsonify({'error': 'Shapefiles no cargados'}), 500
+        raise RuntimeError('Shapefiles no cargados')
     if idx < 0 or idx >= len(validacion_gdf):
-        return jsonify({'error': f'Índice fuera de rango (0-{len(validacion_gdf)-1})'}), 400
+        raise ValueError(f'Índice fuera de rango (0-{len(validacion_gdf)-1})')
+
+    import pyproj
+    import shapely
+    from shapely.ops import transform
 
     vrow = validacion_gdf.iloc[idx]
     vgeom = vrow.geometry
 
     # Calcular área en hectáreas (proyectar a UTM zona basada en el centroide)
-    import pyproj
-    from shapely.ops import transform
-
     centroid = vgeom.centroid
     utm_zone = int((centroid.x + 180) / 6) + 1
     transformer = pyproj.Transformer.from_crs('EPSG:4326', f'EPSG:326{utm_zone:02d}', always_xy=True)
@@ -4350,8 +4356,6 @@ def api_analizador_poligono(idx):
         }
         matches.append(match_info)
 
-        # GeoJSON feature del match usando shapely.to_geojson
-        import shapely
         match_feature = {
             'type': 'Feature',
             'properties': match_info,
@@ -4363,8 +4367,7 @@ def api_analizador_poligono(idx):
     matches.sort(key=lambda x: x['overlap_pct'], reverse=True)
     match_features.sort(key=lambda x: x['properties']['overlap_pct'], reverse=True)
 
-    # GeoJSON del polígono actual usando shapely.to_geojson
-    import shapely
+    # GeoJSON del polígono actual
     poligono_geojson = {
         'type': 'Feature',
         'properties': {
@@ -4385,9 +4388,7 @@ def api_analizador_poligono(idx):
         'total_matches': len(matches)
     }
 
-    return jsonify({
-        'index': idx,
-        'total': len(validacion_gdf),
+    return {
         'poligono': poligono_geojson,
         'matches': matches,
         'match_features': {
@@ -4395,6 +4396,25 @@ def api_analizador_poligono(idx):
             'features': match_features
         },
         'resumen': resumen
+    }
+
+
+@app.route('/api/analizador/poligono/<int:idx>')
+def api_analizador_poligono(idx):
+    try:
+        data = calcular_traslapes(idx)
+    except RuntimeError as e:
+        return jsonify({'error': str(e)}), 500
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
+    return jsonify({
+        'index': idx,
+        'total': len(validacion_gdf),
+        'poligono': data['poligono'],
+        'matches': data['matches'],
+        'match_features': data['match_features'],
+        'resumen': data['resumen']
     })
 
 
@@ -4416,6 +4436,276 @@ def api_analizador_buscar():
             })
         if len(resultados) >= 50:
             break
+    return jsonify({'resultados': resultados, 'total': len(resultados)})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Validación 15K — API endpoints
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.route('/api/validacion-15k/guardar', methods=['POST'])
+def api_validacion_15k_guardar():
+    """Save or update the validation status for a single 15K polygon (upsert)."""
+    if validacion_gdf is None:
+        return jsonify({'error': 'Shapefiles no cargados'}), 500
+
+    data = request.get_json(force=True, silent=True) or {}
+
+    # Validate idx
+    idx = data.get('idx')
+    if idx is None:
+        return jsonify({'error': 'idx es requerido'}), 400
+    try:
+        idx = int(idx)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'idx debe ser un entero'}), 400
+    if idx < 0 or idx >= len(validacion_gdf):
+        return jsonify({'error': f'idx fuera de rango (0-{len(validacion_gdf)-1})'}), 400
+
+    # Validate estatus
+    estatus = data.get('estatus')
+    if estatus not in ('nuevo', 'encima'):
+        return jsonify({'error': "estatus debe ser 'nuevo' o 'encima'"}), 400
+
+    # Validate encima requirements
+    id_poligon_historico = data.get('id_poligon_historico')
+    mega_idx = data.get('mega_idx')
+    overlap_pct = data.get('overlap_pct')
+
+    if estatus == 'encima':
+        if not id_poligon_historico:
+            return jsonify({'error': "id_poligon_historico es requerido cuando estatus es 'encima'"}), 400
+        if mega_idx is None:
+            return jsonify({'error': "mega_idx es requerido cuando estatus es 'encima'"}), 400
+    else:
+        # estatus == 'nuevo': nullify linked fields
+        id_poligon_historico = None
+        mega_idx = None
+        overlap_pct = None
+
+    # Auto-populate from validacion_gdf
+    vrow = validacion_gdf.iloc[idx]
+    id_poligon_validacion = str(vrow.get('ID_POLIGON', '') or '')
+    id_credito_validacion = str(vrow.get('ID_CREDITO', '') or '')
+    nombre_zip = str(vrow.get('NOMBRE_ZIP', '') or '')
+
+    from datetime import datetime, timezone
+    fecha_validacion = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S')
+
+    conn = get_db_connection()
+    try:
+        cursor = conn.execute(
+            '''INSERT OR REPLACE INTO validacion_15k
+               (idx, id_poligon_validacion, id_credito_validacion, nombre_zip,
+                estatus, id_poligon_historico, mega_idx, overlap_pct,
+                fecha_validacion, validado_por)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'usuario')''',
+            (idx, id_poligon_validacion, id_credito_validacion, nombre_zip,
+             estatus, id_poligon_historico, mega_idx, overlap_pct,
+             fecha_validacion)
+        )
+        conn.commit()
+        val_id = cursor.lastrowid
+    finally:
+        conn.close()
+
+    return jsonify({'success': True, 'val_id': val_id, 'estatus': estatus})
+
+
+@app.route('/api/validacion-15k/progreso')
+def api_validacion_15k_progreso():
+    """Return overall validation progress stats."""
+    if validacion_gdf is None:
+        return jsonify({'error': 'Shapefiles no cargados'}), 500
+
+    total = len(validacion_gdf)
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            "SELECT estatus, COUNT(*) as cnt FROM validacion_15k GROUP BY estatus"
+        ).fetchall()
+    finally:
+        conn.close()
+
+    counts = {row['estatus']: row['cnt'] for row in rows}
+    nuevos = counts.get('nuevo', 0)
+    encima = counts.get('encima', 0)
+    validados = nuevos + encima
+    pendientes = total - validados
+    porcentaje = round((validados / total * 100), 1) if total > 0 else 0.0
+
+    return jsonify({
+        'total': total,
+        'pendientes': pendientes,
+        'nuevos': nuevos,
+        'encima': encima,
+        'porcentaje': porcentaje
+    })
+
+
+@app.route('/api/validacion-15k/estado/<int:idx>')
+def api_validacion_15k_estado(idx):
+    """Return the saved validation status for a specific polygon index."""
+    if validacion_gdf is None:
+        return jsonify({'error': 'Shapefiles no cargados'}), 500
+    if idx < 0 or idx >= len(validacion_gdf):
+        return jsonify({'error': f'idx fuera de rango (0-{len(validacion_gdf)-1})'}), 400
+
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            'SELECT * FROM validacion_15k WHERE idx = ?', (idx,)
+        ).fetchone()
+    finally:
+        conn.close()
+
+    if row is None:
+        return jsonify({'idx': idx, 'estatus': 'pendiente'})
+
+    return jsonify({
+        'idx': idx,
+        'estatus': row['estatus'],
+        'id_poligon_historico': row['id_poligon_historico'],
+        'mega_idx': row['mega_idx'],
+        'overlap_pct': row['overlap_pct'],
+        'fecha_validacion': row['fecha_validacion']
+    })
+
+
+@app.route('/api/validacion-15k/poligono/<int:idx>')
+def api_validacion_15k_poligono(idx):
+    """Return enhanced polygon detail with overlap analysis, saved status, and auto-suggestion."""
+    try:
+        data = calcular_traslapes(idx)
+    except RuntimeError as e:
+        return jsonify({'error': str(e)}), 500
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
+    # Fetch saved validation status
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            'SELECT * FROM validacion_15k WHERE idx = ?', (idx,)
+        ).fetchone()
+    finally:
+        conn.close()
+
+    if row is None:
+        validacion = {
+            'estatus': 'pendiente',
+            'id_poligon_historico': None,
+            'mega_idx': None,
+            'overlap_pct': None,
+            'fecha_validacion': None
+        }
+    else:
+        validacion = {
+            'estatus': row['estatus'],
+            'id_poligon_historico': row['id_poligon_historico'],
+            'mega_idx': row['mega_idx'],
+            'overlap_pct': row['overlap_pct'],
+            'fecha_validacion': row['fecha_validacion']
+        }
+
+    # Auto-suggestion based on overlap analysis
+    matches = data['matches']
+    best = matches[0] if matches else None  # already sorted by overlap_pct desc
+    if best and best['overlap_pct'] >= 50:
+        sugerencia = {
+            'estatus': 'encima',
+            'id_poligon_historico': best['id_poligon'],
+            'mega_idx': best['mega_index'],
+            'overlap_pct': best['overlap_pct'],
+            'razon': f"Traslape >= 50% con polígono histórico {best['id_poligon']}"
+        }
+    else:
+        sugerencia = {
+            'estatus': 'nuevo',
+            'id_poligon_historico': None,
+            'mega_idx': None,
+            'overlap_pct': None,
+            'razon': 'Ningún traslape >= 50% con polígonos históricos'
+        }
+
+    return jsonify({
+        'index': idx,
+        'total': len(validacion_gdf),
+        'poligono': data['poligono'],
+        'matches': data['matches'],
+        'match_features': data['match_features'],
+        'resumen': data['resumen'],
+        'validacion': validacion,
+        'sugerencia': sugerencia
+    })
+
+
+@app.route('/api/validacion-15k/siguiente-pendiente')
+def api_validacion_15k_siguiente_pendiente():
+    """Return the next unvalidated polygon index, optionally starting from ?desde=<idx>."""
+    if validacion_gdf is None:
+        return jsonify({'error': 'Shapefiles no cargados'}), 500
+
+    try:
+        desde = int(request.args.get('desde', 0))
+    except (TypeError, ValueError):
+        desde = 0
+    desde = max(0, desde)
+
+    total = len(validacion_gdf)
+
+    # Fetch all validated indices (estatus != 'pendiente')
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            "SELECT idx FROM validacion_15k WHERE estatus != 'pendiente'"
+        ).fetchall()
+    finally:
+        conn.close()
+
+    validados = {row['idx'] for row in rows}
+    total_pendientes = total - len(validados)
+
+    # Search from `desde` to end, then wrap around 0 to `desde`
+    for i in list(range(desde, total)) + list(range(0, desde)):
+        if i not in validados:
+            return jsonify({'idx': i, 'total_pendientes': total_pendientes})
+
+    return jsonify({'idx': None, 'total_pendientes': 0, 'mensaje': 'Todos los polígonos han sido validados'})
+
+
+@app.route('/api/validacion-15k/buscar')
+def api_validacion_15k_buscar():
+    """Search validacion_gdf by ID_POLIGON or ID_CREDITO, including saved estatus."""
+    if validacion_gdf is None:
+        return jsonify({'error': 'Shapefiles no cargados'}), 500
+
+    q = request.args.get('q', '').strip()
+    if not q:
+        return jsonify({'resultados': [], 'total': 0})
+
+    # Fetch all saved statuses in one query
+    conn = get_db_connection()
+    try:
+        rows = conn.execute('SELECT idx, estatus FROM validacion_15k').fetchall()
+    finally:
+        conn.close()
+    estatus_map = {row['idx']: row['estatus'] for row in rows}
+
+    resultados = []
+    q_lower = q.lower()
+    for i, row in validacion_gdf.iterrows():
+        if (q_lower in str(row.get('ID_CREDITO', '')).lower() or
+                q_lower in str(row.get('ID_POLIGON', '')).lower()):
+            resultados.append({
+                'index': int(i),
+                'id_poligon': str(row.get('ID_POLIGON', '')),
+                'id_credito': str(row.get('ID_CREDITO', '')),
+                'estatus': estatus_map.get(int(i), 'pendiente')
+            })
+        if len(resultados) >= 50:
+            break
+
     return jsonify({'resultados': resultados, 'total': len(resultados)})
 
 
