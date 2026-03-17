@@ -4126,6 +4126,11 @@ def mapa_15k():
     return render_template('mapa_15k.html')
 
 
+@app.route('/validacion-15k')
+def validacion_15k():
+    return render_template('validacion_15k.html')
+
+
 @app.route('/api/mapa-15k/validacion')
 def api_mapa_15k_validacion():
     try:
