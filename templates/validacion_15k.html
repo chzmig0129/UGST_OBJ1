@@ -1,0 +1,1144 @@
+{% extends 'base.html' %}
+
+{% block head %}
+<!-- Leaflet Fullscreen Plugin -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.fullscreen@2.4.0/Control.FullScreen.css" />
+<script src="https://cdn.jsdelivr.net/npm/leaflet.fullscreen@2.4.0/Control.FullScreen.js"></script>
+
+<style>
+    /* ── Layout ─────────────────────────────────────────────────────────────── */
+    #validacion-container {
+        display: flex;
+        height: calc(100vh - 60px);
+        overflow: hidden;
+    }
+
+    /* ── Panel lateral ──────────────────────────────────────────────────────── */
+    #panel-lateral {
+        width: 380px;
+        min-width: 380px;
+        overflow-y: auto;
+        padding: 15px;
+        background: #f8f9fa;
+        border-right: 1px solid #dee2e6;
+        box-shadow: 2px 0 6px rgba(0,0,0,0.07);
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    /* ── Secciones del panel ────────────────────────────────────────────────── */
+    .panel-section {
+        background: #fff;
+        border-radius: 8px;
+        border: 1px solid #dee2e6;
+        padding: 12px;
+    }
+
+    .panel-section-title {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #6c757d;
+        margin-bottom: 10px;
+    }
+
+    /* ── Header del panel ───────────────────────────────────────────────────── */
+    #panel-header {
+        background: linear-gradient(135deg, #1a6b3c 0%, #28a745 100%);
+        border-radius: 8px;
+        padding: 14px;
+        color: #fff;
+    }
+
+    #panel-header h5 {
+        font-size: 15px;
+        font-weight: 700;
+        margin-bottom: 2px;
+    }
+
+    #panel-header p {
+        font-size: 11px;
+        opacity: 0.85;
+        margin: 0;
+    }
+
+    /* ── Búsqueda ───────────────────────────────────────────────────────────── */
+    #search-dropdown {
+        position: absolute;
+        z-index: 9999;
+        background: #fff;
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        max-height: 260px;
+        overflow-y: auto;
+        width: 100%;
+        left: 0;
+        top: 100%;
+        display: none;
+    }
+
+    #search-wrapper {
+        position: relative;
+    }
+
+    .search-result-item {
+        padding: 8px 12px;
+        cursor: pointer;
+        border-bottom: 1px solid #f0f0f0;
+        font-size: 13px;
+        transition: background 0.15s;
+    }
+
+    .search-result-item:last-child {
+        border-bottom: none;
+    }
+
+    .search-result-item:hover {
+        background: #e9f0ff;
+    }
+
+    /* ── Navegación ─────────────────────────────────────────────────────────── */
+    #nav-counter {
+        font-size: 13px;
+        font-weight: 600;
+        color: #495057;
+        text-align: center;
+        flex: 1;
+    }
+
+    #goto-input {
+        width: 70px;
+    }
+
+    /* ── Info polígono ──────────────────────────────────────────────────────── */
+    .info-label {
+        font-size: 11px;
+        color: #6c757d;
+        margin-bottom: 1px;
+    }
+
+    .info-value {
+        font-size: 13px;
+        font-weight: 600;
+        color: #212529;
+        margin-bottom: 8px;
+        word-break: break-all;
+    }
+
+    #info-id-poligon {
+        font-size: 16px;
+        font-weight: 700;
+        color: #1a6b3c;
+    }
+
+    /* ── Lista de matches ───────────────────────────────────────────────────── */
+    #matches-list {
+        max-height: 280px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .match-card {
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
+        padding: 10px 12px;
+        cursor: pointer;
+        transition: background 0.15s, box-shadow 0.15s, border-color 0.15s;
+        border-left-width: 4px;
+        background: #fff;
+        font-size: 12px;
+    }
+
+    .match-card:hover {
+        background: #fff8f0;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    }
+
+    .match-card.selected-match {
+        background: #fff3e0;
+        border-color: #fd7e14;
+        box-shadow: 0 0 0 2px rgba(253,126,20,0.25);
+    }
+
+    .match-card .match-id {
+        font-weight: 700;
+        font-size: 13px;
+        color: #212529;
+        margin-bottom: 2px;
+    }
+
+    .match-card .match-meta {
+        color: #6c757d;
+        margin-bottom: 4px;
+    }
+
+    .match-card .match-badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 12px;
+        font-size: 11px;
+        font-weight: 600;
+        color: #fff;
+        margin-top: 4px;
+    }
+
+    /* ── Controles de validación ────────────────────────────────────────────── */
+    .btn-validacion {
+        flex: 1;
+        padding: 12px 8px;
+        font-size: 14px;
+        font-weight: 700;
+        border-radius: 8px;
+        border: 2px solid transparent;
+        transition: all 0.2s;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+        cursor: pointer;
+    }
+
+    .btn-validacion i {
+        font-size: 22px;
+    }
+
+    .btn-nuevo {
+        background: #28a745;
+        color: #fff;
+        border-color: #1e7e34;
+    }
+
+    .btn-nuevo:hover {
+        background: #1e7e34;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(40,167,69,0.4);
+    }
+
+    .btn-nuevo:active {
+        transform: translateY(0);
+    }
+
+    .btn-encima {
+        background: #fd7e14;
+        color: #fff;
+        border-color: #e96b00;
+    }
+
+    .btn-encima:hover {
+        background: #e96b00;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(253,126,20,0.4);
+    }
+
+    .btn-encima:active {
+        transform: translateY(0);
+    }
+
+    .btn-validacion.btn-active-nuevo {
+        background: #155724;
+        border-color: #0d3d18;
+        box-shadow: 0 0 0 3px rgba(40,167,69,0.35);
+    }
+
+    .btn-validacion.btn-active-encima {
+        background: #7d3900;
+        border-color: #5a2900;
+        box-shadow: 0 0 0 3px rgba(253,126,20,0.35);
+    }
+
+    /* ── Sugerencia badge ───────────────────────────────────────────────────── */
+    .sugerencia-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 4px 10px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+
+    .sugerencia-nuevo  { background: #d4edda; color: #155724; }
+    .sugerencia-encima { background: #fde8d0; color: #7d3900; }
+    .sugerencia-none   { background: #e9ecef; color: #6c757d; }
+
+    /* ── Estatus guardado badge ─────────────────────────────────────────────── */
+    .estatus-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 13px;
+        font-weight: 700;
+    }
+
+    .estatus-nuevo  { background: #28a745; color: #fff; }
+    .estatus-encima { background: #fd7e14; color: #fff; }
+
+    /* ── Enlace a polígono histórico seleccionado ───────────────────────────── */
+    #encima-link-info {
+        background: #fff3e0;
+        border: 1px solid #ffc107;
+        border-radius: 6px;
+        padding: 8px 10px;
+        font-size: 12px;
+        color: #7d3900;
+        display: none;
+        margin-top: 8px;
+    }
+
+    /* ── Barra de progreso ──────────────────────────────────────────────────── */
+    .progress-stacked {
+        height: 14px;
+        border-radius: 7px;
+        overflow: hidden;
+        background: #e9ecef;
+        display: flex;
+    }
+
+    .progress-seg-nuevo  { background: #28a745; }
+    .progress-seg-encima { background: #fd7e14; }
+
+    /* ── Spinner ────────────────────────────────────────────────────────────── */
+    #panel-spinner {
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    #panel-spinner.active {
+        display: flex;
+    }
+
+    /* ── Toast ──────────────────────────────────────────────────────────────── */
+    #toast-container {
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        z-index: 99999;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .toast-msg {
+        padding: 10px 18px;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 600;
+        color: #fff;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+        animation: toastIn 0.25s ease;
+    }
+
+    .toast-success { background: #28a745; }
+    .toast-error   { background: #dc3545; }
+    .toast-info    { background: #0d6efd; }
+
+    @keyframes toastIn {
+        from { opacity: 0; transform: translateY(16px); }
+        to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── Mapa ───────────────────────────────────────────────────────────────── */
+    #map-container {
+        flex: 1;
+        position: relative;
+        overflow: hidden;
+    }
+
+    #map {
+        width: 100%;
+        height: 100%;
+    }
+
+    /* ── Tooltip del mapa ───────────────────────────────────────────────────── */
+    .val15k-tooltip {
+        background: rgba(0,0,0,0.82) !important;
+        color: #fff !important;
+        border: none !important;
+        border-radius: 5px !important;
+        padding: 6px 10px !important;
+        font-size: 12px !important;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.35) !important;
+        line-height: 1.5 !important;
+    }
+
+    .val15k-tooltip::before {
+        border-color: transparent !important;
+    }
+
+    /* ── Empty state ────────────────────────────────────────────────────────── */
+    .empty-state {
+        text-align: center;
+        color: #adb5bd;
+        padding: 16px 0;
+        font-size: 13px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="validacion-container">
+
+    <!-- ══════════════════════════════════════════════════════════════════════ -->
+    <!-- PANEL LATERAL                                                          -->
+    <!-- ══════════════════════════════════════════════════════════════════════ -->
+    <div id="panel-lateral">
+
+        <!-- ── Sección 1: Header ─────────────────────────────────────────── -->
+        <div id="panel-header">
+            <h5><i class="bi bi-check2-square me-2"></i>Validación 15K</h5>
+            <p>Clasificación de polígonos contra histórico</p>
+        </div>
+
+        <!-- ── Sección 2: Búsqueda ───────────────────────────────────────── -->
+        <div class="panel-section">
+            <div class="panel-section-title"><i class="bi bi-search me-1"></i>Búsqueda</div>
+            <div id="search-wrapper">
+                <div class="input-group input-group-sm">
+                    <input type="text" id="search-input" class="form-control"
+                           placeholder="Buscar por ID Polígono o ID Crédito...">
+                    <button class="btn btn-success" id="btn-buscar" type="button">
+                        <i class="bi bi-search"></i>
+                    </button>
+                </div>
+                <div id="search-dropdown"></div>
+            </div>
+        </div>
+
+        <!-- ── Sección 3: Navegación ─────────────────────────────────────── -->
+        <div class="panel-section">
+            <div class="panel-section-title"><i class="bi bi-compass me-1"></i>Navegación</div>
+
+            <!-- Prev / Counter / Next -->
+            <div class="d-flex align-items-center gap-2 mb-2">
+                <button class="btn btn-sm btn-outline-secondary" id="btn-prev" title="Anterior (←)">
+                    <i class="bi bi-chevron-left"></i>
+                </button>
+                <div id="nav-counter">— de —</div>
+                <button class="btn btn-sm btn-outline-secondary" id="btn-next" title="Siguiente (→)">
+                    <i class="bi bi-chevron-right"></i>
+                </button>
+            </div>
+
+            <!-- Siguiente pendiente -->
+            <button class="btn btn-sm btn-outline-warning w-100 mb-2" id="btn-siguiente-pendiente"
+                    title="Siguiente pendiente (Espacio)">
+                <i class="bi bi-skip-forward me-1"></i>Siguiente Pendiente
+            </button>
+
+            <!-- Ir a índice -->
+            <div class="d-flex align-items-center gap-2">
+                <label class="form-label mb-0 small text-muted" style="white-space:nowrap;">Ir a #</label>
+                <input type="number" id="goto-input" class="form-control form-control-sm"
+                       min="0" placeholder="0">
+                <button class="btn btn-sm btn-outline-primary" id="btn-goto">Ir</button>
+            </div>
+        </div>
+
+        <!-- ── Spinner ───────────────────────────────────────────────────── -->
+        <div id="panel-spinner">
+            <div class="spinner-border text-success" role="status" style="width:2rem;height:2rem;">
+                <span class="visually-hidden">Cargando...</span>
+            </div>
+            <div class="small text-muted">Cargando polígono...</div>
+        </div>
+
+        <!-- ── Sección 4: Info del polígono ──────────────────────────────── -->
+        <div class="panel-section" id="section-info">
+            <div class="panel-section-title"><i class="bi bi-geo-alt me-1"></i>Polígono Actual</div>
+
+            <div class="info-label">ID Polígono</div>
+            <div class="info-value" id="info-id-poligon">—</div>
+
+            <div class="info-label">ID Crédito</div>
+            <div class="info-value" id="info-id-credito">—</div>
+
+            <div class="info-label">Nombre ZIP</div>
+            <div class="info-value" id="info-nombre-zip">—</div>
+
+            <div class="info-label">Área</div>
+            <div class="info-value" id="info-area">—</div>
+        </div>
+
+        <!-- ── Sección 5: Resultados de traslape ─────────────────────────── -->
+        <div class="panel-section" id="section-matches">
+            <div class="panel-section-title"><i class="bi bi-list-ul me-1"></i>Matches Históricos</div>
+            <div id="matches-list">
+                <div class="empty-state">Cargando primer polígono...</div>
+            </div>
+        </div>
+
+        <!-- ── Sección 6: Controles de validación ────────────────────────── -->
+        <div class="panel-section" id="section-validacion">
+            <div class="panel-section-title"><i class="bi bi-check2-circle me-1"></i>Asignar Estatus</div>
+
+            <!-- Sugerencia automática -->
+            <div class="mb-2" id="sugerencia-container">
+                <span class="sugerencia-none sugerencia-badge" id="sugerencia-badge">
+                    <i class="bi bi-lightbulb"></i> Sin sugerencia
+                </span>
+            </div>
+
+            <!-- Estatus guardado (visible cuando ya fue validado) -->
+            <div class="mb-2" id="estatus-guardado-container" style="display:none;">
+                <div class="small text-muted mb-1">Estatus actual:</div>
+                <span class="estatus-badge" id="estatus-guardado-badge">—</span>
+            </div>
+
+            <!-- Botones NUEVO / ENCIMA -->
+            <div class="d-flex gap-2 mb-2">
+                <button class="btn-validacion btn-nuevo" id="btn-nuevo"
+                        title="Marcar como NUEVO — sin traslape con histórico (N)">
+                    <i class="bi bi-plus-circle"></i>
+                    NUEVO
+                </button>
+                <button class="btn-validacion btn-encima" id="btn-encima"
+                        title="Marcar como ENCIMA — traslapa con histórico (E)">
+                    <i class="bi bi-layers"></i>
+                    ENCIMA
+                </button>
+            </div>
+
+            <!-- Info del polígono histórico vinculado (solo cuando ENCIMA) -->
+            <div id="encima-link-info">
+                <i class="bi bi-link-45deg me-1"></i>
+                Vinculado a: <strong id="encima-link-id">—</strong>
+                <span class="text-muted ms-1" id="encima-link-pct"></span>
+            </div>
+        </div>
+
+        <!-- ── Sección 7: Progreso ────────────────────────────────────────── -->
+        <div class="panel-section" id="section-progreso">
+            <div class="panel-section-title"><i class="bi bi-bar-chart me-1"></i>Progreso</div>
+
+            <div class="progress-stacked mb-2" id="progress-bar">
+                <div class="progress-seg-nuevo" id="prog-nuevo" style="width:0%;"></div>
+                <div class="progress-seg-encima" id="prog-encima" style="width:0%;"></div>
+            </div>
+
+            <div class="small text-muted" id="progreso-texto">Cargando...</div>
+
+            <div class="d-flex gap-3 mt-2" style="font-size:11px;">
+                <span><span style="display:inline-block;width:10px;height:10px;background:#28a745;border-radius:2px;margin-right:3px;"></span>Nuevos: <strong id="prog-count-nuevo">0</strong></span>
+                <span><span style="display:inline-block;width:10px;height:10px;background:#fd7e14;border-radius:2px;margin-right:3px;"></span>Encima: <strong id="prog-count-encima">0</strong></span>
+                <span><span style="display:inline-block;width:10px;height:10px;background:#dee2e6;border-radius:2px;margin-right:3px;"></span>Pendientes: <strong id="prog-count-pendiente">0</strong></span>
+            </div>
+        </div>
+
+    </div><!-- /#panel-lateral -->
+
+    <!-- ══════════════════════════════════════════════════════════════════════ -->
+    <!-- MAPA                                                                   -->
+    <!-- ══════════════════════════════════════════════════════════════════════ -->
+    <div id="map-container">
+        <div id="map"></div>
+    </div>
+
+</div><!-- /#validacion-container -->
+
+<!-- Toast container -->
+<div id="toast-container"></div>
+
+<script>
+(function () {
+    'use strict';
+
+    // ── Constantes ────────────────────────────────────────────────────────────
+    var TOTAL_POLIGONOS = 15185;
+
+    // ── Estado global ─────────────────────────────────────────────────────────
+    var currentIndex      = 0;
+    var currentMatches    = [];      // matches del polígono actual
+    var selectedMatchIdx  = null;    // índice en currentMatches del match seleccionado para ENCIMA
+    var isSaving          = false;
+
+    // ── Capas del mapa ────────────────────────────────────────────────────────
+    var map, poligonoLayer, matchesLayer;
+    var matchLayerMap = [];   // [{mega_index, layer, originalStyle}]
+
+    // ── Inicializar mapa ──────────────────────────────────────────────────────
+    map = L.map('map', {
+        center: [24.0, -102.0],
+        zoom: 6,
+        preferCanvas: true,
+        fullscreenControl: true,
+        fullscreenControlOptions: {
+            position: 'topleft',
+            title: 'Pantalla Completa',
+            titleCancel: 'Salir de Pantalla Completa'
+        }
+    });
+
+    // Capas base
+    var osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+        maxZoom: 19
+    });
+
+    var esriLayer = L.tileLayer(
+        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        attribution: 'Tiles &copy; Esri',
+        maxZoom: 18
+    });
+
+    var cartoLayer = L.tileLayer(
+        'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; OpenStreetMap, &copy; CARTO',
+        maxZoom: 19
+    });
+
+    esriLayer.addTo(map);
+
+    L.control.layers({
+        'OpenStreetMap':      osmLayer,
+        'Esri World Imagery': esriLayer,
+        'CartoDB Dark':       cartoLayer
+    }, {}).addTo(map);
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+    function safeVal(v) {
+        return (v !== null && v !== undefined && v !== '') ? v : '—';
+    }
+
+    function fmt(n, decimals) {
+        return (typeof n === 'number') ? n.toFixed(decimals) : '—';
+    }
+
+    function showSpinner() {
+        document.getElementById('panel-spinner').classList.add('active');
+    }
+
+    function hideSpinner() {
+        document.getElementById('panel-spinner').classList.remove('active');
+    }
+
+    function updateNavCounter() {
+        var total = TOTAL_POLIGONOS.toLocaleString('es-MX');
+        var cur   = (currentIndex + 1).toLocaleString('es-MX');
+        document.getElementById('nav-counter').textContent =
+            'Polígono ' + cur + ' de ' + total;
+    }
+
+    function showToast(msg, type) {
+        var container = document.getElementById('toast-container');
+        var el = document.createElement('div');
+        el.className = 'toast-msg toast-' + (type || 'info');
+        el.textContent = msg;
+        container.appendChild(el);
+        setTimeout(function () {
+            if (el.parentNode) el.parentNode.removeChild(el);
+        }, 3500);
+    }
+
+    // ── Cargar polígono ───────────────────────────────────────────────────────
+    function cargarPoligono(idx) {
+        showSpinner();
+        selectedMatchIdx = null;
+
+        fetch('/api/validacion-15k/poligono/' + idx)
+            .then(function (r) {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.json();
+            })
+            .then(function (data) {
+                currentIndex   = data.index;
+                currentMatches = data.matches || [];
+
+                // ── Info del polígono ─────────────────────────────────────
+                var props = data.poligono.properties;
+                document.getElementById('info-id-poligon').textContent =
+                    safeVal(props.ID_POLIGON);
+                document.getElementById('info-id-credito').textContent =
+                    safeVal(props.ID_CREDITO);
+                document.getElementById('info-nombre-zip').textContent =
+                    safeVal(props.NOMBRE_ZIP);
+                document.getElementById('info-area').textContent =
+                    (typeof props.area_ha === 'number')
+                        ? props.area_ha.toFixed(4) + ' ha'
+                        : '—';
+
+                // ── Sugerencia ────────────────────────────────────────────
+                actualizarSugerencia(data.sugerencia, data.sugerencia_pct);
+
+                // ── Estatus guardado ──────────────────────────────────────
+                actualizarEstatusGuardado(data.estatus, data.id_poligon_historico);
+
+                // ── Limpiar capas anteriores ──────────────────────────────
+                if (poligonoLayer) { map.removeLayer(poligonoLayer); poligonoLayer = null; }
+                if (matchesLayer)  { map.removeLayer(matchesLayer);  matchesLayer  = null; }
+                matchLayerMap = [];
+
+                // ── Dibujar polígono actual en VERDE ──────────────────────
+                poligonoLayer = L.geoJSON(data.poligono, {
+                    style: {
+                        color:       '#1a6b3c',
+                        fillColor:   '#28a745',
+                        weight:      3,
+                        fillOpacity: 0.35
+                    }
+                });
+
+                poligonoLayer.eachLayer(function (layer) {
+                    layer.bindTooltip(
+                        '<b>ID Polígono:</b> ' + safeVal(props.ID_POLIGON) + '<br>' +
+                        '<b>ID Crédito:</b> '  + safeVal(props.ID_CREDITO) + '<br>' +
+                        '<b>Área:</b> '         + (typeof props.area_ha === 'number'
+                            ? props.area_ha.toFixed(4) + ' ha' : '—'),
+                        { permanent: false, direction: 'auto', opacity: 0.95,
+                          className: 'val15k-tooltip' }
+                    );
+                });
+
+                poligonoLayer.addTo(map);
+
+                // ── Dibujar matches históricos en NARANJA ─────────────────
+                if (data.match_features && data.match_features.features &&
+                        data.match_features.features.length > 0) {
+
+                    matchesLayer = L.geoJSON(data.match_features, {
+                        style: function (feature) {
+                            return {
+                                color:       '#cc7000',
+                                fillColor:   '#fd7e14',
+                                weight:      2,
+                                fillOpacity: 0.3
+                            };
+                        },
+                        onEachFeature: function (feature, layer) {
+                            var mp = feature.properties;
+                            layer.bindTooltip(
+                                '<b>ID Histórico:</b> ' + safeVal(mp.id_poligon) + '<br>' +
+                                '<b>Crédito:</b> '       + safeVal(mp.id_credito) + '<br>' +
+                                '<b>Overlap:</b> '       + fmt(mp.overlap_pct, 1) + '%',
+                                { permanent: false, direction: 'auto', opacity: 0.95,
+                                  className: 'val15k-tooltip' }
+                            );
+
+                            matchLayerMap.push({
+                                mega_index:    mp.mega_index,
+                                layer:         layer,
+                                originalStyle: {
+                                    color:       '#cc7000',
+                                    fillColor:   '#fd7e14',
+                                    weight:      2,
+                                    fillOpacity: 0.3
+                                }
+                            });
+                        }
+                    });
+
+                    matchesLayer.addTo(map);
+                }
+
+                // Asegurar que el polígono actual esté encima
+                if (poligonoLayer) poligonoLayer.bringToFront();
+
+                // fitBounds al polígono actual
+                try {
+                    map.fitBounds(poligonoLayer.getBounds(), { padding: [50, 50] });
+                } catch (e) { /* ignore */ }
+
+                // ── Actualizar UI ─────────────────────────────────────────
+                updateNavCounter();
+                poblarListaMatches(currentMatches, data.estatus, data.id_poligon_historico);
+
+                // Auto-seleccionar el match de mayor overlap si hay matches
+                if (currentMatches.length > 0) {
+                    selectedMatchIdx = 0;
+                    actualizarEncimaLink();
+                }
+
+                hideSpinner();
+            })
+            .catch(function (err) {
+                console.error('Error cargando polígono:', err);
+                hideSpinner();
+                document.getElementById('matches-list').innerHTML =
+                    '<div class="empty-state text-danger">Error al cargar: ' + err.message + '</div>';
+            });
+    }
+
+    // ── Actualizar badge de sugerencia ────────────────────────────────────────
+    function actualizarSugerencia(sugerencia, pct) {
+        var badge = document.getElementById('sugerencia-badge');
+        if (!sugerencia) {
+            badge.className = 'sugerencia-none sugerencia-badge';
+            badge.innerHTML = '<i class="bi bi-lightbulb"></i> Sin sugerencia';
+            return;
+        }
+
+        if (sugerencia === 'NUEVO') {
+            badge.className = 'sugerencia-nuevo sugerencia-badge';
+            badge.innerHTML = '<i class="bi bi-lightbulb-fill"></i> Sugerencia: NUEVO' +
+                (pct ? ' (' + fmt(pct, 1) + '%)' : '');
+        } else if (sugerencia === 'ENCIMA') {
+            badge.className = 'sugerencia-encima sugerencia-badge';
+            badge.innerHTML = '<i class="bi bi-lightbulb-fill"></i> Sugerencia: ENCIMA' +
+                (pct ? ' (' + fmt(pct, 1) + '%)' : '');
+        } else {
+            badge.className = 'sugerencia-none sugerencia-badge';
+            badge.innerHTML = '<i class="bi bi-lightbulb"></i> ' + sugerencia;
+        }
+    }
+
+    // ── Actualizar estatus guardado ───────────────────────────────────────────
+    function actualizarEstatusGuardado(estatus, idPoligonHistorico) {
+        var container = document.getElementById('estatus-guardado-container');
+        var badge     = document.getElementById('estatus-guardado-badge');
+
+        // Resetear botones activos
+        document.getElementById('btn-nuevo').classList.remove('btn-active-nuevo');
+        document.getElementById('btn-encima').classList.remove('btn-active-encima');
+
+        if (!estatus) {
+            container.style.display = 'none';
+            document.getElementById('encima-link-info').style.display = 'none';
+            return;
+        }
+
+        container.style.display = 'block';
+
+        if (estatus === 'NUEVO') {
+            badge.className = 'estatus-badge estatus-nuevo';
+            badge.innerHTML = '<i class="bi bi-plus-circle-fill"></i> NUEVO';
+            document.getElementById('btn-nuevo').classList.add('btn-active-nuevo');
+            document.getElementById('encima-link-info').style.display = 'none';
+        } else if (estatus === 'ENCIMA') {
+            badge.className = 'estatus-badge estatus-encima';
+            badge.innerHTML = '<i class="bi bi-layers-fill"></i> ENCIMA';
+            document.getElementById('btn-encima').classList.add('btn-active-encima');
+            if (idPoligonHistorico) {
+                document.getElementById('encima-link-id').textContent = idPoligonHistorico;
+                document.getElementById('encima-link-pct').textContent = '';
+                document.getElementById('encima-link-info').style.display = 'block';
+            }
+        }
+    }
+
+    // ── Actualizar info del link ENCIMA ───────────────────────────────────────
+    function actualizarEncimaLink() {
+        var linkInfo = document.getElementById('encima-link-info');
+        if (selectedMatchIdx === null || !currentMatches[selectedMatchIdx]) {
+            linkInfo.style.display = 'none';
+            return;
+        }
+        var m = currentMatches[selectedMatchIdx];
+        document.getElementById('encima-link-id').textContent  = safeVal(m.id_poligon);
+        document.getElementById('encima-link-pct').textContent =
+            '(' + fmt(m.overlap_pct, 1) + '% overlap)';
+        linkInfo.style.display = 'block';
+    }
+
+    // ── Poblar lista de matches ───────────────────────────────────────────────
+    function poblarListaMatches(matches, estatusGuardado, idPoligonHistoricoGuardado) {
+        var container = document.getElementById('matches-list');
+
+        if (!matches || matches.length === 0) {
+            container.innerHTML =
+                '<div class="empty-state">' +
+                '<i class="bi bi-check-circle text-success me-1"></i>' +
+                'Sin matches históricos</div>';
+            return;
+        }
+
+        container.innerHTML = '';
+
+        matches.forEach(function (m, i) {
+            var card = document.createElement('div');
+            card.className = 'match-card';
+            card.style.borderLeftColor = '#fd7e14';
+
+            // Marcar como seleccionado si es el primero o si coincide con el guardado
+            var isSelected = (i === 0 && !estatusGuardado) ||
+                             (estatusGuardado === 'ENCIMA' && m.id_poligon === idPoligonHistoricoGuardado);
+
+            if (isSelected) {
+                card.classList.add('selected-match');
+                selectedMatchIdx = i;
+            }
+
+            card.innerHTML =
+                '<div class="match-id">' + safeVal(m.id_poligon) + '</div>' +
+                '<div class="match-meta">Crédito: ' + safeVal(m.id_credito) + '</div>' +
+                '<div class="match-meta">' +
+                    'Overlap: <strong>' + fmt(m.overlap_pct, 1) + '%</strong>' +
+                    (typeof m.area_ratio === 'number'
+                        ? ' &nbsp;|&nbsp; Similitud: <strong>' + fmt(m.area_ratio, 1) + '%</strong>'
+                        : '') +
+                '</div>' +
+                '<span class="match-badge" style="background:#fd7e14;">Histórico</span>';
+
+            card.addEventListener('click', function () {
+                // Deseleccionar todos
+                container.querySelectorAll('.match-card').forEach(function (c) {
+                    c.classList.remove('selected-match');
+                });
+                card.classList.add('selected-match');
+                selectedMatchIdx = i;
+                actualizarEncimaLink();
+                zoomToMatch(m.mega_index);
+            });
+
+            container.appendChild(card);
+        });
+    }
+
+    // ── Zoom a un match específico ────────────────────────────────────────────
+    function zoomToMatch(megaIndex) {
+        var entry = null;
+        for (var i = 0; i < matchLayerMap.length; i++) {
+            if (matchLayerMap[i].mega_index === megaIndex) {
+                entry = matchLayerMap[i];
+                break;
+            }
+        }
+        if (!entry) return;
+
+        var layer = entry.layer;
+        var orig  = entry.originalStyle;
+
+        try {
+            map.fitBounds(layer.getBounds(), { padding: [40, 40] });
+        } catch (e) { /* ignore */ }
+
+        layer.setStyle({ weight: 4, fillOpacity: 0.65, color: '#e96b00' });
+
+        setTimeout(function () {
+            layer.setStyle(orig);
+        }, 3000);
+    }
+
+    // ── Guardar validación ────────────────────────────────────────────────────
+    function guardarValidacion(estatus) {
+        if (isSaving) return;
+        isSaving = true;
+
+        var payload = {
+            index:  currentIndex,
+            estatus: estatus
+        };
+
+        // Si es ENCIMA, incluir el ID del polígono histórico vinculado
+        if (estatus === 'ENCIMA' && selectedMatchIdx !== null && currentMatches[selectedMatchIdx]) {
+            payload.id_poligon_historico = currentMatches[selectedMatchIdx].id_poligon;
+        }
+
+        fetch('/api/validacion-15k/guardar', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify(payload)
+        })
+            .then(function (r) {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.json();
+            })
+            .then(function () {
+                isSaving = false;
+                showToast('Guardado: ' + estatus, 'success');
+
+                // Actualizar botones activos
+                document.getElementById('btn-nuevo').classList.remove('btn-active-nuevo');
+                document.getElementById('btn-encima').classList.remove('btn-active-encima');
+                if (estatus === 'NUEVO') {
+                    document.getElementById('btn-nuevo').classList.add('btn-active-nuevo');
+                } else {
+                    document.getElementById('btn-encima').classList.add('btn-active-encima');
+                }
+
+                // Actualizar progreso
+                cargarProgreso();
+
+                // Auto-avanzar al siguiente pendiente
+                irSiguientePendiente(currentIndex + 1);
+            })
+            .catch(function (err) {
+                isSaving = false;
+                console.error('Error guardando:', err);
+                showToast('Error al guardar: ' + err.message, 'error');
+            });
+    }
+
+    // ── Cargar progreso ───────────────────────────────────────────────────────
+    function cargarProgreso() {
+        fetch('/api/validacion-15k/progreso')
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                var total     = data.total     || TOTAL_POLIGONOS;
+                var nuevos    = data.nuevos    || 0;
+                var encima    = data.encima    || 0;
+                var validados = nuevos + encima;
+                var pendientes = total - validados;
+                var pct       = total > 0 ? (validados / total * 100) : 0;
+                var pctNuevo  = total > 0 ? (nuevos / total * 100) : 0;
+                var pctEncima = total > 0 ? (encima / total * 100) : 0;
+
+                document.getElementById('prog-nuevo').style.width  = pctNuevo.toFixed(2) + '%';
+                document.getElementById('prog-encima').style.width = pctEncima.toFixed(2) + '%';
+                document.getElementById('progreso-texto').textContent =
+                    validados.toLocaleString('es-MX') + ' de ' +
+                    total.toLocaleString('es-MX') + ' validados (' +
+                    pct.toFixed(1) + '%)';
+
+                document.getElementById('prog-count-nuevo').textContent    =
+                    nuevos.toLocaleString('es-MX');
+                document.getElementById('prog-count-encima').textContent   =
+                    encima.toLocaleString('es-MX');
+                document.getElementById('prog-count-pendiente').textContent =
+                    pendientes.toLocaleString('es-MX');
+            })
+            .catch(function (err) {
+                console.error('Error cargando progreso:', err);
+            });
+    }
+
+    // ── Ir al siguiente pendiente ─────────────────────────────────────────────
+    function irSiguientePendiente(desde) {
+        var url = '/api/validacion-15k/siguiente-pendiente';
+        if (desde !== undefined && desde !== null) {
+            url += '?desde=' + desde;
+        }
+
+        fetch(url)
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (data.index !== undefined && data.index !== null) {
+                    cargarPoligono(data.index);
+                } else {
+                    showToast('¡Todos los polígonos han sido validados!', 'success');
+                }
+            })
+            .catch(function (err) {
+                console.error('Error buscando siguiente pendiente:', err);
+            });
+    }
+
+    // ── Navegación ← → ───────────────────────────────────────────────────────
+    document.getElementById('btn-prev').addEventListener('click', function () {
+        if (currentIndex > 0) {
+            cargarPoligono(currentIndex - 1);
+        }
+    });
+
+    document.getElementById('btn-next').addEventListener('click', function () {
+        if (currentIndex < TOTAL_POLIGONOS - 1) {
+            cargarPoligono(currentIndex + 1);
+        }
+    });
+
+    document.getElementById('btn-siguiente-pendiente').addEventListener('click', function () {
+        irSiguientePendiente(currentIndex + 1);
+    });
+
+    // ── Ir a índice ───────────────────────────────────────────────────────────
+    document.getElementById('btn-goto').addEventListener('click', function () {
+        var val = parseInt(document.getElementById('goto-input').value, 10);
+        if (!isNaN(val) && val >= 0 && val < TOTAL_POLIGONOS) {
+            cargarPoligono(val);
+        }
+    });
+
+    document.getElementById('goto-input').addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') document.getElementById('btn-goto').click();
+    });
+
+    // ── Botones de validación ─────────────────────────────────────────────────
+    document.getElementById('btn-nuevo').addEventListener('click', function () {
+        guardarValidacion('NUEVO');
+    });
+
+    document.getElementById('btn-encima').addEventListener('click', function () {
+        guardarValidacion('ENCIMA');
+    });
+
+    // ── Teclado ───────────────────────────────────────────────────────────────
+    document.addEventListener('keydown', function (e) {
+        var tag = document.activeElement ? document.activeElement.tagName : '';
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+        if (e.key === 'ArrowLeft') {
+            document.getElementById('btn-prev').click();
+        } else if (e.key === 'ArrowRight') {
+            document.getElementById('btn-next').click();
+        } else if (e.key === 'n' || e.key === 'N') {
+            guardarValidacion('NUEVO');
+        } else if (e.key === 'e' || e.key === 'E') {
+            guardarValidacion('ENCIMA');
+        } else if (e.key === ' ') {
+            e.preventDefault();
+            irSiguientePendiente(currentIndex + 1);
+        }
+    });
+
+    // ── Búsqueda ──────────────────────────────────────────────────────────────
+    var searchDropdown = document.getElementById('search-dropdown');
+
+    function realizarBusqueda() {
+        var q = document.getElementById('search-input').value.trim();
+        if (!q) return;
+
+        fetch('/api/validacion-15k/buscar?q=' + encodeURIComponent(q))
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                searchDropdown.innerHTML = '';
+
+                if (!data.resultados || data.resultados.length === 0) {
+                    searchDropdown.innerHTML =
+                        '<div class="search-result-item text-muted">Sin resultados</div>';
+                    searchDropdown.style.display = 'block';
+                    return;
+                }
+
+                data.resultados.forEach(function (res) {
+                    var item = document.createElement('div');
+                    item.className = 'search-result-item';
+                    item.innerHTML =
+                        '<strong>#' + res.index + '</strong> — ' +
+                        safeVal(res.id_poligon) + '<br>' +
+                        '<small class="text-muted">Crédito: ' + safeVal(res.id_credito) + '</small>';
+
+                    item.addEventListener('click', function () {
+                        searchDropdown.style.display = 'none';
+                        document.getElementById('search-input').value = '';
+                        cargarPoligono(res.index);
+                    });
+
+                    searchDropdown.appendChild(item);
+                });
+
+                searchDropdown.style.display = 'block';
+            })
+            .catch(function (err) {
+                console.error('Error en búsqueda:', err);
+            });
+    }
+
+    document.getElementById('btn-buscar').addEventListener('click', realizarBusqueda);
+
+    document.getElementById('search-input').addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') realizarBusqueda();
+    });
+
+    // Cerrar dropdown al hacer click fuera
+    document.addEventListener('click', function (e) {
+        if (!document.getElementById('search-wrapper').contains(e.target)) {
+            searchDropdown.style.display = 'none';
+        }
+    });
+
+    // ── Carga inicial ─────────────────────────────────────────────────────────
+    cargarProgreso();
+    irSiguientePendiente(0);
+
+}());
+</script>
+{% endblock %}
