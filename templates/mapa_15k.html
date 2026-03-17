@@ -99,6 +99,40 @@
         </div>
     </div>
 
+    <!-- Filter panel -->
+    <div class="filter-panel p-3 mb-2" style="background: #f8f9fa; border-radius: 8px; border: 1px solid #dee2e6;">
+        <div class="row g-2 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label fw-bold" style="font-size: 13px;">Estado</label>
+                <select id="filtro-estado" class="form-select form-select-sm">
+                    <option value="">Todos los estados</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label fw-bold" style="font-size: 13px;">Municipio</label>
+                <select id="filtro-municipio" class="form-select form-select-sm" disabled>
+                    <option value="">Seleccione estado primero</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label fw-bold" style="font-size: 13px;">ID Crédito</label>
+                <input type="text" id="filtro-id-credito" class="form-control form-control-sm" placeholder="Buscar...">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label fw-bold" style="font-size: 13px;">ID Polígono</label>
+                <input type="text" id="filtro-id-poligono" class="form-control form-control-sm" placeholder="Buscar...">
+            </div>
+            <div class="col-md-2 d-flex gap-2">
+                <button id="btn-aplicar-filtros" class="btn btn-sm btn-primary flex-grow-1">
+                    <i class="bi bi-funnel"></i> Filtrar
+                </button>
+                <button id="btn-limpiar-filtros" class="btn btn-sm btn-outline-secondary flex-grow-1">
+                    <i class="bi bi-x-circle"></i> Limpiar
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Map wrapper -->
     <div id="map-wrapper" style="flex: 1; position: relative;">
 
@@ -233,6 +267,13 @@
             'badge bg-success polygon-badge';
     }
 
+    function showLoadingOverlay() {
+        var overlay = document.getElementById('loading-overlay');
+        if (overlay) {
+            overlay.style.display = 'flex';
+        }
+    }
+
     function hideLoadingOverlay() {
         var overlay = document.getElementById('loading-overlay');
         if (overlay) {
@@ -257,10 +298,14 @@
     function makeOnEachFeature(includeNombreZip, originalStyle) {
         return function (feature, layer) {
             var props = feature.properties || {};
+            var estado     = safeVal(props.ESTADO);
+            var municipio  = safeVal(props.MUNICIPIO);
             var idPoligon  = safeVal(props.ID_POLIGON);
             var idCredito  = safeVal(props.ID_CREDITO);
 
             var tooltipHtml =
+                '<b>Estado:</b> '     + estado    + '<br>' +
+                '<b>Municipio:</b> '  + municipio + '<br>' +
                 '<b>ID Polígono:</b> ' + idPoligon + '<br>' +
                 '<b>ID Crédito:</b> '  + idCredito;
 
@@ -286,7 +331,157 @@
         };
     }
 
-    // ── Fetch: Validación layer ───────────────────────────────────────────────
+    // ── Reusable layer creation functions ─────────────────────────────────────
+    function crearCapaValidacion(geojsonData) {
+        var layer = L.geoJSON(geojsonData, {
+            style: STYLE_VALIDACION,
+            onEachFeature: makeOnEachFeature(true, STYLE_VALIDACION)
+        });
+        return layer;
+    }
+
+    function crearCapaHistorico(geojsonData) {
+        var layer = L.geoJSON(geojsonData, {
+            style: STYLE_HISTORICO,
+            onEachFeature: makeOnEachFeature(false, STYLE_HISTORICO)
+        });
+        return layer;
+    }
+
+    // ── Build query string from active filters ────────────────────────────────
+    function buildQueryString() {
+        var params = [];
+        var estado     = document.getElementById('filtro-estado').value;
+        var municipio  = document.getElementById('filtro-municipio').value;
+        var idCredito  = document.getElementById('filtro-id-credito').value.trim();
+        var idPoligono = document.getElementById('filtro-id-poligono').value.trim();
+
+        if (estado)     params.push('estado='     + encodeURIComponent(estado));
+        if (municipio)  params.push('municipio='  + encodeURIComponent(municipio));
+        if (idCredito)  params.push('id_credito=' + encodeURIComponent(idCredito));
+        if (idPoligono) params.push('id_poligono='+ encodeURIComponent(idPoligono));
+
+        return params.length ? '?' + params.join('&') : '';
+    }
+
+    // ── Reload both layers with current filter params ─────────────────────────
+    function recargarCapas() {
+        var qs = buildQueryString();
+
+        // Show loading overlay
+        showLoadingOverlay();
+        updateLoadingMessage('Aplicando filtros...');
+
+        // Clear existing layers from map
+        if (validacionLayer) {
+            validacionLayer.clearLayers();
+            map.removeLayer(validacionLayer);
+            validacionLayer = null;
+        }
+        if (historicoLayer) {
+            historicoLayer.clearLayers();
+            map.removeLayer(historicoLayer);
+            historicoLayer = null;
+        }
+
+        // Reset counters
+        totalLoaded = 0;
+        layersReady = 0;
+
+        var allBounds = [];
+
+        // Fetch validación
+        updateLoadingMessage('Cargando capa de validación (15K)...');
+        fetch('/api/mapa-15k/validacion' + qs)
+            .then(function (response) {
+                if (!response.ok) {
+                    throw new Error('Error HTTP ' + response.status + ' al cargar validación');
+                }
+                return response.json();
+            })
+            .then(function (data) {
+                var geojson = data.geojson;
+                var total   = data.total || 0;
+                totalLoaded += total;
+
+                validacionLayer = crearCapaValidacion(geojson);
+
+                // Add to map only if toggle is checked
+                if (document.getElementById('toggleValidacion').checked) {
+                    validacionLayer.addTo(map);
+                }
+
+                // Collect bounds
+                if (validacionLayer.getLayers().length > 0) {
+                    try {
+                        allBounds.push(validacionLayer.getBounds());
+                    } catch (e) { /* ignore */ }
+                }
+
+                updateLoadingMessage('Cargando capa histórica (57K)...');
+                onLayerReadyRecargar(allBounds);
+            })
+            .catch(function (err) {
+                console.error('Error cargando capa validación:', err);
+                onLayerReadyRecargar(allBounds);
+            });
+
+        // Fetch histórico
+        fetch('/api/mapa-15k/historico' + qs)
+            .then(function (response) {
+                if (!response.ok) {
+                    throw new Error('Error HTTP ' + response.status + ' al cargar histórico');
+                }
+                return response.json();
+            })
+            .then(function (data) {
+                var geojson = data.geojson;
+                var total   = data.total || 0;
+                totalLoaded += total;
+
+                historicoLayer = crearCapaHistorico(geojson);
+
+                // Add to map only if toggle is checked
+                if (document.getElementById('toggleHistorico').checked) {
+                    historicoLayer.addTo(map);
+                }
+
+                // Collect bounds
+                if (historicoLayer.getLayers().length > 0) {
+                    try {
+                        allBounds.push(historicoLayer.getBounds());
+                    } catch (e) { /* ignore */ }
+                }
+
+                onLayerReadyRecargar(allBounds);
+            })
+            .catch(function (err) {
+                console.error('Error cargando capa histórico:', err);
+                onLayerReadyRecargar(allBounds);
+            });
+    }
+
+    // Helper: called when each layer finishes loading during recargarCapas
+    function onLayerReadyRecargar(allBounds) {
+        layersReady += 1;
+        if (layersReady >= 2) {
+            hideLoadingOverlay();
+            updateCounters(totalLoaded);
+
+            // fitBounds to combined results
+            if (allBounds.length > 0) {
+                try {
+                    var combined = allBounds[0];
+                    for (var i = 1; i < allBounds.length; i++) {
+                        combined = combined.extend(allBounds[i]);
+                    }
+                    map.fitBounds(combined, { padding: [20, 20] });
+                } catch (e) { /* ignore if bounds invalid */ }
+            }
+        }
+    }
+
+    // ── Initial load ──────────────────────────────────────────────────────────
     updateLoadingMessage('Cargando capa de validación (15K)...');
 
     fetch('/api/mapa-15k/validacion')
@@ -301,10 +496,8 @@
             var total   = data.total || 0;
             totalLoaded += total;
 
-            validacionLayer = L.geoJSON(geojson, {
-                style: STYLE_VALIDACION,
-                onEachFeature: makeOnEachFeature(true, STYLE_VALIDACION)
-            }).addTo(map);
+            validacionLayer = crearCapaValidacion(geojson);
+            validacionLayer.addTo(map);
 
             updateLoadingMessage('Cargando capa histórica (57K)...');
             onLayerReady();
@@ -315,7 +508,6 @@
             onLayerReady(); // still unblock the UI
         });
 
-    // ── Fetch: Histórico layer ────────────────────────────────────────────────
     fetch('/api/mapa-15k/historico')
         .then(function (response) {
             if (!response.ok) {
@@ -328,10 +520,8 @@
             var total   = data.total || 0;
             totalLoaded += total;
 
-            historicoLayer = L.geoJSON(geojson, {
-                style: STYLE_HISTORICO,
-                onEachFeature: makeOnEachFeature(false, STYLE_HISTORICO)
-            }).addTo(map);
+            historicoLayer = crearCapaHistorico(geojson);
+            historicoLayer.addTo(map);
 
             onLayerReady();
         })
@@ -358,6 +548,56 @@
         } else {
             map.removeLayer(historicoLayer);
         }
+    });
+
+    // ── Filter: load estados on DOMContentLoaded ──────────────────────────────
+    fetch('/api/mapa-15k/estados')
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            var select = document.getElementById('filtro-estado');
+            data.estados.forEach(function (e) {
+                var opt = document.createElement('option');
+                opt.value = e.name;
+                opt.textContent = e.name + ' (' + e.count + ')';
+                select.appendChild(opt);
+            });
+            // Guardar municipios_por_estado para uso posterior
+            window._municipiosPorEstado = data.municipios_por_estado || {};
+        })
+        .catch(function (err) { console.error('Error cargando estados:', err); });
+
+    // ── Filter: estado change → populate municipios ───────────────────────────
+    document.getElementById('filtro-estado').addEventListener('change', function () {
+        var munSelect = document.getElementById('filtro-municipio');
+        munSelect.innerHTML = '<option value="">Todos los municipios</option>';
+        if (this.value && window._municipiosPorEstado && window._municipiosPorEstado[this.value]) {
+            munSelect.disabled = false;
+            window._municipiosPorEstado[this.value].forEach(function (m) {
+                var opt = document.createElement('option');
+                opt.value = m;
+                opt.textContent = m;
+                munSelect.appendChild(opt);
+            });
+        } else {
+            munSelect.disabled = !this.value;
+            if (!this.value) munSelect.innerHTML = '<option value="">Seleccione estado primero</option>';
+        }
+    });
+
+    // ── Filter: Filtrar button ────────────────────────────────────────────────
+    document.getElementById('btn-aplicar-filtros').addEventListener('click', function () {
+        recargarCapas();
+    });
+
+    // ── Filter: Limpiar button ────────────────────────────────────────────────
+    document.getElementById('btn-limpiar-filtros').addEventListener('click', function () {
+        document.getElementById('filtro-estado').value = '';
+        document.getElementById('filtro-municipio').value = '';
+        document.getElementById('filtro-municipio').disabled = true;
+        document.getElementById('filtro-municipio').innerHTML = '<option value="">Seleccione estado primero</option>';
+        document.getElementById('filtro-id-credito').value = '';
+        document.getElementById('filtro-id-poligono').value = '';
+        recargarCapas();
     });
 
 }());
