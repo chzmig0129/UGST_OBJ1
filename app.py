@@ -4709,6 +4709,121 @@ def api_validacion_15k_buscar():
     return jsonify({'resultados': resultados, 'total': len(resultados)})
 
 
+@app.route('/api/validacion-15k/exportar')
+def api_validacion_15k_exportar():
+    """Generate and download an Excel file with all 15K validation results."""
+    if validacion_gdf is None or mega_gdf is None:
+        return jsonify({'error': 'Shapefiles no cargados'}), 500
+
+    # Fetch all saved validation rows from DB
+    conn = get_db_connection()
+    try:
+        db_rows = conn.execute('SELECT * FROM validacion_15k').fetchall()
+    finally:
+        conn.close()
+
+    # Build a lookup dict: idx -> db row
+    db_map = {row['idx']: row for row in db_rows}
+
+    # Determine HIST_ columns from mega_gdf (all non-geometry columns)
+    mega_data_cols = [c for c in mega_gdf.columns if c != 'geometry']
+
+    # Build one record per polygon in validacion_gdf
+    records = []
+    for i in range(len(validacion_gdf)):
+        vrow = validacion_gdf.iloc[i]
+        db_row = db_map.get(i)
+
+        if db_row is not None:
+            estatus = db_row['estatus']
+            id_poligon_validacion = db_row['id_poligon_validacion']
+            id_credito_validacion = db_row['id_credito_validacion']
+            nombre_zip = db_row['nombre_zip']
+            id_poligon_historico = db_row['id_poligon_historico']
+            overlap_pct = db_row['overlap_pct']
+            fecha_validacion = db_row['fecha_validacion']
+            mega_idx = db_row['mega_idx']
+        else:
+            # pendiente — populate from validacion_gdf
+            estatus = 'pendiente'
+            id_poligon_validacion = str(vrow.get('ID_POLIGON', '') or '')
+            id_credito_validacion = str(vrow.get('ID_CREDITO', '') or '')
+            nombre_zip = str(vrow.get('NOMBRE_ZIP', '') or '')
+            id_poligon_historico = None
+            overlap_pct = None
+            fecha_validacion = None
+            mega_idx = None
+
+        record = {
+            'IDX': i,
+            'ID_POLIGON_VALIDACION': id_poligon_validacion,
+            'ID_CREDITO_VALIDACION': id_credito_validacion,
+            'NOMBRE_ZIP': nombre_zip,
+            'ESTATUS': estatus,
+            'ID_POLIGON_HISTORICO': id_poligon_historico,
+            'OVERLAP_PCT': overlap_pct,
+            'FECHA_VALIDACION': fecha_validacion,
+        }
+
+        # Add HIST_ columns from mega_gdf when estatus='encima'
+        if estatus == 'encima' and mega_idx is not None:
+            try:
+                mrow = mega_gdf.iloc[int(mega_idx)]
+                for col in mega_data_cols:
+                    record[f'HIST_{col}'] = mrow.get(col, None)
+            except (IndexError, TypeError):
+                for col in mega_data_cols:
+                    record[f'HIST_{col}'] = None
+        else:
+            for col in mega_data_cols:
+                record[f'HIST_{col}'] = None
+
+        records.append(record)
+
+    # Sort by IDX ascending (already in order, but be explicit)
+    records.sort(key=lambda r: r['IDX'])
+
+    df = pd.DataFrame(records)
+
+    # Generate Excel in memory
+    excel_file = io.BytesIO()
+    with pd.ExcelWriter(excel_file, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Validacion_15K')
+
+        workbook = writer.book
+        worksheet = writer.sheets['Validacion_15K']
+
+        from openpyxl.styles import Font, PatternFill, Alignment
+        header_font = Font(bold=True, color='FFFFFF')
+        header_fill = PatternFill(start_color='366092', end_color='366092', fill_type='solid')
+        header_alignment = Alignment(horizontal='center', vertical='center')
+
+        for cell in worksheet[1]:
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = header_alignment
+
+        for column in worksheet.columns:
+            max_length = 0
+            column_letter = column[0].column_letter
+            for cell in column:
+                try:
+                    if len(str(cell.value)) > max_length:
+                        max_length = len(str(cell.value))
+                except Exception:
+                    pass
+            worksheet.column_dimensions[column_letter].width = min(max_length + 2, 50)
+
+    excel_file.seek(0)
+    filename = f'validacion_15k_resultados_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx'
+    return send_file(
+        excel_file,
+        as_attachment=True,
+        download_name=filename,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+
+
 @app.route('/analizador')
 def analizador():
     return render_template('analizador.html')
