@@ -4033,5 +4033,46 @@ def get_poligonos_actuales_traslapes(polygon_id):
         print(f"Error al detectar traslapes entre polígonos actuales: {e}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/mapa-15k')
+def mapa_15k():
+    return render_template('mapa_15k.html')
+
+
+@app.route('/api/mapa-15k/validacion')
+def api_mapa_15k_validacion():
+    try:
+        gdf = gpd.read_file('data/VALIDACION_UNIFICADO.shp')
+        if gdf.crs is not None and gdf.crs.to_epsg() != 4326:
+            gdf = gdf.to_crs(epsg=4326)
+        gdf['geometry'] = gdf['geometry'].simplify(tolerance=0.0001, preserve_topology=True)
+        geojson_data = json.loads(gdf.to_json())
+        return jsonify({
+            'geojson': geojson_data,
+            'total': len(gdf),
+            'fields': ['ID_POLIGON', 'ID_CREDITO', 'NOMBRE_ZIP']
+        })
+    except Exception as e:
+        print(f"Error al cargar VALIDACION_UNIFICADO: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/mapa-15k/historico')
+def api_mapa_15k_historico():
+    try:
+        gdf = gpd.read_file('data/MEGA_CAPA_V1_OL.shp')
+        if gdf.crs is not None and gdf.crs.to_epsg() != 4326:
+            gdf = gdf.to_crs(epsg=4326)
+        gdf['geometry'] = gdf['geometry'].simplify(tolerance=0.0001, preserve_topology=True)
+        geojson_data = json.loads(gdf.to_json())
+        return jsonify({
+            'geojson': geojson_data,
+            'total': len(gdf),
+            'fields': ['ID_POLIGON', 'ID_CREDITO']
+        })
+    except Exception as e:
+        print(f"Error al cargar MEGA_CAPA_V1_OL: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 if __name__ == '__main__':
     app.run(debug=True)
