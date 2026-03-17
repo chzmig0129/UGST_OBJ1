@@ -4033,6 +4033,41 @@ def get_poligonos_actuales_traslapes(polygon_id):
         print(f"Error al detectar traslapes entre polígonos actuales: {e}")
         return jsonify({'error': str(e)}), 500
 
+def fix_encoding(val):
+    """Fix latin-1 artifacts in strings (e.g. 'MichoacÃ¡n' -> 'Michoacán')."""
+    if not isinstance(val, str):
+        return val
+    try:
+        return val.encode('latin-1').decode('utf-8')
+    except (UnicodeDecodeError, UnicodeEncodeError):
+        return val
+
+
+def enrich_with_location(gdf):
+    """Agrega columnas ESTADO y MUNICIPIO al GeoDataFrame usando spatial join con municipios de México."""
+    global municipios_gdf
+    if municipios_gdf is None:
+        gdf['ESTADO'] = None
+        gdf['MUNICIPIO'] = None
+        return gdf
+    # Calcular centroide de cada polígono para el join
+    gdf_copy = gdf.copy()
+    gdf_copy['_centroid'] = gdf_copy.geometry.centroid
+    # Crear GeoDataFrame temporal con centroides como geometría
+    centroids_gdf = gpd.GeoDataFrame(gdf_copy, geometry='_centroid', crs=gdf.crs)
+    # Spatial join con municipios
+    joined = gpd.sjoin(centroids_gdf, municipios_gdf[['NOM_ENT', 'NOMGEO', 'geometry']], how='left', predicate='within')
+    # Drop duplicates in case a centroid falls on a boundary between two municipalities
+    joined = joined[~joined.index.duplicated(keep='first')]
+    # Copiar resultados al gdf original
+    gdf['ESTADO'] = joined['NOM_ENT'].values
+    gdf['MUNICIPIO'] = joined['NOMGEO'].values
+    # Limpiar encoding issues (latin-1 artifacts)
+    for col in ['ESTADO', 'MUNICIPIO']:
+        gdf[col] = gdf[col].apply(fix_encoding)
+    return gdf
+
+
 @app.route('/mapa-15k')
 def mapa_15k():
     return render_template('mapa_15k.html')
@@ -4045,11 +4080,42 @@ def api_mapa_15k_validacion():
         if gdf.crs is not None and gdf.crs.to_epsg() != 4326:
             gdf = gdf.to_crs(epsg=4326)
         gdf['geometry'] = gdf['geometry'].simplify(tolerance=0.0001, preserve_topology=True)
+        gdf = enrich_with_location(gdf)
+        # Calcular estados_disponibles ANTES de filtrar
+        estados_df = gdf.groupby('ESTADO').size().reset_index(name='count')
+        estados_disponibles = [
+            {'name': row['ESTADO'], 'count': int(row['count'])}
+            for _, row in estados_df.iterrows()
+            if row['ESTADO'] is not None
+        ]
+        estados_disponibles.sort(key=lambda x: x['name'] if x['name'] else '')
+        # Leer query params opcionales
+        estado = request.args.get('estado')
+        municipio = request.args.get('municipio')
+        id_credito = request.args.get('id_credito')
+        id_poligono = request.args.get('id_poligono')
+        # Calcular municipios_disponibles (del estado seleccionado, o todos)
+        if estado:
+            muns_gdf = gdf[gdf['ESTADO'] == estado]
+        else:
+            muns_gdf = gdf
+        municipios_disponibles = sorted(muns_gdf['MUNICIPIO'].dropna().unique().tolist())
+        # Aplicar filtros
+        if estado:
+            gdf = gdf[gdf['ESTADO'] == estado]
+        if municipio:
+            gdf = gdf[gdf['MUNICIPIO'] == municipio]
+        if id_credito:
+            gdf = gdf[gdf['ID_CREDITO'].astype(str).str.contains(id_credito, case=False, na=False)]
+        if id_poligono:
+            gdf = gdf[gdf['ID_POLIGON'].str.contains(id_poligono, case=False, na=False)]
         geojson_data = json.loads(gdf.to_json())
         return jsonify({
             'geojson': geojson_data,
             'total': len(gdf),
-            'fields': ['ID_POLIGON', 'ID_CREDITO', 'NOMBRE_ZIP']
+            'fields': ['ID_POLIGON', 'ID_CREDITO', 'NOMBRE_ZIP'],
+            'estados_disponibles': estados_disponibles,
+            'municipios_disponibles': municipios_disponibles
         })
     except Exception as e:
         print(f"Error al cargar VALIDACION_UNIFICADO: {e}")
@@ -4063,14 +4129,72 @@ def api_mapa_15k_historico():
         if gdf.crs is not None and gdf.crs.to_epsg() != 4326:
             gdf = gdf.to_crs(epsg=4326)
         gdf['geometry'] = gdf['geometry'].simplify(tolerance=0.0001, preserve_topology=True)
+        gdf = enrich_with_location(gdf)
+        # Calcular estados_disponibles ANTES de filtrar
+        estados_df = gdf.groupby('ESTADO').size().reset_index(name='count')
+        estados_disponibles = [
+            {'name': row['ESTADO'], 'count': int(row['count'])}
+            for _, row in estados_df.iterrows()
+            if row['ESTADO'] is not None
+        ]
+        estados_disponibles.sort(key=lambda x: x['name'] if x['name'] else '')
+        # Leer query params opcionales
+        estado = request.args.get('estado')
+        municipio = request.args.get('municipio')
+        id_credito = request.args.get('id_credito')
+        id_poligono = request.args.get('id_poligono')
+        # Calcular municipios_disponibles (del estado seleccionado, o todos)
+        if estado:
+            muns_gdf = gdf[gdf['ESTADO'] == estado]
+        else:
+            muns_gdf = gdf
+        municipios_disponibles = sorted(muns_gdf['MUNICIPIO'].dropna().unique().tolist())
+        # Aplicar filtros
+        if estado:
+            gdf = gdf[gdf['ESTADO'] == estado]
+        if municipio:
+            gdf = gdf[gdf['MUNICIPIO'] == municipio]
+        if id_credito:
+            gdf = gdf[gdf['ID_CREDITO'].astype(str).str.contains(id_credito, case=False, na=False)]
+        if id_poligono:
+            gdf = gdf[gdf['ID_POLIGON'].str.contains(id_poligono, case=False, na=False)]
         geojson_data = json.loads(gdf.to_json())
         return jsonify({
             'geojson': geojson_data,
             'total': len(gdf),
-            'fields': ['ID_POLIGON', 'ID_CREDITO']
+            'fields': ['ID_POLIGON', 'ID_CREDITO'],
+            'estados_disponibles': estados_disponibles,
+            'municipios_disponibles': municipios_disponibles
         })
     except Exception as e:
         print(f"Error al cargar MEGA_CAPA_V1_OL: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/mapa-15k/estados')
+def api_mapa_15k_estados():
+    """Retorna lista de estados y municipios disponibles en los shapefiles."""
+    try:
+        gdf = gpd.read_file('data/VALIDACION_UNIFICADO.shp')
+        if gdf.crs is not None and gdf.crs.to_epsg() != 4326:
+            gdf = gdf.to_crs(epsg=4326)
+        gdf = enrich_with_location(gdf)
+        # Estados
+        estados = gdf.groupby('ESTADO').size().reset_index(name='count')
+        estados_list = [
+            {'name': row['ESTADO'], 'count': int(row['count'])}
+            for _, row in estados.iterrows()
+            if row['ESTADO'] is not None
+        ]
+        estados_list.sort(key=lambda x: x['name'] if x['name'] else '')
+        # Municipios agrupados por estado
+        municipios = {}
+        for estado in gdf['ESTADO'].dropna().unique():
+            muns = gdf[gdf['ESTADO'] == estado]['MUNICIPIO'].dropna().unique().tolist()
+            municipios[estado] = sorted(muns)
+        return jsonify({'estados': estados_list, 'municipios_por_estado': municipios})
+    except Exception as e:
+        print(f'Error en /api/mapa-15k/estados: {e}')
         return jsonify({'error': str(e)}), 500
 
 
