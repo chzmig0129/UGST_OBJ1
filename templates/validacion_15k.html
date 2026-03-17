@@ -674,10 +674,12 @@
                         : '—';
 
                 // ── Sugerencia ────────────────────────────────────────────
-                actualizarSugerencia(data.sugerencia, data.sugerencia_pct);
+                var sug = data.sugerencia || {};
+                actualizarSugerencia(sug.estatus ? sug.estatus.toUpperCase() : null, sug.overlap_pct);
 
                 // ── Estatus guardado ──────────────────────────────────────
-                actualizarEstatusGuardado(data.estatus, data.id_poligon_historico);
+                var val = data.validacion || {};
+                actualizarEstatusGuardado(val.estatus, val.id_poligon_historico);
 
                 // ── Limpiar capas anteriores ──────────────────────────────
                 if (poligonoLayer) { map.removeLayer(poligonoLayer); poligonoLayer = null; }
@@ -930,13 +932,16 @@
         isSaving = true;
 
         var payload = {
-            index:  currentIndex,
-            estatus: estatus
+            idx:     currentIndex,
+            estatus: estatus.toLowerCase()
         };
 
         // Si es ENCIMA, incluir el ID del polígono histórico vinculado
         if (estatus === 'ENCIMA' && selectedMatchIdx !== null && currentMatches[selectedMatchIdx]) {
-            payload.id_poligon_historico = currentMatches[selectedMatchIdx].id_poligon;
+            var match = currentMatches[selectedMatchIdx];
+            payload.id_poligon_historico = match.id_poligon;
+            payload.mega_idx = match.mega_index;
+            payload.overlap_pct = match.overlap_pct;
         }
 
         fetch('/api/validacion-15k/guardar', {
