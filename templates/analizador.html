@@ -1,0 +1,721 @@
+{% extends 'base.html' %}
+
+{% block head %}
+<style>
+    /* ── Layout ─────────────────────────────────────────────────────────────── */
+    #analizador-container {
+        display: flex;
+        height: calc(100vh - 60px);
+        overflow: hidden;
+    }
+
+    /* ── Panel lateral ──────────────────────────────────────────────────────── */
+    #panel-lateral {
+        width: 380px;
+        min-width: 380px;
+        overflow-y: auto;
+        padding: 15px;
+        background: #f8f9fa;
+        border-right: 1px solid #dee2e6;
+        box-shadow: 2px 0 6px rgba(0,0,0,0.07);
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    /* ── Secciones del panel ────────────────────────────────────────────────── */
+    .panel-section {
+        background: #fff;
+        border-radius: 8px;
+        border: 1px solid #dee2e6;
+        padding: 12px;
+    }
+
+    .panel-section-title {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #6c757d;
+        margin-bottom: 10px;
+    }
+
+    /* ── Búsqueda ───────────────────────────────────────────────────────────── */
+    #search-dropdown {
+        position: absolute;
+        z-index: 9999;
+        background: #fff;
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        max-height: 260px;
+        overflow-y: auto;
+        width: 100%;
+        left: 0;
+        top: 100%;
+        display: none;
+    }
+
+    #search-wrapper {
+        position: relative;
+    }
+
+    .search-result-item {
+        padding: 8px 12px;
+        cursor: pointer;
+        border-bottom: 1px solid #f0f0f0;
+        font-size: 13px;
+        transition: background 0.15s;
+    }
+
+    .search-result-item:last-child {
+        border-bottom: none;
+    }
+
+    .search-result-item:hover {
+        background: #e9f0ff;
+    }
+
+    /* ── Navegación ─────────────────────────────────────────────────────────── */
+    #nav-counter {
+        font-size: 13px;
+        font-weight: 600;
+        color: #495057;
+        text-align: center;
+        flex: 1;
+    }
+
+    /* ── Info polígono ──────────────────────────────────────────────────────── */
+    .info-label {
+        font-size: 11px;
+        color: #6c757d;
+        margin-bottom: 1px;
+    }
+
+    .info-value {
+        font-size: 13px;
+        font-weight: 600;
+        color: #212529;
+        margin-bottom: 8px;
+        word-break: break-all;
+    }
+
+    #info-id-poligon {
+        font-size: 16px;
+        font-weight: 700;
+        color: #0d6efd;
+    }
+
+    /* ── Badges de resumen ──────────────────────────────────────────────────── */
+    .resumen-badges {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+
+    .resumen-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 4px 10px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+        color: #fff;
+    }
+
+    .badge-duplicados   { background: #dc3545; }
+    .badge-traslape-int { background: #ffc107; color: #212529; }
+    .badge-traslape-rel { background: #fd7e14; }
+    .badge-sin-conf     { background: #28a745; }
+
+    /* ── Lista de matches ───────────────────────────────────────────────────── */
+    #matches-list {
+        max-height: 400px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .match-card {
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
+        padding: 10px 12px;
+        cursor: pointer;
+        transition: background 0.15s, box-shadow 0.15s;
+        border-left-width: 4px;
+        background: #fff;
+        font-size: 12px;
+    }
+
+    .match-card:hover {
+        background: #f0f4ff;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    }
+
+    .match-card .match-id {
+        font-weight: 700;
+        font-size: 13px;
+        color: #212529;
+        margin-bottom: 2px;
+    }
+
+    .match-card .match-meta {
+        color: #6c757d;
+        margin-bottom: 4px;
+    }
+
+    .match-card .match-badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 12px;
+        font-size: 11px;
+        font-weight: 600;
+        color: #fff;
+        margin-top: 4px;
+    }
+
+    /* ── Spinner ────────────────────────────────────────────────────────────── */
+    #panel-spinner {
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    #panel-spinner.active {
+        display: flex;
+    }
+
+    /* ── Mapa ───────────────────────────────────────────────────────────────── */
+    #map-container {
+        flex: 1;
+        position: relative;
+        overflow: hidden;
+    }
+
+    #map {
+        width: 100%;
+        height: 100%;
+    }
+
+    /* ── Tooltip del mapa ───────────────────────────────────────────────────── */
+    .analizador-tooltip {
+        background: rgba(0,0,0,0.82) !important;
+        color: #fff !important;
+        border: none !important;
+        border-radius: 5px !important;
+        padding: 6px 10px !important;
+        font-size: 12px !important;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.35) !important;
+        line-height: 1.5 !important;
+    }
+
+    .analizador-tooltip::before {
+        border-color: transparent !important;
+    }
+
+    /* ── Ir a # ─────────────────────────────────────────────────────────────── */
+    #goto-input {
+        width: 70px;
+    }
+
+    /* ── Empty state ────────────────────────────────────────────────────────── */
+    .empty-state {
+        text-align: center;
+        color: #adb5bd;
+        padding: 16px 0;
+        font-size: 13px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="analizador-container">
+
+    <!-- ══════════════════════════════════════════════════════════════════════ -->
+    <!-- PANEL LATERAL                                                          -->
+    <!-- ══════════════════════════════════════════════════════════════════════ -->
+    <div id="panel-lateral">
+
+        <!-- ── Sección 1: Búsqueda y Navegación ─────────────────────────── -->
+        <div class="panel-section">
+            <div class="panel-section-title"><i class="bi bi-search me-1"></i>Búsqueda y Navegación</div>
+
+            <!-- Barra de búsqueda -->
+            <div id="search-wrapper" class="mb-2">
+                <div class="input-group input-group-sm">
+                    <input type="text" id="search-input" class="form-control"
+                           placeholder="Buscar por ID crédito o polígono...">
+                    <button class="btn btn-primary" id="btn-buscar" type="button">
+                        <i class="bi bi-search"></i>
+                    </button>
+                </div>
+                <div id="search-dropdown"></div>
+            </div>
+
+            <!-- Navegador ← → -->
+            <div class="d-flex align-items-center gap-2 mb-2">
+                <button class="btn btn-sm btn-outline-secondary" id="btn-prev" title="Anterior (←)">
+                    <i class="bi bi-chevron-left"></i>
+                </button>
+                <div id="nav-counter">— de —</div>
+                <button class="btn btn-sm btn-outline-secondary" id="btn-next" title="Siguiente (→)">
+                    <i class="bi bi-chevron-right"></i>
+                </button>
+            </div>
+
+            <!-- Ir a índice -->
+            <div class="d-flex align-items-center gap-2">
+                <label class="form-label mb-0 small text-muted" style="white-space:nowrap;">Ir a #</label>
+                <input type="number" id="goto-input" class="form-control form-control-sm"
+                       min="0" placeholder="0">
+                <button class="btn btn-sm btn-outline-primary" id="btn-goto">Ir</button>
+            </div>
+        </div>
+
+        <!-- ── Spinner ───────────────────────────────────────────────────── -->
+        <div id="panel-spinner">
+            <div class="spinner-border text-primary" role="status" style="width:2rem;height:2rem;">
+                <span class="visually-hidden">Cargando...</span>
+            </div>
+            <div class="small text-muted">Analizando polígono...</div>
+        </div>
+
+        <!-- ── Sección 2: Info del polígono actual ───────────────────────── -->
+        <div class="panel-section" id="section-info">
+            <div class="panel-section-title"><i class="bi bi-geo-alt me-1"></i>Polígono Actual</div>
+
+            <div class="info-label">ID Polígono</div>
+            <div class="info-value" id="info-id-poligon">—</div>
+
+            <div class="info-label">ID Crédito</div>
+            <div class="info-value" id="info-id-credito">—</div>
+
+            <div class="info-label">Archivo (ZIP)</div>
+            <div class="info-value" id="info-nombre-zip">—</div>
+
+            <div class="info-label">Área</div>
+            <div class="info-value" id="info-area">—</div>
+        </div>
+
+        <!-- ── Sección 3: Resumen de análisis ───────────────────────────── -->
+        <div class="panel-section" id="section-resumen">
+            <div class="panel-section-title"><i class="bi bi-bar-chart me-1"></i>Resumen de Análisis</div>
+
+            <div class="resumen-badges mb-2">
+                <span class="resumen-badge badge-duplicados">
+                    🔴 Duplicados: <span id="res-duplicados">0</span>
+                </span>
+                <span class="resumen-badge badge-traslape-int">
+                    🟡 Traslape interno: <span id="res-traslape-int">0</span>
+                </span>
+                <span class="resumen-badge badge-traslape-rel">
+                    🟠 Traslape relevante: <span id="res-traslape-rel">0</span>
+                </span>
+                <span class="resumen-badge badge-sin-conf">
+                    🟢 Sin conflicto: <span id="res-sin-conf">0</span>
+                </span>
+            </div>
+
+            <div class="small text-muted">
+                Total matches: <strong id="res-total">0</strong>
+            </div>
+        </div>
+
+        <!-- ── Sección 4: Lista de matches ──────────────────────────────── -->
+        <div class="panel-section" id="section-matches">
+            <div class="panel-section-title"><i class="bi bi-list-ul me-1"></i>Matches Encontrados</div>
+            <div id="matches-list">
+                <div class="empty-state">Cargando primer polígono...</div>
+            </div>
+        </div>
+
+    </div><!-- /#panel-lateral -->
+
+    <!-- ══════════════════════════════════════════════════════════════════════ -->
+    <!-- MAPA                                                                   -->
+    <!-- ══════════════════════════════════════════════════════════════════════ -->
+    <div id="map-container">
+        <div id="map"></div>
+    </div>
+
+</div><!-- /#analizador-container -->
+
+<script>
+(function () {
+    'use strict';
+
+    // ── Variables globales ────────────────────────────────────────────────────
+    var currentIndex    = 0;
+    var totalPoligonos  = 0;
+    var map, poligonoLayer, matchesLayer;
+    var matchLayerMap   = [];   // array of {layer, originalStyle} for click-zoom
+
+    // ── Inicializar mapa ──────────────────────────────────────────────────────
+    map = L.map('map', {
+        center: [24.0, -102.0],
+        zoom: 6,
+        preferCanvas: true   // CRITICAL for performance
+    });
+
+    // Capa base: Esri World Imagery
+    L.tileLayer(
+        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        { attribution: 'Tiles &copy; Esri', maxZoom: 18 }
+    ).addTo(map);
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+    function safeVal(v) {
+        return (v !== null && v !== undefined && v !== '') ? v : '—';
+    }
+
+    function fmt(n, decimals) {
+        return (typeof n === 'number') ? n.toFixed(decimals) : '—';
+    }
+
+    function showSpinner() {
+        document.getElementById('panel-spinner').classList.add('active');
+    }
+
+    function hideSpinner() {
+        document.getElementById('panel-spinner').classList.remove('active');
+    }
+
+    function updateNavCounter() {
+        var total = totalPoligonos > 0
+            ? totalPoligonos.toLocaleString('es-MX')
+            : '—';
+        var cur = totalPoligonos > 0
+            ? (currentIndex + 1).toLocaleString('es-MX')
+            : '—';
+        document.getElementById('nav-counter').textContent =
+            'Polígono ' + cur + ' de ' + total;
+    }
+
+    // ── Clasificación → color de badge ───────────────────────────────────────
+    var CLASIF_COLORS = {
+        'duplicado':          '#dc3545',
+        'traslape_interno':   '#ffc107',
+        'traslape_relevante': '#fd7e14',
+        'sin_conflicto':      '#28a745'
+    };
+
+    var CLASIF_LABELS = {
+        'duplicado':          'Duplicado',
+        'traslape_interno':   'Traslape interno',
+        'traslape_relevante': 'Traslape relevante',
+        'sin_conflicto':      'Sin conflicto'
+    };
+
+    function clasifColor(c) {
+        return CLASIF_COLORS[c] || '#6c757d';
+    }
+
+    function clasifLabel(c) {
+        return CLASIF_LABELS[c] || c;
+    }
+
+    // ── Cargar polígono ───────────────────────────────────────────────────────
+    function cargarPoligono(idx) {
+        showSpinner();
+
+        fetch('/api/analizador/poligono/' + idx)
+            .then(function (r) {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.json();
+            })
+            .then(function (data) {
+                currentIndex = data.index;
+
+                // ── Actualizar info del polígono ──────────────────────────
+                var props = data.poligono.properties;
+                document.getElementById('info-id-poligon').textContent  = safeVal(props.ID_POLIGON);
+                document.getElementById('info-id-credito').textContent  = safeVal(props.ID_CREDITO);
+                document.getElementById('info-nombre-zip').textContent  = safeVal(props.NOMBRE_ZIP);
+                document.getElementById('info-area').textContent        =
+                    (typeof props.area_ha === 'number')
+                        ? props.area_ha.toFixed(4) + ' ha'
+                        : '—';
+
+                // ── Actualizar resumen ────────────────────────────────────
+                var res = data.resumen;
+                document.getElementById('res-duplicados').textContent   = res.duplicados;
+                document.getElementById('res-traslape-int').textContent = res.traslape_interno;
+                document.getElementById('res-traslape-rel').textContent = res.traslape_relevante;
+                document.getElementById('res-sin-conf').textContent     = res.sin_conflicto;
+                document.getElementById('res-total').textContent        = res.total_matches;
+
+                // ── Limpiar capas anteriores ──────────────────────────────
+                if (poligonoLayer) { map.removeLayer(poligonoLayer); poligonoLayer = null; }
+                if (matchesLayer)  { map.removeLayer(matchesLayer);  matchesLayer  = null; }
+                matchLayerMap = [];
+
+                // ── Dibujar polígono actual en AZUL ───────────────────────
+                var stylePoligono = {
+                    color:       '#0d6efd',
+                    fillColor:   '#0d6efd',
+                    weight:      3,
+                    fillOpacity: 0.3
+                };
+
+                poligonoLayer = L.geoJSON(data.poligono, {
+                    style: stylePoligono
+                });
+
+                poligonoLayer.eachLayer(function (layer) {
+                    layer.bindTooltip(
+                        '<b>ID Polígono:</b> ' + safeVal(props.ID_POLIGON) + '<br>' +
+                        '<b>ID Crédito:</b> '  + safeVal(props.ID_CREDITO) + '<br>' +
+                        '<b>Área:</b> '         + (typeof props.area_ha === 'number' ? props.area_ha.toFixed(4) + ' ha' : '—'),
+                        { permanent: false, direction: 'auto', opacity: 0.95, className: 'analizador-tooltip' }
+                    );
+                });
+
+                poligonoLayer.addTo(map);
+
+                // ── Dibujar matches con sus colores ───────────────────────
+                matchesLayer = L.geoJSON(data.match_features, {
+                    style: function (feature) {
+                        var color = feature.properties.color || '#6c757d';
+                        return {
+                            color:       color,
+                            fillColor:   color,
+                            weight:      2,
+                            fillOpacity: 0.3
+                        };
+                    },
+                    onEachFeature: function (feature, layer) {
+                        var mp = feature.properties;
+                        layer.bindTooltip(
+                            '<b>ID:</b> '           + safeVal(mp.id_poligon)   + '<br>' +
+                            '<b>Crédito:</b> '       + safeVal(mp.id_credito)   + '<br>' +
+                            '<b>Overlap:</b> '       + fmt(mp.overlap_pct, 1)   + '%<br>' +
+                            '<b>Clasificación:</b> ' + clasifLabel(mp.clasificacion),
+                            { permanent: false, direction: 'auto', opacity: 0.95, className: 'analizador-tooltip' }
+                        );
+
+                        // Guardar referencia para click desde lista
+                        matchLayerMap.push({
+                            mega_index:    mp.mega_index,
+                            layer:         layer,
+                            originalStyle: {
+                                color:       mp.color || '#6c757d',
+                                fillColor:   mp.color || '#6c757d',
+                                weight:      2,
+                                fillOpacity: 0.3
+                            }
+                        });
+                    }
+                });
+
+                matchesLayer.addTo(map);
+
+                // ── fitBounds al polígono actual ──────────────────────────
+                try {
+                    map.fitBounds(poligonoLayer.getBounds(), { padding: [50, 50] });
+                } catch (e) { /* ignore */ }
+
+                // ── Actualizar contador de navegación ─────────────────────
+                updateNavCounter();
+
+                // ── Poblar lista de matches ───────────────────────────────
+                poblarListaMatches(data.matches);
+
+                hideSpinner();
+            })
+            .catch(function (err) {
+                console.error('Error cargando polígono:', err);
+                hideSpinner();
+                document.getElementById('matches-list').innerHTML =
+                    '<div class="empty-state text-danger">Error al cargar polígono: ' + err.message + '</div>';
+            });
+    }
+
+    // ── Poblar lista de matches ───────────────────────────────────────────────
+    function poblarListaMatches(matches) {
+        var container = document.getElementById('matches-list');
+
+        if (!matches || matches.length === 0) {
+            container.innerHTML = '<div class="empty-state"><i class="bi bi-check-circle text-success me-1"></i>Sin matches encontrados</div>';
+            return;
+        }
+
+        container.innerHTML = '';
+
+        matches.forEach(function (m) {
+            var color      = m.color || '#6c757d';
+            var badgeColor = color;
+            var badgeText  = clasifLabel(m.clasificacion);
+            var textColor  = (m.clasificacion === 'traslape_interno') ? '#212529' : '#fff';
+
+            var card = document.createElement('div');
+            card.className = 'match-card';
+            card.style.borderLeftColor = color;
+
+            card.innerHTML =
+                '<div class="match-id">' + safeVal(m.id_poligon) + '</div>' +
+                '<div class="match-meta">Crédito: ' + safeVal(m.id_credito) + '</div>' +
+                '<div class="match-meta">' +
+                    'Overlap: <strong>' + fmt(m.overlap_pct, 1) + '%</strong> &nbsp;|&nbsp; ' +
+                    'Similitud sup.: <strong>' + fmt(m.area_ratio, 1) + '%</strong>' +
+                '</div>' +
+                '<div class="match-meta">Mismo crédito: <strong>' + (m.same_credit ? 'Sí' : 'No') + '</strong></div>' +
+                '<span class="match-badge" style="background:' + badgeColor + ';color:' + textColor + ';">' +
+                    badgeText +
+                '</span>';
+
+            // Click → zoom al match en el mapa
+            card.addEventListener('click', function () {
+                zoomToMatch(m.mega_index);
+            });
+
+            container.appendChild(card);
+        });
+    }
+
+    // ── Zoom a un match específico ────────────────────────────────────────────
+    function zoomToMatch(megaIndex) {
+        var entry = null;
+        for (var i = 0; i < matchLayerMap.length; i++) {
+            if (matchLayerMap[i].mega_index === megaIndex) {
+                entry = matchLayerMap[i];
+                break;
+            }
+        }
+
+        if (!entry) return;
+
+        var layer = entry.layer;
+        var orig  = entry.originalStyle;
+
+        // Zoom al match
+        try {
+            map.fitBounds(layer.getBounds(), { padding: [40, 40] });
+        } catch (e) { /* ignore */ }
+
+        // Resaltar
+        layer.setStyle({ weight: 4, fillOpacity: 0.6 });
+
+        // Restaurar después de 3 segundos
+        setTimeout(function () {
+            layer.setStyle(orig);
+        }, 3000);
+    }
+
+    // ── Navegación ← → ───────────────────────────────────────────────────────
+    document.getElementById('btn-prev').addEventListener('click', function () {
+        if (currentIndex > 0) {
+            cargarPoligono(--currentIndex);
+        }
+    });
+
+    document.getElementById('btn-next').addEventListener('click', function () {
+        if (currentIndex < totalPoligonos - 1) {
+            cargarPoligono(++currentIndex);
+        }
+    });
+
+    // ── Ir a índice ───────────────────────────────────────────────────────────
+    document.getElementById('btn-goto').addEventListener('click', function () {
+        var val = parseInt(document.getElementById('goto-input').value, 10);
+        if (!isNaN(val) && val >= 0 && val < totalPoligonos) {
+            currentIndex = val;
+            cargarPoligono(currentIndex);
+        }
+    });
+
+    document.getElementById('goto-input').addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
+            document.getElementById('btn-goto').click();
+        }
+    });
+
+    // ── Teclado ← → ──────────────────────────────────────────────────────────
+    document.addEventListener('keydown', function (e) {
+        // Ignorar si el foco está en un input/textarea
+        var tag = document.activeElement ? document.activeElement.tagName : '';
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+        if (e.key === 'ArrowLeft') {
+            document.getElementById('btn-prev').click();
+        } else if (e.key === 'ArrowRight') {
+            document.getElementById('btn-next').click();
+        }
+    });
+
+    // ── Búsqueda ──────────────────────────────────────────────────────────────
+    var searchDropdown = document.getElementById('search-dropdown');
+
+    function realizarBusqueda() {
+        var q = document.getElementById('search-input').value.trim();
+        if (!q) return;
+
+        fetch('/api/analizador/buscar?q=' + encodeURIComponent(q))
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                searchDropdown.innerHTML = '';
+
+                if (!data.resultados || data.resultados.length === 0) {
+                    searchDropdown.innerHTML =
+                        '<div class="search-result-item text-muted">Sin resultados</div>';
+                    searchDropdown.style.display = 'block';
+                    return;
+                }
+
+                data.resultados.forEach(function (res) {
+                    var item = document.createElement('div');
+                    item.className = 'search-result-item';
+                    item.innerHTML =
+                        '<strong>#' + res.index + '</strong> — ' +
+                        safeVal(res.id_poligon) + '<br>' +
+                        '<small class="text-muted">Crédito: ' + safeVal(res.id_credito) + '</small>';
+
+                    item.addEventListener('click', function () {
+                        searchDropdown.style.display = 'none';
+                        currentIndex = res.index;
+                        cargarPoligono(currentIndex);
+                    });
+
+                    searchDropdown.appendChild(item);
+                });
+
+                searchDropdown.style.display = 'block';
+            })
+            .catch(function (err) {
+                console.error('Error en búsqueda:', err);
+            });
+    }
+
+    document.getElementById('btn-buscar').addEventListener('click', realizarBusqueda);
+
+    document.getElementById('search-input').addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') realizarBusqueda();
+    });
+
+    // Cerrar dropdown al hacer click fuera
+    document.addEventListener('click', function (e) {
+        if (!document.getElementById('search-wrapper').contains(e.target)) {
+            searchDropdown.style.display = 'none';
+        }
+    });
+
+    // ── Carga inicial ─────────────────────────────────────────────────────────
+    fetch('/api/analizador/total')
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            totalPoligonos = data.total || 0;
+            updateNavCounter();
+            cargarPoligono(0);
+        })
+        .catch(function (err) {
+            console.error('Error obteniendo total:', err);
+            document.getElementById('nav-counter').textContent = 'Error al cargar';
+        });
+
+}());
+</script>
+{% endblock %}
