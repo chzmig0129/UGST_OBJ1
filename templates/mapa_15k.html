@@ -1,0 +1,365 @@
+{% extends 'base.html' %}
+
+{% block head %}
+<!-- Leaflet Fullscreen Plugin -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.fullscreen@2.4.0/Control.FullScreen.css" />
+<script src="https://cdn.jsdelivr.net/npm/leaflet.fullscreen@2.4.0/Control.FullScreen.js"></script>
+
+<style>
+    /* Custom tooltip for 15K map */
+    .custom-tooltip-15k {
+        background: rgba(0, 0, 0, 0.8) !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 4px !important;
+        padding: 6px 10px !important;
+        font-size: 12px !important;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4) !important;
+    }
+    .custom-tooltip-15k::before {
+        border-color: transparent !important;
+    }
+
+    /* Loading overlay */
+    .loading-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(255, 255, 255, 0.7);
+        z-index: 1000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 8px;
+    }
+
+    /* Map container */
+    #map {
+        width: 100%;
+        border-radius: 8px;
+    }
+
+    /* Layer control panel */
+    #layer-control-panel {
+        position: absolute;
+        bottom: 20px;
+        left: 20px;
+        z-index: 1000;
+        min-width: 220px;
+    }
+
+    /* Map wrapper needs relative positioning for overlay and panel */
+    #map-wrapper {
+        position: relative;
+    }
+
+    /* Header badge */
+    .polygon-badge {
+        font-size: 0.85rem;
+        padding: 0.4em 0.75em;
+    }
+
+    /* Fullscreen button styling */
+    .leaflet-control-fullscreen a {
+        background-color: #fff;
+        border-radius: 4px;
+        box-shadow: 0 1px 5px rgba(0, 0, 0, 0.4);
+        transition: all 0.3s ease;
+    }
+    .leaflet-control-fullscreen a:hover {
+        background-color: #f4f4f4;
+        transform: scale(1.05);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="p-3" style="height: 100%; display: flex; flex-direction: column;">
+
+    <!-- Header -->
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <div class="d-flex align-items-center gap-3">
+            <div class="app-icon">
+                <svg viewBox="0 0 24 24" width="28" height="28" stroke="currentColor" stroke-width="2" fill="none">
+                    <circle cx="12" cy="10" r="3"></circle>
+                    <path d="M12 21.7C17.3 17 20 13 20 10a8 8 0 1 0-16 0c0 3 2.7 7 8 11.7z"></path>
+                </svg>
+            </div>
+            <div>
+                <h1 class="mb-0 h4">Mapa de Polígonos 15K</h1>
+                <p class="text-muted mb-0 small">Visualización masiva de polígonos de validación e histórico</p>
+            </div>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+            <span class="badge bg-secondary polygon-badge" id="polygon-count-badge">
+                <i class="bi bi-hourglass-split me-1"></i>Cargando...
+            </span>
+        </div>
+    </div>
+
+    <!-- Map wrapper -->
+    <div id="map-wrapper" style="flex: 1; position: relative;">
+
+        <!-- Loading overlay (shown while fetching) -->
+        <div class="loading-overlay" id="loading-overlay">
+            <div class="text-center">
+                <div class="spinner-border text-success" role="status" style="width: 3rem; height: 3rem;">
+                    <span class="visually-hidden">Cargando...</span>
+                </div>
+                <div class="mt-3 fw-semibold text-secondary" id="loading-message">Cargando polígonos...</div>
+            </div>
+        </div>
+
+        <!-- Map -->
+        <div id="map" style="height: calc(100vh - 120px);"></div>
+
+        <!-- Layer control panel (floating, bottom-left) -->
+        <div id="layer-control-panel">
+            <div class="card shadow-sm">
+                <div class="card-header py-2 d-flex align-items-center gap-2">
+                    <i class="bi bi-layers"></i>
+                    <span class="fw-semibold small">Control de Capas</span>
+                </div>
+                <div class="card-body py-2 px-3">
+                    <!-- Validación toggle -->
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="toggleValidacion" checked>
+                        <label class="form-check-label small" for="toggleValidacion">
+                            <span style="color: #4CE600; font-weight: bold;">&#9632;</span>
+                            Validación (15K)
+                        </label>
+                    </div>
+                    <!-- Histórico toggle -->
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="toggleHistorico" checked>
+                        <label class="form-check-label small" for="toggleHistorico">
+                            <span style="color: #ff8c00; font-weight: bold;">&#9632;</span>
+                            Histórico (57K)
+                        </label>
+                    </div>
+                    <!-- Polygon counter -->
+                    <hr class="my-2">
+                    <div class="text-muted small text-center" id="layer-counter">
+                        <i class="bi bi-hourglass-split me-1"></i>Cargando...
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div><!-- /#map-wrapper -->
+
+</div><!-- /.p-3 -->
+
+<script>
+(function () {
+    'use strict';
+
+    // ── Layer references ──────────────────────────────────────────────────────
+    var validacionLayer = null;
+    var historicoLayer  = null;
+    var totalLoaded     = 0;
+    var layersReady     = 0;   // increments to 2 when both fetches complete
+
+    // ── Styles ────────────────────────────────────────────────────────────────
+    var STYLE_VALIDACION = {
+        color:       '#00734C',
+        fillColor:   '#4CE600',
+        weight:      1,
+        fillOpacity: 0.3
+    };
+
+    var STYLE_HISTORICO = {
+        color:       '#cc7000',
+        fillColor:   '#ff8c00',
+        weight:      1,
+        fillOpacity: 0.2
+    };
+
+    // ── Map initialisation ────────────────────────────────────────────────────
+    var map = L.map('map', {
+        center: [24.0, -102.0],
+        zoom: 6,
+        preferCanvas: true,          // CRITICAL for 70K+ polygons
+        fullscreenControl: true,
+        fullscreenControlOptions: {
+            position: 'topleft',
+            title: 'Pantalla Completa',
+            titleCancel: 'Salir de Pantalla Completa'
+        }
+    });
+
+    // ── Base layers ───────────────────────────────────────────────────────────
+    var osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+        maxZoom: 19
+    });
+
+    var esriLayer = L.tileLayer(
+        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        attribution: 'Tiles &copy; Esri &mdash; Source: Esri',
+        maxZoom: 18
+    });
+
+    var cartoLayer = L.tileLayer(
+        'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, &copy; <a href="https://carto.com/attributions">CARTO</a>',
+        maxZoom: 19
+    });
+
+    // Default base layer: Esri World Imagery (same as Validar module)
+    esriLayer.addTo(map);
+
+    // Layer control for base maps
+    L.control.layers({
+        'OpenStreetMap':      osmLayer,
+        'Esri World Imagery': esriLayer,
+        'CartoDB Dark':       cartoLayer
+    }, {}).addTo(map);
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+    function safeVal(val) {
+        return (val !== null && val !== undefined && val !== '') ? val : 'N/A';
+    }
+
+    function updateCounters(total) {
+        var text = total.toLocaleString('es-MX') + ' polígonos cargados';
+        document.getElementById('layer-counter').innerHTML =
+            '<i class="bi bi-check-circle-fill text-success me-1"></i>' + text;
+        document.getElementById('polygon-count-badge').innerHTML =
+            '<i class="bi bi-geo-alt-fill me-1"></i>' + text;
+        document.getElementById('polygon-count-badge').className =
+            'badge bg-success polygon-badge';
+    }
+
+    function hideLoadingOverlay() {
+        var overlay = document.getElementById('loading-overlay');
+        if (overlay) {
+            overlay.style.display = 'none';
+        }
+    }
+
+    function onLayerReady() {
+        layersReady += 1;
+        if (layersReady >= 2) {
+            hideLoadingOverlay();
+            updateCounters(totalLoaded);
+        }
+    }
+
+    function updateLoadingMessage(msg) {
+        var el = document.getElementById('loading-message');
+        if (el) el.textContent = msg;
+    }
+
+    // ── onEachFeature factories ───────────────────────────────────────────────
+    function makeOnEachFeature(includeNombreZip, originalStyle) {
+        return function (feature, layer) {
+            var props = feature.properties || {};
+            var idPoligon  = safeVal(props.ID_POLIGON);
+            var idCredito  = safeVal(props.ID_CREDITO);
+
+            var tooltipHtml =
+                '<b>ID Polígono:</b> ' + idPoligon + '<br>' +
+                '<b>ID Crédito:</b> '  + idCredito;
+
+            if (includeNombreZip) {
+                var nombreZip = safeVal(props.NOMBRE_ZIP);
+                tooltipHtml += '<br><b>Archivo:</b> ' + nombreZip;
+            }
+
+            layer.bindTooltip(tooltipHtml, {
+                permanent:  false,
+                direction:  'auto',
+                opacity:    0.9,
+                className:  'custom-tooltip-15k'
+            });
+
+            // Hover effects
+            layer.on('mouseover', function () {
+                layer.setStyle({ weight: 3, fillOpacity: 0.6 });
+            });
+            layer.on('mouseout', function () {
+                layer.setStyle(originalStyle);
+            });
+        };
+    }
+
+    // ── Fetch: Validación layer ───────────────────────────────────────────────
+    updateLoadingMessage('Cargando capa de validación (15K)...');
+
+    fetch('/api/mapa-15k/validacion')
+        .then(function (response) {
+            if (!response.ok) {
+                throw new Error('Error HTTP ' + response.status + ' al cargar validación');
+            }
+            return response.json();
+        })
+        .then(function (data) {
+            var geojson = data.geojson;
+            var total   = data.total || 0;
+            totalLoaded += total;
+
+            validacionLayer = L.geoJSON(geojson, {
+                style: STYLE_VALIDACION,
+                onEachFeature: makeOnEachFeature(true, STYLE_VALIDACION)
+            }).addTo(map);
+
+            updateLoadingMessage('Cargando capa histórica (57K)...');
+            onLayerReady();
+        })
+        .catch(function (err) {
+            console.error('Error cargando capa validación:', err);
+            alert('Error al cargar la capa de validación: ' + err.message);
+            onLayerReady(); // still unblock the UI
+        });
+
+    // ── Fetch: Histórico layer ────────────────────────────────────────────────
+    fetch('/api/mapa-15k/historico')
+        .then(function (response) {
+            if (!response.ok) {
+                throw new Error('Error HTTP ' + response.status + ' al cargar histórico');
+            }
+            return response.json();
+        })
+        .then(function (data) {
+            var geojson = data.geojson;
+            var total   = data.total || 0;
+            totalLoaded += total;
+
+            historicoLayer = L.geoJSON(geojson, {
+                style: STYLE_HISTORICO,
+                onEachFeature: makeOnEachFeature(false, STYLE_HISTORICO)
+            }).addTo(map);
+
+            onLayerReady();
+        })
+        .catch(function (err) {
+            console.error('Error cargando capa histórico:', err);
+            alert('Error al cargar la capa histórica: ' + err.message);
+            onLayerReady(); // still unblock the UI
+        });
+
+    // ── Layer toggle controls ─────────────────────────────────────────────────
+    document.getElementById('toggleValidacion').addEventListener('change', function () {
+        if (!validacionLayer) return;
+        if (this.checked) {
+            map.addLayer(validacionLayer);
+        } else {
+            map.removeLayer(validacionLayer);
+        }
+    });
+
+    document.getElementById('toggleHistorico').addEventListener('change', function () {
+        if (!historicoLayer) return;
+        if (this.checked) {
+            map.addLayer(historicoLayer);
+        } else {
+            map.removeLayer(historicoLayer);
+        }
+    });
+
+}());
+</script>
+{% endblock %}
