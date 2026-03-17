@@ -230,6 +230,16 @@
         padding: 16px 0;
         font-size: 13px;
     }
+
+    /* ── Tooltip capas de fondo ─────────────────────────────────────────────── */
+    .custom-tooltip-15k {
+        background: rgba(0,0,0,0.8);
+        color: white;
+        border-radius: 4px;
+        padding: 4px 8px;
+        font-size: 11px;
+        border: none;
+    }
 </style>
 {% endblock %}
 
@@ -341,6 +351,30 @@
     <!-- ══════════════════════════════════════════════════════════════════════ -->
     <div id="map-container">
         <div id="map"></div>
+
+        <!-- ── Panel de toggles de capas de fondo ──────────────────────────── -->
+        <div id="capas-toggle-panel" style="position:absolute; bottom:20px; right:20px; z-index:1000; background:white; border-radius:8px; padding:12px 16px; box-shadow:0 2px 8px rgba(0,0,0,0.2); min-width:220px;">
+            <div style="font-weight:bold; font-size:13px; margin-bottom:8px; border-bottom:1px solid #dee2e6; padding-bottom:6px;">
+                <i class="bi bi-layers"></i> Capas de fondo
+            </div>
+            <div class="form-check form-switch mb-2">
+                <input class="form-check-input" type="checkbox" id="toggle-validacion-bg">
+                <label class="form-check-label" for="toggle-validacion-bg" style="font-size:12px;">
+                    <span style="display:inline-block;width:12px;height:12px;background:#4CE600;border:1px solid #00734C;border-radius:2px;margin-right:4px;"></span>
+                    Validación 15K
+                </label>
+            </div>
+            <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="toggle-historico-bg">
+                <label class="form-check-label" for="toggle-historico-bg" style="font-size:12px;">
+                    <span style="display:inline-block;width:12px;height:12px;background:#ff8c00;border:1px solid #cc7000;border-radius:2px;margin-right:4px;"></span>
+                    Histórico MEGA
+                </label>
+            </div>
+            <div id="capas-loading" style="display:none; font-size:11px; color:#6c757d; margin-top:6px;">
+                <div class="spinner-border spinner-border-sm" role="status"></div> Cargando capa...
+            </div>
+        </div>
     </div>
 
 </div><!-- /#analizador-container -->
@@ -354,6 +388,12 @@
     var totalPoligonos  = 0;
     var map, poligonoLayer, matchesLayer;
     var matchLayerMap   = [];   // array of {layer, originalStyle} for click-zoom
+
+    // ── Variables para capas de fondo ─────────────────────────────────────────
+    let validacionBgLayer  = null;
+    let historicoBgLayer   = null;
+    let validacionBgLoaded = false;
+    let historicoBgLoaded  = false;
 
     // ── Inicializar mapa ──────────────────────────────────────────────────────
     map = L.map('map', {
@@ -513,6 +553,10 @@
                 });
 
                 matchesLayer.addTo(map);
+
+                // ── Asegurar que las capas de análisis estén encima ───────
+                if (poligonoLayer) poligonoLayer.bringToFront();
+                if (matchesLayer)  matchesLayer.bringToFront();
 
                 // ── fitBounds al polígono actual ──────────────────────────
                 try {
@@ -700,6 +744,90 @@
     document.addEventListener('click', function (e) {
         if (!document.getElementById('search-wrapper').contains(e.target)) {
             searchDropdown.style.display = 'none';
+        }
+    });
+
+    // ── Toggle: Validación 15K ────────────────────────────────────────────────
+    document.getElementById('toggle-validacion-bg').addEventListener('change', function() {
+        if (this.checked) {
+            if (validacionBgLoaded && validacionBgLayer) {
+                map.addLayer(validacionBgLayer);
+                // Asegurar que las capas de análisis estén encima
+                if (poligonoLayer) poligonoLayer.bringToFront();
+                if (matchesLayer)  matchesLayer.bringToFront();
+            } else {
+                // Cargar por primera vez
+                document.getElementById('capas-loading').style.display = 'block';
+                fetch('/api/mapa-15k/validacion')
+                    .then(function(r) { return r.json(); })
+                    .then(function(data) {
+                        validacionBgLayer = L.geoJSON(data.geojson, {
+                            style: { color: '#00734C', fillColor: '#4CE600', weight: 1, fillOpacity: 0.15, opacity: 0.5 },
+                            onEachFeature: function(feature, layer) {
+                                var p = feature.properties || {};
+                                layer.bindTooltip(
+                                    '<b>' + (p.ID_POLIGON || 'N/A') + '</b><br>Crédito: ' + (p.ID_CREDITO || 'N/A'),
+                                    { permanent: false, direction: 'auto', opacity: 0.85, className: 'custom-tooltip-15k' }
+                                );
+                            }
+                        }).addTo(map);
+                        validacionBgLoaded = true;
+                        document.getElementById('capas-loading').style.display = 'none';
+                        // Asegurar que las capas de análisis estén encima
+                        if (poligonoLayer) poligonoLayer.bringToFront();
+                        if (matchesLayer)  matchesLayer.bringToFront();
+                    })
+                    .catch(function(err) {
+                        console.error('Error cargando capa validación:', err);
+                        document.getElementById('capas-loading').style.display = 'none';
+                        document.getElementById('toggle-validacion-bg').checked = false;
+                        alert('Error al cargar la capa de validación');
+                    });
+            }
+        } else {
+            if (validacionBgLayer) map.removeLayer(validacionBgLayer);
+        }
+    });
+
+    // ── Toggle: Histórico MEGA ────────────────────────────────────────────────
+    document.getElementById('toggle-historico-bg').addEventListener('change', function() {
+        if (this.checked) {
+            if (historicoBgLoaded && historicoBgLayer) {
+                map.addLayer(historicoBgLayer);
+                // Asegurar que las capas de análisis estén encima
+                if (poligonoLayer) poligonoLayer.bringToFront();
+                if (matchesLayer)  matchesLayer.bringToFront();
+            } else {
+                // Cargar por primera vez
+                document.getElementById('capas-loading').style.display = 'block';
+                fetch('/api/mapa-15k/historico')
+                    .then(function(r) { return r.json(); })
+                    .then(function(data) {
+                        historicoBgLayer = L.geoJSON(data.geojson, {
+                            style: { color: '#cc7000', fillColor: '#ff8c00', weight: 1, fillOpacity: 0.1, opacity: 0.4 },
+                            onEachFeature: function(feature, layer) {
+                                var p = feature.properties || {};
+                                layer.bindTooltip(
+                                    '<b>' + (p.ID_POLIGON || 'N/A') + '</b><br>Crédito: ' + (p.ID_CREDITO || 'N/A'),
+                                    { permanent: false, direction: 'auto', opacity: 0.85, className: 'custom-tooltip-15k' }
+                                );
+                            }
+                        }).addTo(map);
+                        historicoBgLoaded = true;
+                        document.getElementById('capas-loading').style.display = 'none';
+                        // Asegurar que las capas de análisis estén encima
+                        if (poligonoLayer) poligonoLayer.bringToFront();
+                        if (matchesLayer)  matchesLayer.bringToFront();
+                    })
+                    .catch(function(err) {
+                        console.error('Error cargando capa histórico:', err);
+                        document.getElementById('capas-loading').style.display = 'none';
+                        document.getElementById('toggle-historico-bg').checked = false;
+                        alert('Error al cargar la capa histórica');
+                    });
+            }
+        } else {
+            if (historicoBgLayer) map.removeLayer(historicoBgLayer);
         }
     });
 
