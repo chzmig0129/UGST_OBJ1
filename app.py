@@ -56,6 +56,30 @@ except Exception as e:
     print(f"Error cargando shapefile: {e}")
     municipios_gdf = None
 
+# Cache de shapefiles para análisis de traslapes
+print('Cargando shapefiles para análisis de traslapes...')
+try:
+    validacion_gdf = gpd.read_file('data/VALIDACION_UNIFICADO.shp')
+    if validacion_gdf.crs is not None and validacion_gdf.crs.to_epsg() != 4326:
+        validacion_gdf = validacion_gdf.to_crs(epsg=4326)
+    # Fix geometrías inválidas
+    from shapely.validation import make_valid
+    validacion_gdf['geometry'] = validacion_gdf['geometry'].apply(lambda g: make_valid(g) if not g.is_valid else g)
+
+    mega_gdf = gpd.read_file('data/MEGA_CAPA_V1_OL.shp')
+    if mega_gdf.crs is not None and mega_gdf.crs.to_epsg() != 4326:
+        mega_gdf = mega_gdf.to_crs(epsg=4326)
+    mega_gdf['geometry'] = mega_gdf['geometry'].apply(lambda g: make_valid(g) if not g.is_valid else g)
+
+    # Construir spatial index del MEGA
+    mega_sindex = mega_gdf.sindex
+    print(f'Cache cargado: {len(validacion_gdf)} validación, {len(mega_gdf)} MEGA')
+except Exception as e:
+    print(f'Error cargando cache de shapefiles: {e}')
+    validacion_gdf = None
+    mega_gdf = None
+    mega_sindex = None
+
 # Función para obtener municipio y estado desde coordenadas
 def obtener_ubicacion(lat, lon):
     if municipios_gdf is None:
@@ -4196,6 +4220,174 @@ def api_mapa_15k_estados():
     except Exception as e:
         print(f'Error en /api/mapa-15k/estados: {e}')
         return jsonify({'error': str(e)}), 500
+
+
+def clasificar_traslape(overlap_pct, area_ratio, same_credit):
+    """Clasifica el traslape según las reglas de negocio.
+
+    Returns: (clasificacion, color, descripcion)
+    """
+    if same_credit:
+        if area_ratio >= 85 and overlap_pct >= 85:
+            return 'duplicado', '#dc3545', 'Duplicado (mismo crédito)'
+        elif overlap_pct >= 10:
+            return 'traslape_interno', '#ffc107', 'Traslape interno - rechazar'
+        else:
+            return 'sin_conflicto', '#28a745', 'Sin conflicto'
+    else:
+        if area_ratio >= 85 and overlap_pct >= 85:
+            return 'duplicado', '#dc3545', 'Duplicado (diferente crédito)'
+        elif 30 <= overlap_pct <= 80:
+            return 'traslape_relevante', '#fd7e14', 'Traslape relevante - revisar'
+        else:
+            return 'sin_conflicto', '#28a745', 'Sin conflicto'
+
+
+@app.route('/api/analizador/total')
+def api_analizador_total():
+    if validacion_gdf is None:
+        return jsonify({'error': 'Shapefiles no cargados'}), 500
+    return jsonify({'total': len(validacion_gdf)})
+
+
+@app.route('/api/analizador/poligono/<int:idx>')
+def api_analizador_poligono(idx):
+    if validacion_gdf is None or mega_gdf is None:
+        return jsonify({'error': 'Shapefiles no cargados'}), 500
+    if idx < 0 or idx >= len(validacion_gdf):
+        return jsonify({'error': f'Índice fuera de rango (0-{len(validacion_gdf)-1})'}), 400
+
+    vrow = validacion_gdf.iloc[idx]
+    vgeom = vrow.geometry
+
+    # Calcular área en hectáreas (proyectar a UTM zona basada en el centroide)
+    import pyproj
+    from shapely.ops import transform
+
+    centroid = vgeom.centroid
+    utm_zone = int((centroid.x + 180) / 6) + 1
+    transformer = pyproj.Transformer.from_crs('EPSG:4326', f'EPSG:326{utm_zone:02d}', always_xy=True)
+    vgeom_utm = transform(transformer.transform, vgeom)
+    area_ha = vgeom_utm.area / 10000
+
+    # Buscar matches en MEGA usando spatial index
+    candidates = list(mega_sindex.intersection(vgeom.bounds))
+    matches = []
+    match_features = []
+
+    for ci in candidates:
+        mrow = mega_gdf.iloc[ci]
+        mgeom = mrow.geometry
+
+        if not vgeom.intersects(mgeom):
+            continue
+
+        intersection = vgeom.intersection(mgeom)
+
+        # Calcular áreas en UTM
+        mgeom_utm = transform(transformer.transform, mgeom)
+        intersection_utm = transform(transformer.transform, intersection)
+
+        area_v = vgeom_utm.area
+        area_m = mgeom_utm.area
+        area_inter = intersection_utm.area
+
+        overlap_pct = (area_inter / area_v * 100) if area_v > 0 else 0
+        area_ratio = (min(area_v, area_m) / max(area_v, area_m) * 100) if max(area_v, area_m) > 0 else 0
+
+        same_credit = str(vrow.get('ID_CREDITO', '')) == str(mrow.get('ID_CREDITO', ''))
+        clasificacion, color, descripcion = clasificar_traslape(overlap_pct, area_ratio, same_credit)
+
+        # Solo incluir matches con overlap > 0.1%
+        if overlap_pct < 0.1:
+            continue
+
+        match_info = {
+            'mega_index': int(ci),
+            'id_poligon': str(mrow.get('ID_POLIGON', '')),
+            'id_credito': str(mrow.get('ID_CREDITO', '')),
+            'area_ha': round(area_m / 10000, 4),
+            'overlap_pct': round(overlap_pct, 1),
+            'area_ratio': round(area_ratio, 1),
+            'same_credit': same_credit,
+            'clasificacion': clasificacion,
+            'color': color,
+            'descripcion': descripcion
+        }
+        matches.append(match_info)
+
+        # GeoJSON feature del match usando shapely.to_geojson
+        import shapely
+        match_feature = {
+            'type': 'Feature',
+            'properties': match_info,
+            'geometry': json.loads(shapely.to_geojson(mgeom))
+        }
+        match_features.append(match_feature)
+
+    # Ordenar matches por overlap descendente
+    matches.sort(key=lambda x: x['overlap_pct'], reverse=True)
+    match_features.sort(key=lambda x: x['properties']['overlap_pct'], reverse=True)
+
+    # GeoJSON del polígono actual usando shapely.to_geojson
+    import shapely
+    poligono_geojson = {
+        'type': 'Feature',
+        'properties': {
+            'ID_POLIGON': str(vrow.get('ID_POLIGON', '')),
+            'ID_CREDITO': str(vrow.get('ID_CREDITO', '')),
+            'NOMBRE_ZIP': str(vrow.get('NOMBRE_ZIP', '')),
+            'area_ha': round(area_ha, 4)
+        },
+        'geometry': json.loads(shapely.to_geojson(vgeom))
+    }
+
+    # Resumen de clasificaciones
+    resumen = {
+        'duplicados': len([m for m in matches if m['clasificacion'] == 'duplicado']),
+        'traslape_interno': len([m for m in matches if m['clasificacion'] == 'traslape_interno']),
+        'traslape_relevante': len([m for m in matches if m['clasificacion'] == 'traslape_relevante']),
+        'sin_conflicto': len([m for m in matches if m['clasificacion'] == 'sin_conflicto']),
+        'total_matches': len(matches)
+    }
+
+    return jsonify({
+        'index': idx,
+        'total': len(validacion_gdf),
+        'poligono': poligono_geojson,
+        'matches': matches,
+        'match_features': {
+            'type': 'FeatureCollection',
+            'features': match_features
+        },
+        'resumen': resumen
+    })
+
+
+@app.route('/api/analizador/buscar')
+def api_analizador_buscar():
+    if validacion_gdf is None:
+        return jsonify({'error': 'Shapefiles no cargados'}), 500
+    q = request.args.get('q', '').strip()
+    if not q:
+        return jsonify({'resultados': []})
+    resultados = []
+    for idx, row in validacion_gdf.iterrows():
+        if (q.lower() in str(row.get('ID_CREDITO', '')).lower() or
+                q.lower() in str(row.get('ID_POLIGON', '')).lower()):
+            resultados.append({
+                'index': int(idx),
+                'id_poligon': str(row.get('ID_POLIGON', '')),
+                'id_credito': str(row.get('ID_CREDITO', ''))
+            })
+        if len(resultados) >= 50:
+            break
+    return jsonify({'resultados': resultados, 'total': len(resultados)})
+
+
+@app.route('/analizador')
+def analizador():
+    return render_template('analizador.html')
 
 
 if __name__ == '__main__':
