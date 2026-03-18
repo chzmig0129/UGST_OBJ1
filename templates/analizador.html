@@ -446,6 +446,88 @@
                         <span><span class="legend-dot" style="background:#6c757d;"></span> Existentes</span>
                     </div>
                 </div>
+
+                <!-- Clasificación de traslapes para Nuevos -->
+                <div id="clasif-section" style="margin-top: 24px;">
+                    <h5 class="mb-3" style="color: #212529; font-weight: 700;">
+                        <i class="bi bi-table me-2 text-success"></i>Clasificación de Traslapes — Polígonos Nuevos
+                    </h5>
+                    <p class="text-muted mb-3" style="font-size: 13px;">Análisis geométrico de cada polígono nuevo contra la Mega Capa histórica.</p>
+                    
+                    <!-- Estado: botón para iniciar -->
+                    <div id="clasif-idle">
+                        <button class="btn btn-success" id="btn-iniciar-clasif">
+                            <i class="bi bi-play-fill me-1"></i>Iniciar Análisis de Clasificación
+                        </button>
+                        <span class="text-muted ms-2" style="font-size: 12px;">Este proceso puede tardar varios minutos.</span>
+                    </div>
+                    
+                    <!-- Estado: en progreso -->
+                    <div id="clasif-running" style="display:none;">
+                        <div class="d-flex align-items-center gap-3 mb-2">
+                            <div class="spinner-border spinner-border-sm text-success" role="status"></div>
+                            <span class="small fw-bold">Analizando polígonos...</span>
+                            <span class="small text-muted" id="clasif-progress-text">0 / 0 (0%)</span>
+                        </div>
+                        <div class="progress" style="height: 10px; max-width: 700px;">
+                            <div class="progress-bar bg-success progress-bar-striped progress-bar-animated" id="clasif-progress-bar" role="progressbar" style="width:0%"></div>
+                        </div>
+                    </div>
+                    
+                    <!-- Estado: completado (tabla) -->
+                    <div id="clasif-done" style="display:none;">
+                        <table class="table table-bordered" style="max-width: 700px;">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width:40px;"></th>
+                                    <th>Clasificación</th>
+                                    <th style="width:100px; text-align:right;">Cantidad</th>
+                                    <th style="width:80px; text-align:right;">%</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:#dc3545;"></span></td>
+                                    <td><strong>Duplicado</strong><br><small class="text-muted">Mismo/diferente crédito, superficie ≥85% y traslape ≥85%</small></td>
+                                    <td style="text-align:right; font-weight:700;" id="clasif-duplicado">—</td>
+                                    <td style="text-align:right;" id="clasif-duplicado-pct">—</td>
+                                </tr>
+                                <tr>
+                                    <td><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:#ffc107;"></span></td>
+                                    <td><strong>Traslape Interno</strong><br><small class="text-muted">Mismo crédito, traslape 10%-85%</small></td>
+                                    <td style="text-align:right; font-weight:700;" id="clasif-traslape-int">—</td>
+                                    <td style="text-align:right;" id="clasif-traslape-int-pct">—</td>
+                                </tr>
+                                <tr>
+                                    <td><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:#fd7e14;"></span></td>
+                                    <td><strong>Traslape Relevante</strong><br><small class="text-muted">Diferente crédito, traslape 30%-80%</small></td>
+                                    <td style="text-align:right; font-weight:700;" id="clasif-traslape-rel">—</td>
+                                    <td style="text-align:right;" id="clasif-traslape-rel-pct">—</td>
+                                </tr>
+                                <tr>
+                                    <td><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:#28a745;"></span></td>
+                                    <td><strong>Sin Conflicto</strong><br><small class="text-muted">Traslape menor, sin riesgo</small></td>
+                                    <td style="text-align:right; font-weight:700;" id="clasif-sin-conf">—</td>
+                                    <td style="text-align:right;" id="clasif-sin-conf-pct">—</td>
+                                </tr>
+                                <tr>
+                                    <td><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:#6c757d;"></span></td>
+                                    <td><strong>Sin Matches</strong><br><small class="text-muted">No se encontró solapamiento geométrico con la mega capa</small></td>
+                                    <td style="text-align:right; font-weight:700;" id="clasif-sin-matches">—</td>
+                                    <td style="text-align:right;" id="clasif-sin-matches-pct">—</td>
+                                </tr>
+                            </tbody>
+                            <tfoot class="table-light">
+                                <tr>
+                                    <td></td>
+                                    <td><strong>Total Nuevos Analizados</strong></td>
+                                    <td style="text-align:right; font-weight:700;" id="clasif-total">—</td>
+                                    <td style="text-align:right; font-weight:700;">100%</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -785,6 +867,82 @@
                 updateNavCounter();
                 cargarPoligono(0);
             });
+    }
+
+    // ── Clasificación de Nuevos ───────────────────────────────────────────────
+    var clasifPollingTimer = null;
+
+    function iniciarClasificacion() {
+        fetch('/api/analizador/clasificacion-nuevos/iniciar', { method: 'POST' })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.status === 'done' && data.result) {
+                    // Already computed — show results directly
+                    mostrarResultadosClasif(data.result, data.processed || data.total);
+                } else {
+                    // Started or already running — show progress and poll
+                    document.getElementById('clasif-idle').style.display = 'none';
+                    document.getElementById('clasif-running').style.display = 'block';
+                    document.getElementById('clasif-done').style.display = 'none';
+                    iniciarPolling();
+                }
+            })
+            .catch(function(err) {
+                console.error('Error iniciando clasificación:', err);
+            });
+    }
+
+    function iniciarPolling() {
+        if (clasifPollingTimer) clearInterval(clasifPollingTimer);
+        clasifPollingTimer = setInterval(function() {
+            fetch('/api/analizador/clasificacion-nuevos/estado')
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    document.getElementById('clasif-progress-text').textContent =
+                        data.processed.toLocaleString('es-MX') + ' / ' + data.total.toLocaleString('es-MX') +
+                        ' (' + data.progress + '%)';
+                    document.getElementById('clasif-progress-bar').style.width = data.progress + '%';
+                    
+                    if (data.status === 'done') {
+                        clearInterval(clasifPollingTimer);
+                        clasifPollingTimer = null;
+                        mostrarResultadosClasif(data.result, data.processed);
+                    } else if (data.status === 'error') {
+                        clearInterval(clasifPollingTimer);
+                        clasifPollingTimer = null;
+                        document.getElementById('clasif-running').style.display = 'none';
+                        document.getElementById('clasif-idle').style.display = 'block';
+                        alert('Error en el análisis: ' + (data.error || 'desconocido'));
+                    }
+                });
+        }, 2000);  // Poll every 2 seconds
+    }
+
+    function mostrarResultadosClasif(result, total) {
+        document.getElementById('clasif-idle').style.display = 'none';
+        document.getElementById('clasif-running').style.display = 'none';
+        document.getElementById('clasif-done').style.display = 'block';
+        
+        var t = total || 0;
+        function pct(n) { return t > 0 ? (n / t * 100).toFixed(1) + '%' : '—'; }
+        
+        var dup = result.duplicado || 0;
+        var ti = result.traslape_interno || 0;
+        var tr = result.traslape_relevante || 0;
+        var sc = result.sin_conflicto || 0;
+        var sm = result.sin_matches || 0;
+        
+        document.getElementById('clasif-duplicado').textContent = dup.toLocaleString('es-MX');
+        document.getElementById('clasif-duplicado-pct').textContent = pct(dup);
+        document.getElementById('clasif-traslape-int').textContent = ti.toLocaleString('es-MX');
+        document.getElementById('clasif-traslape-int-pct').textContent = pct(ti);
+        document.getElementById('clasif-traslape-rel').textContent = tr.toLocaleString('es-MX');
+        document.getElementById('clasif-traslape-rel-pct').textContent = pct(tr);
+        document.getElementById('clasif-sin-conf').textContent = sc.toLocaleString('es-MX');
+        document.getElementById('clasif-sin-conf-pct').textContent = pct(sc);
+        document.getElementById('clasif-sin-matches').textContent = sm.toLocaleString('es-MX');
+        document.getElementById('clasif-sin-matches-pct').textContent = pct(sm);
+        document.getElementById('clasif-total').textContent = t.toLocaleString('es-MX');
     }
 
     // ── Clasificación → color de badge ───────────────────────────────────────
@@ -1220,10 +1378,28 @@
         limpiarFiltro();
     });
 
+    document.getElementById('btn-iniciar-clasif').addEventListener('click', function() {
+        iniciarClasificacion();
+    });
+
     // ── Carga inicial ─────────────────────────────────────────────────────────
     // Only load dashboard on page load. Map + first polygon load lazily when
     // the Analizador tab is first clicked.
     cargarDashboard();
+
+    // Check if classification already done (after cargarDashboard call)
+    fetch('/api/analizador/clasificacion-nuevos/estado')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.status === 'done' && data.result) {
+                mostrarResultadosClasif(data.result, data.processed);
+            } else if (data.status === 'running') {
+                document.getElementById('clasif-idle').style.display = 'none';
+                document.getElementById('clasif-running').style.display = 'block';
+                iniciarPolling();
+            }
+        })
+        .catch(function() { /* ignore */ });
 
 }());
 </script>

@@ -25,6 +25,7 @@ from utils.pdf_generator import (generar_ficha_tecnica_desde_plantilla, verifica
                                 garantizar_pymupdf, import_pymupdf)
 import shutil
 import math
+import threading
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
@@ -83,6 +84,7 @@ except Exception as e:
 # Cache para el dashboard de estatus (se computa una vez al primer request)
 _dashboard_cache = None
 _indices_filtrados_cache = None
+_clasif_nuevos_state = {'status': 'idle', 'progress': 0, 'processed': 0, 'total': 0, 'result': None, 'error': None}
 
 # Función para obtener municipio y estado desde coordenadas
 def obtener_ubicacion(lat, lon):
@@ -4481,6 +4483,116 @@ def api_analizador_indices_filtrados():
         }
     indices = _indices_filtrados_cache[filtro]
     return jsonify({'filtro': filtro, 'indices': indices, 'total': len(indices)})
+
+
+def _run_clasificacion_nuevos():
+    """Background thread: classifies all 'nuevo' polygons by their worst overlap category."""
+    global _clasif_nuevos_state, _indices_filtrados_cache
+    try:
+        # Get or compute the list of 'nuevo' indices
+        if _indices_filtrados_cache is None:
+            mega_ids = set(mega_gdf['ID_POLIGON'].astype(str).str.strip())
+            mask_nuevos = ~validacion_gdf['ID_POLIGON'].astype(str).str.strip().isin(mega_ids)
+            indices_nuevos = [int(i) for i in validacion_gdf.index[mask_nuevos]]
+            indices_existentes = [int(i) for i in validacion_gdf.index[~mask_nuevos]]
+            _indices_filtrados_cache = {
+                'nuevos': indices_nuevos,
+                'existentes': indices_existentes,
+            }
+        indices = _indices_filtrados_cache['nuevos']
+        total = len(indices)
+        _clasif_nuevos_state['total'] = total
+
+        counts = {
+            'duplicado': 0,
+            'traslape_interno': 0,
+            'traslape_relevante': 0,
+            'sin_conflicto': 0,
+            'sin_matches': 0,
+        }
+
+        for i, idx in enumerate(indices):
+            try:
+                data = calcular_traslapes(idx)
+                resumen = data['resumen']
+                if resumen['duplicados'] > 0:
+                    counts['duplicado'] += 1
+                elif resumen['traslape_interno'] > 0:
+                    counts['traslape_interno'] += 1
+                elif resumen['traslape_relevante'] > 0:
+                    counts['traslape_relevante'] += 1
+                elif resumen['sin_conflicto'] > 0:
+                    counts['sin_conflicto'] += 1
+                else:
+                    counts['sin_matches'] += 1
+            except Exception:
+                # Skip individual polygon errors without crashing the batch
+                counts['sin_matches'] += 1
+
+            processed = i + 1
+            _clasif_nuevos_state['processed'] = processed
+            _clasif_nuevos_state['progress'] = int(processed / total * 100) if total > 0 else 100
+
+        _clasif_nuevos_state['result'] = counts
+        _clasif_nuevos_state['status'] = 'done'
+        _clasif_nuevos_state['progress'] = 100
+    except Exception as e:
+        _clasif_nuevos_state['status'] = 'error'
+        _clasif_nuevos_state['error'] = str(e)
+
+
+@app.route('/api/analizador/clasificacion-nuevos/iniciar', methods=['POST'])
+def api_clasificacion_nuevos_iniciar():
+    global _clasif_nuevos_state
+    if validacion_gdf is None or mega_gdf is None:
+        return jsonify({'error': 'Shapefiles no cargados'}), 500
+
+    if _clasif_nuevos_state['status'] == 'running':
+        return jsonify({'error': 'Cálculo en progreso'}), 409
+
+    if _clasif_nuevos_state['status'] == 'done':
+        return jsonify({
+            'status': 'done',
+            'progress': 100,
+            'processed': _clasif_nuevos_state['processed'],
+            'total': _clasif_nuevos_state['total'],
+            'result': _clasif_nuevos_state['result'],
+        }), 200
+
+    # Reset state and start background thread
+    _clasif_nuevos_state['status'] = 'running'
+    _clasif_nuevos_state['progress'] = 0
+    _clasif_nuevos_state['processed'] = 0
+    _clasif_nuevos_state['result'] = None
+    _clasif_nuevos_state['error'] = None
+
+    # Determine total upfront for the response (use cache if available)
+    if _indices_filtrados_cache is not None:
+        total = len(_indices_filtrados_cache['nuevos'])
+    else:
+        mega_ids = set(mega_gdf['ID_POLIGON'].astype(str).str.strip())
+        mask_nuevos = ~validacion_gdf['ID_POLIGON'].astype(str).str.strip().isin(mega_ids)
+        total = int(mask_nuevos.sum())
+    _clasif_nuevos_state['total'] = total
+
+    threading.Thread(target=_run_clasificacion_nuevos, daemon=True).start()
+    return jsonify({'message': 'Cálculo iniciado', 'total': total}), 202
+
+
+@app.route('/api/analizador/clasificacion-nuevos/estado')
+def api_clasificacion_nuevos_estado():
+    state = _clasif_nuevos_state
+    response = {
+        'status': state['status'],
+        'progress': state['progress'],
+        'processed': state['processed'],
+        'total': state['total'],
+    }
+    if state['status'] == 'done':
+        response['result'] = state['result']
+    if state['status'] == 'error':
+        response['error'] = state['error']
+    return jsonify(response)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
