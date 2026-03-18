@@ -231,6 +231,102 @@
         font-size: 13px;
     }
 
+    /* ── Dashboard de Estatus ──────────────────────────────────────────────── */
+    .dashboard-stats {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 8px;
+        margin-bottom: 10px;
+    }
+
+    .stat-card {
+        text-align: center;
+        padding: 10px 6px;
+        border-radius: 8px;
+        border: 1px solid #dee2e6;
+    }
+
+    .stat-card .stat-number {
+        font-size: 22px;
+        font-weight: 800;
+        line-height: 1.1;
+    }
+
+    .stat-card .stat-label {
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        color: #6c757d;
+        margin-top: 2px;
+    }
+
+    .stat-card .stat-pct {
+        font-size: 11px;
+        font-weight: 600;
+        margin-top: 2px;
+    }
+
+    .stat-total {
+        background: #e8f4fd;
+        border-color: #b6d4fe !important;
+    }
+
+    .stat-total .stat-number {
+        color: #0d6efd;
+    }
+
+    .stat-nuevos {
+        background: #d1f5d9;
+        border-color: #a3cfbb !important;
+    }
+
+    .stat-nuevos .stat-number {
+        color: #198754;
+    }
+
+    .stat-nuevos .stat-pct {
+        color: #198754;
+    }
+
+    .stat-existentes {
+        background: #e9ecef;
+        border-color: #ced4da !important;
+    }
+
+    .stat-existentes .stat-number {
+        color: #495057;
+    }
+
+    .stat-existentes .stat-pct {
+        color: #495057;
+    }
+
+    .dashboard-progress {
+        margin-top: 4px;
+    }
+
+    .dashboard-progress .progress {
+        border-radius: 4px;
+    }
+
+    .progress-legend {
+        display: flex;
+        justify-content: center;
+        gap: 16px;
+        margin-top: 6px;
+        font-size: 10px;
+        color: #6c757d;
+    }
+
+    .legend-dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        margin-right: 4px;
+        vertical-align: middle;
+    }
+
     /* ── Tooltip capas de fondo ─────────────────────────────────────────────── */
     .custom-tooltip-15k {
         background: rgba(0,0,0,0.8);
@@ -250,6 +346,45 @@
     <!-- PANEL LATERAL                                                          -->
     <!-- ══════════════════════════════════════════════════════════════════════ -->
     <div id="panel-lateral">
+
+        <!-- ── Sección 0: Dashboard de Estatus ──────────────────────────── -->
+        <div class="panel-section" id="section-dashboard">
+            <div class="panel-section-title"><i class="bi bi-speedometer2 me-1"></i>Dashboard de Estatus</div>
+            
+            <div class="dashboard-stats">
+                <!-- Card: Total 15K -->
+                <div class="stat-card stat-total">
+                    <div class="stat-number" id="dash-total">—</div>
+                    <div class="stat-label">Total 15K</div>
+                </div>
+                
+                <!-- Card: Nuevos -->
+                <div class="stat-card stat-nuevos">
+                    <div class="stat-number" id="dash-nuevos">—</div>
+                    <div class="stat-label">Nuevos</div>
+                    <div class="stat-pct" id="dash-nuevos-pct"></div>
+                </div>
+                
+                <!-- Card: Existentes -->
+                <div class="stat-card stat-existentes">
+                    <div class="stat-number" id="dash-existentes">—</div>
+                    <div class="stat-label">Existentes en MEGA</div>
+                    <div class="stat-pct" id="dash-existentes-pct"></div>
+                </div>
+            </div>
+            
+            <!-- Progress bar -->
+            <div class="dashboard-progress">
+                <div class="progress" style="height: 8px;">
+                    <div class="progress-bar bg-success" id="dash-bar-nuevos" role="progressbar" style="width:0%"></div>
+                    <div class="progress-bar bg-secondary" id="dash-bar-existentes" role="progressbar" style="width:0%"></div>
+                </div>
+                <div class="progress-legend">
+                    <span><span class="legend-dot" style="background:#28a745;"></span> Nuevos</span>
+                    <span><span class="legend-dot" style="background:#6c757d;"></span> Existentes</span>
+                </div>
+            </div>
+        </div>
 
         <!-- ── Sección 1: Búsqueda y Navegación ─────────────────────────── -->
         <div class="panel-section">
@@ -434,6 +569,36 @@
             : '—';
         document.getElementById('nav-counter').textContent =
             'Polígono ' + cur + ' de ' + total;
+    }
+
+    // ── Dashboard de Estatus ──────────────────────────────────────────────────
+    function cargarDashboard() {
+        fetch('/api/analizador/dashboard-estatus')
+            .then(function(r) {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.json();
+            })
+            .then(function(data) {
+                var total = data.total_15k || 0;
+                var nuevos = data.nuevos || 0;
+                var existentes = data.existentes || 0;
+                
+                document.getElementById('dash-total').textContent = total.toLocaleString('es-MX');
+                document.getElementById('dash-nuevos').textContent = nuevos.toLocaleString('es-MX');
+                document.getElementById('dash-existentes').textContent = existentes.toLocaleString('es-MX');
+                
+                var pctNuevos = total > 0 ? (nuevos / total * 100).toFixed(1) : '0.0';
+                var pctExistentes = total > 0 ? (existentes / total * 100).toFixed(1) : '0.0';
+                
+                document.getElementById('dash-nuevos-pct').textContent = pctNuevos + '%';
+                document.getElementById('dash-existentes-pct').textContent = pctExistentes + '%';
+                
+                document.getElementById('dash-bar-nuevos').style.width = pctNuevos + '%';
+                document.getElementById('dash-bar-existentes').style.width = pctExistentes + '%';
+            })
+            .catch(function(err) {
+                console.error('Error cargando dashboard:', err);
+            });
     }
 
     // ── Clasificación → color de badge ───────────────────────────────────────
@@ -837,6 +1002,7 @@
         .then(function (data) {
             totalPoligonos = data.total || 0;
             updateNavCounter();
+            cargarDashboard();
             cargarPoligono(0);
         })
         .catch(function (err) {

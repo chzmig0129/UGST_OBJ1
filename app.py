@@ -80,6 +80,9 @@ except Exception as e:
     mega_gdf = None
     mega_sindex = None
 
+# Cache para el dashboard de estatus (se computa una vez al primer request)
+_dashboard_cache = None
+
 # Función para obtener municipio y estado desde coordenadas
 def obtener_ubicacion(lat, lon):
     if municipios_gdf is None:
@@ -4437,6 +4440,25 @@ def api_analizador_buscar():
         if len(resultados) >= 50:
             break
     return jsonify({'resultados': resultados, 'total': len(resultados)})
+
+
+@app.route('/api/analizador/dashboard-estatus')
+def api_analizador_dashboard_estatus():
+    global _dashboard_cache
+    if validacion_gdf is None or mega_gdf is None:
+        return jsonify({'error': 'Shapefiles no cargados'}), 500
+    if _dashboard_cache is not None:
+        return jsonify(_dashboard_cache)
+    mega_ids = set(mega_gdf['ID_POLIGON'].astype(str).str.strip())
+    total_15k = len(validacion_gdf)
+    nuevos = int((~validacion_gdf['ID_POLIGON'].astype(str).str.strip().isin(mega_ids)).sum())
+    existentes = total_15k - nuevos
+    _dashboard_cache = {
+        'total_15k': total_15k,
+        'nuevos': nuevos,
+        'existentes': existentes,
+    }
+    return jsonify(_dashboard_cache)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
