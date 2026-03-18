@@ -5,7 +5,7 @@
     /* ── Layout ─────────────────────────────────────────────────────────────── */
     #analizador-container {
         display: flex;
-        height: calc(100vh - 60px);
+        height: 100%;
         overflow: hidden;
     }
 
@@ -336,183 +336,238 @@
         font-size: 11px;
         border: none;
     }
+
+    /* ── Tabs del Analizador ───────────────────────────────────────────────── */
+    #analizador-tabs .nav-link {
+        font-size: 13px;
+        font-weight: 600;
+        color: #495057;
+        border: none;
+        padding: 10px 20px;
+    }
+
+    #analizador-tabs .nav-link.active {
+        color: #0d6efd;
+        border-bottom: 2px solid #0d6efd;
+        background: transparent;
+    }
+
+    #analizador-tabs .nav-link:hover:not(.active) {
+        color: #0d6efd;
+        border-bottom: 2px solid transparent;
+    }
 </style>
 {% endblock %}
 
 {% block content %}
-<div id="analizador-container">
+<div id="analizador-wrapper" style="height: calc(100vh - 60px); display: flex; flex-direction: column; overflow: hidden;">
 
-    <!-- ══════════════════════════════════════════════════════════════════════ -->
-    <!-- PANEL LATERAL                                                          -->
-    <!-- ══════════════════════════════════════════════════════════════════════ -->
-    <div id="panel-lateral">
+    <!-- Tab navigation -->
+    <ul class="nav nav-tabs px-3 pt-2" id="analizador-tabs" role="tablist" style="flex-shrink: 0; background: #f8f9fa; border-bottom: 2px solid #dee2e6;">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="tab-dashboard" data-bs-toggle="tab" data-bs-target="#pane-dashboard" type="button" role="tab" aria-controls="pane-dashboard" aria-selected="true">
+                <i class="bi bi-speedometer2 me-1"></i>Dashboard
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tab-analizador" data-bs-toggle="tab" data-bs-target="#pane-analizador" type="button" role="tab" aria-controls="pane-analizador" aria-selected="false">
+                <i class="bi bi-map me-1"></i>Analizador
+            </button>
+        </li>
+    </ul>
 
-        <!-- ── Sección 0: Dashboard de Estatus ──────────────────────────── -->
-        <div class="panel-section" id="section-dashboard">
-            <div class="panel-section-title"><i class="bi bi-speedometer2 me-1"></i>Dashboard de Estatus</div>
-            
-            <div class="dashboard-stats">
-                <!-- Card: Total 15K -->
-                <div class="stat-card stat-total">
-                    <div class="stat-number" id="dash-total">—</div>
-                    <div class="stat-label">Total 15K</div>
+    <!-- Tab content -->
+    <div class="tab-content" id="analizador-tab-content" style="flex: 1; overflow: hidden;">
+
+        <!-- ══════════════════════════════════════════════════════════════════ -->
+        <!-- PANE 1: Dashboard                                                  -->
+        <!-- ══════════════════════════════════════════════════════════════════ -->
+        <div class="tab-pane fade show active" id="pane-dashboard" role="tabpanel" aria-labelledby="tab-dashboard" style="height: 100%; overflow-y: auto; padding: 20px;">
+            <div style="max-width: 900px; margin: 0 auto;">
+                <h4 class="mb-3" style="color: #212529; font-weight: 700;">
+                    <i class="bi bi-speedometer2 me-2 text-primary"></i>Dashboard de Estatus
+                </h4>
+                <p class="text-muted mb-4">Resumen de polígonos del archivo de validación 15K comparados contra la Mega Capa histórica por ID Polígono.</p>
+
+                <div class="dashboard-stats" style="grid-template-columns: repeat(3, 1fr); max-width: 700px;">
+                    <!-- Card: Total 15K -->
+                    <div class="stat-card stat-total" style="padding: 20px 12px;">
+                        <div class="stat-number" id="dash-total" style="font-size: 32px;">—</div>
+                        <div class="stat-label" style="font-size: 12px;">Total 15K</div>
+                    </div>
+
+                    <!-- Card: Nuevos -->
+                    <div class="stat-card stat-nuevos" style="padding: 20px 12px;">
+                        <div class="stat-number" id="dash-nuevos" style="font-size: 32px;">—</div>
+                        <div class="stat-label" style="font-size: 12px;">Nuevos</div>
+                        <div class="stat-pct" id="dash-nuevos-pct" style="font-size: 14px;"></div>
+                    </div>
+
+                    <!-- Card: Existentes -->
+                    <div class="stat-card stat-existentes" style="padding: 20px 12px;">
+                        <div class="stat-number" id="dash-existentes" style="font-size: 32px;">—</div>
+                        <div class="stat-label" style="font-size: 12px;">Existentes en MEGA</div>
+                        <div class="stat-pct" id="dash-existentes-pct" style="font-size: 14px;"></div>
+                    </div>
                 </div>
-                
-                <!-- Card: Nuevos -->
-                <div class="stat-card stat-nuevos">
-                    <div class="stat-number" id="dash-nuevos">—</div>
-                    <div class="stat-label">Nuevos</div>
-                    <div class="stat-pct" id="dash-nuevos-pct"></div>
-                </div>
-                
-                <!-- Card: Existentes -->
-                <div class="stat-card stat-existentes">
-                    <div class="stat-number" id="dash-existentes">—</div>
-                    <div class="stat-label">Existentes en MEGA</div>
-                    <div class="stat-pct" id="dash-existentes-pct"></div>
-                </div>
-            </div>
-            
-            <!-- Progress bar -->
-            <div class="dashboard-progress">
-                <div class="progress" style="height: 8px;">
-                    <div class="progress-bar bg-success" id="dash-bar-nuevos" role="progressbar" style="width:0%"></div>
-                    <div class="progress-bar bg-secondary" id="dash-bar-existentes" role="progressbar" style="width:0%"></div>
-                </div>
-                <div class="progress-legend">
-                    <span><span class="legend-dot" style="background:#28a745;"></span> Nuevos</span>
-                    <span><span class="legend-dot" style="background:#6c757d;"></span> Existentes</span>
+
+                <!-- Progress bar (wider) -->
+                <div class="dashboard-progress" style="max-width: 700px; margin-top: 16px;">
+                    <div class="progress" style="height: 12px;">
+                        <div class="progress-bar bg-success" id="dash-bar-nuevos" role="progressbar" style="width:0%"></div>
+                        <div class="progress-bar bg-secondary" id="dash-bar-existentes" role="progressbar" style="width:0%"></div>
+                    </div>
+                    <div class="progress-legend" style="font-size: 12px; margin-top: 8px;">
+                        <span><span class="legend-dot" style="background:#28a745;"></span> Nuevos</span>
+                        <span><span class="legend-dot" style="background:#6c757d;"></span> Existentes</span>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- ── Sección 1: Búsqueda y Navegación ─────────────────────────── -->
-        <div class="panel-section">
-            <div class="panel-section-title"><i class="bi bi-search me-1"></i>Búsqueda y Navegación</div>
+        <!-- ══════════════════════════════════════════════════════════════════ -->
+        <!-- PANE 2: Analizador (map)                                           -->
+        <!-- ══════════════════════════════════════════════════════════════════ -->
+        <div class="tab-pane fade" id="pane-analizador" role="tabpanel" aria-labelledby="tab-analizador" style="height: 100%; overflow: hidden;">
+            <div id="analizador-container">
 
-            <!-- Barra de búsqueda -->
-            <div id="search-wrapper" class="mb-2">
-                <div class="input-group input-group-sm">
-                    <input type="text" id="search-input" class="form-control"
-                           placeholder="Buscar por ID crédito o polígono...">
-                    <button class="btn btn-primary" id="btn-buscar" type="button">
-                        <i class="bi bi-search"></i>
-                    </button>
+                <!-- ══════════════════════════════════════════════════════════ -->
+                <!-- PANEL LATERAL                                               -->
+                <!-- ══════════════════════════════════════════════════════════ -->
+                <div id="panel-lateral">
+
+                    <!-- ── Sección 1: Búsqueda y Navegación ─────────────────── -->
+                    <div class="panel-section">
+                        <div class="panel-section-title"><i class="bi bi-search me-1"></i>Búsqueda y Navegación</div>
+
+                        <!-- Barra de búsqueda -->
+                        <div id="search-wrapper" class="mb-2">
+                            <div class="input-group input-group-sm">
+                                <input type="text" id="search-input" class="form-control"
+                                       placeholder="Buscar por ID crédito o polígono...">
+                                <button class="btn btn-primary" id="btn-buscar" type="button">
+                                    <i class="bi bi-search"></i>
+                                </button>
+                            </div>
+                            <div id="search-dropdown"></div>
+                        </div>
+
+                        <!-- Navegador ← → -->
+                        <div class="d-flex align-items-center gap-2 mb-2">
+                            <button class="btn btn-sm btn-outline-secondary" id="btn-prev" title="Anterior (←)">
+                                <i class="bi bi-chevron-left"></i>
+                            </button>
+                            <div id="nav-counter">— de —</div>
+                            <button class="btn btn-sm btn-outline-secondary" id="btn-next" title="Siguiente (→)">
+                                <i class="bi bi-chevron-right"></i>
+                            </button>
+                        </div>
+
+                        <!-- Ir a índice -->
+                        <div class="d-flex align-items-center gap-2">
+                            <label class="form-label mb-0 small text-muted" style="white-space:nowrap;">Ir a #</label>
+                            <input type="number" id="goto-input" class="form-control form-control-sm"
+                                   min="0" placeholder="0">
+                            <button class="btn btn-sm btn-outline-primary" id="btn-goto">Ir</button>
+                        </div>
+                    </div>
+
+                    <!-- ── Spinner ───────────────────────────────────────────── -->
+                    <div id="panel-spinner">
+                        <div class="spinner-border text-primary" role="status" style="width:2rem;height:2rem;">
+                            <span class="visually-hidden">Cargando...</span>
+                        </div>
+                        <div class="small text-muted">Analizando polígono...</div>
+                    </div>
+
+                    <!-- ── Sección 2: Info del polígono actual ───────────────── -->
+                    <div class="panel-section" id="section-info">
+                        <div class="panel-section-title"><i class="bi bi-geo-alt me-1"></i>Polígono Actual</div>
+
+                        <div class="info-label">ID Polígono</div>
+                        <div class="info-value" id="info-id-poligon">—</div>
+
+                        <div class="info-label">ID Crédito</div>
+                        <div class="info-value" id="info-id-credito">—</div>
+
+                        <div class="info-label">Archivo (ZIP)</div>
+                        <div class="info-value" id="info-nombre-zip">—</div>
+
+                        <div class="info-label">Área</div>
+                        <div class="info-value" id="info-area">—</div>
+                    </div>
+
+                    <!-- ── Sección 3: Resumen de análisis ───────────────────── -->
+                    <div class="panel-section" id="section-resumen">
+                        <div class="panel-section-title"><i class="bi bi-bar-chart me-1"></i>Resumen de Análisis</div>
+
+                        <div class="resumen-badges mb-2">
+                            <span class="resumen-badge badge-duplicados">
+                                🔴 Duplicados: <span id="res-duplicados">0</span>
+                            </span>
+                            <span class="resumen-badge badge-traslape-int">
+                                🟡 Traslape interno: <span id="res-traslape-int">0</span>
+                            </span>
+                            <span class="resumen-badge badge-traslape-rel">
+                                🟠 Traslape relevante: <span id="res-traslape-rel">0</span>
+                            </span>
+                            <span class="resumen-badge badge-sin-conf">
+                                🟢 Sin conflicto: <span id="res-sin-conf">0</span>
+                            </span>
+                        </div>
+
+                        <div class="small text-muted">
+                            Total matches: <strong id="res-total">0</strong>
+                        </div>
+                    </div>
+
+                    <!-- ── Sección 4: Lista de matches ──────────────────────── -->
+                    <div class="panel-section" id="section-matches">
+                        <div class="panel-section-title"><i class="bi bi-list-ul me-1"></i>Matches Encontrados</div>
+                        <div id="matches-list">
+                            <div class="empty-state">Cargando primer polígono...</div>
+                        </div>
+                    </div>
+
+                </div><!-- /#panel-lateral -->
+
+                <!-- ══════════════════════════════════════════════════════════ -->
+                <!-- MAPA                                                        -->
+                <!-- ══════════════════════════════════════════════════════════ -->
+                <div id="map-container">
+                    <div id="map"></div>
+
+                    <!-- ── Panel de toggles de capas de fondo ──────────────── -->
+                    <div id="capas-toggle-panel" style="position:absolute; bottom:20px; right:20px; z-index:1000; background:white; border-radius:8px; padding:12px 16px; box-shadow:0 2px 8px rgba(0,0,0,0.2); min-width:220px;">
+                        <div style="font-weight:bold; font-size:13px; margin-bottom:8px; border-bottom:1px solid #dee2e6; padding-bottom:6px;">
+                            <i class="bi bi-layers"></i> Capas de fondo
+                        </div>
+                        <div class="form-check form-switch mb-2">
+                            <input class="form-check-input" type="checkbox" id="toggle-validacion-bg">
+                            <label class="form-check-label" for="toggle-validacion-bg" style="font-size:12px;">
+                                <span style="display:inline-block;width:12px;height:12px;background:#4CE600;border:1px solid #00734C;border-radius:2px;margin-right:4px;"></span>
+                                Validación 15K
+                            </label>
+                        </div>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="toggle-historico-bg">
+                            <label class="form-check-label" for="toggle-historico-bg" style="font-size:12px;">
+                                <span style="display:inline-block;width:12px;height:12px;background:#ff8c00;border:1px solid #cc7000;border-radius:2px;margin-right:4px;"></span>
+                                Histórico MEGA
+                            </label>
+                        </div>
+                        <div id="capas-loading" style="display:none; font-size:11px; color:#6c757d; margin-top:6px;">
+                            <div class="spinner-border spinner-border-sm" role="status"></div> Cargando capa...
+                        </div>
+                    </div>
                 </div>
-                <div id="search-dropdown"></div>
-            </div>
 
-            <!-- Navegador ← → -->
-            <div class="d-flex align-items-center gap-2 mb-2">
-                <button class="btn btn-sm btn-outline-secondary" id="btn-prev" title="Anterior (←)">
-                    <i class="bi bi-chevron-left"></i>
-                </button>
-                <div id="nav-counter">— de —</div>
-                <button class="btn btn-sm btn-outline-secondary" id="btn-next" title="Siguiente (→)">
-                    <i class="bi bi-chevron-right"></i>
-                </button>
-            </div>
+            </div><!-- /#analizador-container -->
+        </div><!-- /#pane-analizador -->
 
-            <!-- Ir a índice -->
-            <div class="d-flex align-items-center gap-2">
-                <label class="form-label mb-0 small text-muted" style="white-space:nowrap;">Ir a #</label>
-                <input type="number" id="goto-input" class="form-control form-control-sm"
-                       min="0" placeholder="0">
-                <button class="btn btn-sm btn-outline-primary" id="btn-goto">Ir</button>
-            </div>
-        </div>
+    </div><!-- /.tab-content -->
 
-        <!-- ── Spinner ───────────────────────────────────────────────────── -->
-        <div id="panel-spinner">
-            <div class="spinner-border text-primary" role="status" style="width:2rem;height:2rem;">
-                <span class="visually-hidden">Cargando...</span>
-            </div>
-            <div class="small text-muted">Analizando polígono...</div>
-        </div>
-
-        <!-- ── Sección 2: Info del polígono actual ───────────────────────── -->
-        <div class="panel-section" id="section-info">
-            <div class="panel-section-title"><i class="bi bi-geo-alt me-1"></i>Polígono Actual</div>
-
-            <div class="info-label">ID Polígono</div>
-            <div class="info-value" id="info-id-poligon">—</div>
-
-            <div class="info-label">ID Crédito</div>
-            <div class="info-value" id="info-id-credito">—</div>
-
-            <div class="info-label">Archivo (ZIP)</div>
-            <div class="info-value" id="info-nombre-zip">—</div>
-
-            <div class="info-label">Área</div>
-            <div class="info-value" id="info-area">—</div>
-        </div>
-
-        <!-- ── Sección 3: Resumen de análisis ───────────────────────────── -->
-        <div class="panel-section" id="section-resumen">
-            <div class="panel-section-title"><i class="bi bi-bar-chart me-1"></i>Resumen de Análisis</div>
-
-            <div class="resumen-badges mb-2">
-                <span class="resumen-badge badge-duplicados">
-                    🔴 Duplicados: <span id="res-duplicados">0</span>
-                </span>
-                <span class="resumen-badge badge-traslape-int">
-                    🟡 Traslape interno: <span id="res-traslape-int">0</span>
-                </span>
-                <span class="resumen-badge badge-traslape-rel">
-                    🟠 Traslape relevante: <span id="res-traslape-rel">0</span>
-                </span>
-                <span class="resumen-badge badge-sin-conf">
-                    🟢 Sin conflicto: <span id="res-sin-conf">0</span>
-                </span>
-            </div>
-
-            <div class="small text-muted">
-                Total matches: <strong id="res-total">0</strong>
-            </div>
-        </div>
-
-        <!-- ── Sección 4: Lista de matches ──────────────────────────────── -->
-        <div class="panel-section" id="section-matches">
-            <div class="panel-section-title"><i class="bi bi-list-ul me-1"></i>Matches Encontrados</div>
-            <div id="matches-list">
-                <div class="empty-state">Cargando primer polígono...</div>
-            </div>
-        </div>
-
-    </div><!-- /#panel-lateral -->
-
-    <!-- ══════════════════════════════════════════════════════════════════════ -->
-    <!-- MAPA                                                                   -->
-    <!-- ══════════════════════════════════════════════════════════════════════ -->
-    <div id="map-container">
-        <div id="map"></div>
-
-        <!-- ── Panel de toggles de capas de fondo ──────────────────────────── -->
-        <div id="capas-toggle-panel" style="position:absolute; bottom:20px; right:20px; z-index:1000; background:white; border-radius:8px; padding:12px 16px; box-shadow:0 2px 8px rgba(0,0,0,0.2); min-width:220px;">
-            <div style="font-weight:bold; font-size:13px; margin-bottom:8px; border-bottom:1px solid #dee2e6; padding-bottom:6px;">
-                <i class="bi bi-layers"></i> Capas de fondo
-            </div>
-            <div class="form-check form-switch mb-2">
-                <input class="form-check-input" type="checkbox" id="toggle-validacion-bg">
-                <label class="form-check-label" for="toggle-validacion-bg" style="font-size:12px;">
-                    <span style="display:inline-block;width:12px;height:12px;background:#4CE600;border:1px solid #00734C;border-radius:2px;margin-right:4px;"></span>
-                    Validación 15K
-                </label>
-            </div>
-            <div class="form-check form-switch">
-                <input class="form-check-input" type="checkbox" id="toggle-historico-bg">
-                <label class="form-check-label" for="toggle-historico-bg" style="font-size:12px;">
-                    <span style="display:inline-block;width:12px;height:12px;background:#ff8c00;border:1px solid #cc7000;border-radius:2px;margin-right:4px;"></span>
-                    Histórico MEGA
-                </label>
-            </div>
-            <div id="capas-loading" style="display:none; font-size:11px; color:#6c757d; margin-top:6px;">
-                <div class="spinner-border spinner-border-sm" role="status"></div> Cargando capa...
-            </div>
-        </div>
-    </div>
-
-</div><!-- /#analizador-container -->
+</div><!-- /#analizador-wrapper -->
 
 <script>
 (function () {
@@ -523,6 +578,7 @@
     var totalPoligonos  = 0;
     var map, poligonoLayer, matchesLayer;
     var matchLayerMap   = [];   // array of {layer, originalStyle} for click-zoom
+    var mapInitialized  = false;
 
     // ── Variables para capas de fondo ─────────────────────────────────────────
     let validacionBgLayer  = null;
@@ -530,18 +586,39 @@
     let validacionBgLoaded = false;
     let historicoBgLoaded  = false;
 
-    // ── Inicializar mapa ──────────────────────────────────────────────────────
-    map = L.map('map', {
-        center: [24.0, -102.0],
-        zoom: 6,
-        preferCanvas: true   // CRITICAL for performance
-    });
+    // ── Inicializar mapa (lazy) ───────────────────────────────────────────────
+    function initMap() {
+        if (mapInitialized) return;
+        map = L.map('map', {
+            center: [24.0, -102.0],
+            zoom: 6,
+            preferCanvas: true   // CRITICAL for performance
+        });
 
-    // Capa base: Esri World Imagery
-    L.tileLayer(
-        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-        { attribution: 'Tiles &copy; Esri', maxZoom: 18 }
-    ).addTo(map);
+        // Capa base: Esri World Imagery
+        L.tileLayer(
+            'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+            { attribution: 'Tiles &copy; Esri', maxZoom: 18 }
+        ).addTo(map);
+
+        mapInitialized = true;
+    }
+
+    // ── Escuchar evento de tab Analizador ─────────────────────────────────────
+    document.getElementById('tab-analizador').addEventListener('shown.bs.tab', function() {
+        initMap();
+        map.invalidateSize();
+        if (!totalPoligonos) {
+            // Load total and first polygon if not yet loaded
+            fetch('/api/analizador/total')
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    totalPoligonos = data.total || 0;
+                    updateNavCounter();
+                    cargarPoligono(0);
+                });
+        }
+    });
 
     // ── Helpers ───────────────────────────────────────────────────────────────
     function safeVal(v) {
@@ -997,18 +1074,9 @@
     });
 
     // ── Carga inicial ─────────────────────────────────────────────────────────
-    fetch('/api/analizador/total')
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-            totalPoligonos = data.total || 0;
-            updateNavCounter();
-            cargarDashboard();
-            cargarPoligono(0);
-        })
-        .catch(function (err) {
-            console.error('Error obteniendo total:', err);
-            document.getElementById('nav-counter').textContent = 'Error al cargar';
-        });
+    // Only load dashboard on page load. Map + first polygon load lazily when
+    // the Analizador tab is first clicked.
+    cargarDashboard();
 
 }());
 </script>
