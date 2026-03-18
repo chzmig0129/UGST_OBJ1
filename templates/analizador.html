@@ -356,6 +356,28 @@
         color: #0d6efd;
         border-bottom: 2px solid transparent;
     }
+
+    /* ── Stat cards clickeables ────────────────────────────────────────────── */
+    .stat-card-clickable {
+        cursor: pointer;
+        transition: transform 0.15s, box-shadow 0.15s;
+    }
+
+    .stat-card-clickable:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+
+    .stat-action {
+        font-size: 10px;
+        color: #6c757d;
+        margin-top: 6px;
+        font-weight: 600;
+    }
+
+    .stat-card-clickable:hover .stat-action {
+        color: #0d6efd;
+    }
 </style>
 {% endblock %}
 
@@ -397,17 +419,19 @@
                     </div>
 
                     <!-- Card: Nuevos -->
-                    <div class="stat-card stat-nuevos" style="padding: 20px 12px;">
+                    <div class="stat-card stat-nuevos stat-card-clickable" id="card-nuevos" style="padding: 20px 12px;">
                         <div class="stat-number" id="dash-nuevos" style="font-size: 32px;">—</div>
                         <div class="stat-label" style="font-size: 12px;">Nuevos</div>
                         <div class="stat-pct" id="dash-nuevos-pct" style="font-size: 14px;"></div>
+                        <div class="stat-action"><i class="bi bi-funnel me-1"></i>Analizar nuevos</div>
                     </div>
 
                     <!-- Card: Existentes -->
-                    <div class="stat-card stat-existentes" style="padding: 20px 12px;">
+                    <div class="stat-card stat-existentes stat-card-clickable" id="card-existentes" style="padding: 20px 12px;">
                         <div class="stat-number" id="dash-existentes" style="font-size: 32px;">—</div>
                         <div class="stat-label" style="font-size: 12px;">Existentes en MEGA</div>
                         <div class="stat-pct" id="dash-existentes-pct" style="font-size: 14px;"></div>
+                        <div class="stat-action"><i class="bi bi-funnel me-1"></i>Analizar existentes</div>
                     </div>
                 </div>
 
@@ -435,6 +459,20 @@
                 <!-- PANEL LATERAL                                               -->
                 <!-- ══════════════════════════════════════════════════════════ -->
                 <div id="panel-lateral">
+
+                    <!-- ── Filtro activo ─────────────────────────────────────── -->
+                    <div id="filtro-activo" class="panel-section" style="display:none; background:#e8f4fd; border-color:#b6d4fe;">
+                        <div class="d-flex align-items-center justify-content-between">
+                            <div>
+                                <i class="bi bi-funnel-fill text-primary me-1"></i>
+                                <strong class="small" id="filtro-label">Filtrando: Nuevos</strong>
+                                <span class="badge bg-primary ms-1" id="filtro-count">0</span>
+                            </div>
+                            <button class="btn btn-sm btn-outline-secondary" id="btn-limpiar-filtro" title="Quitar filtro">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </div>
+                    </div>
 
                     <!-- ── Sección 1: Búsqueda y Navegación ─────────────────── -->
                     <div class="panel-section">
@@ -580,6 +618,10 @@
     var matchLayerMap   = [];   // array of {layer, originalStyle} for click-zoom
     var mapInitialized  = false;
 
+    var filteredIndices = null;  // null = no filter (show all), array = filtered indices
+    var filteredPos     = 0;     // current position within filteredIndices
+    var activeFilter    = null;  // 'nuevos' | 'existentes' | null
+
     // ── Variables para capas de fondo ─────────────────────────────────────────
     let validacionBgLayer  = null;
     let historicoBgLayer   = null;
@@ -608,8 +650,16 @@
     document.getElementById('tab-analizador').addEventListener('shown.bs.tab', function() {
         initMap();
         map.invalidateSize();
-        if (!totalPoligonos) {
-            // Load total and first polygon if not yet loaded
+        if (filteredIndices !== null) {
+            // Filtered mode: load the first filtered polygon
+            if (filteredIndices.length > 0) {
+                filteredPos = 0;
+                currentIndex = filteredIndices[0];
+                updateNavCounter();
+                cargarPoligono(currentIndex);
+            }
+        } else if (!totalPoligonos) {
+            // Normal mode: first time opening tab
             fetch('/api/analizador/total')
                 .then(function(r) { return r.json(); })
                 .then(function(data) {
@@ -638,14 +688,21 @@
     }
 
     function updateNavCounter() {
-        var total = totalPoligonos > 0
-            ? totalPoligonos.toLocaleString('es-MX')
-            : '—';
-        var cur = totalPoligonos > 0
-            ? (currentIndex + 1).toLocaleString('es-MX')
-            : '—';
-        document.getElementById('nav-counter').textContent =
-            'Polígono ' + cur + ' de ' + total;
+        if (filteredIndices !== null) {
+            var total = filteredIndices.length;
+            var cur = total > 0 ? (filteredPos + 1) : 0;
+            document.getElementById('nav-counter').textContent =
+                'Polígono ' + cur.toLocaleString('es-MX') + ' de ' + total.toLocaleString('es-MX');
+        } else {
+            var total = totalPoligonos > 0
+                ? totalPoligonos.toLocaleString('es-MX')
+                : '—';
+            var cur = totalPoligonos > 0
+                ? (currentIndex + 1).toLocaleString('es-MX')
+                : '—';
+            document.getElementById('nav-counter').textContent =
+                'Polígono ' + cur + ' de ' + total;
+        }
     }
 
     // ── Dashboard de Estatus ──────────────────────────────────────────────────
@@ -675,6 +732,58 @@
             })
             .catch(function(err) {
                 console.error('Error cargando dashboard:', err);
+            });
+    }
+
+    // ── Filtros desde Dashboard ───────────────────────────────────────────────
+    function aplicarFiltro(tipo) {
+        // Fetch filtered indices from API
+        fetch('/api/analizador/indices-filtrados?filtro=' + tipo)
+            .then(function(r) {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.json();
+            })
+            .then(function(data) {
+                filteredIndices = data.indices;
+                filteredPos = 0;
+                activeFilter = tipo;
+                totalPoligonos = data.total;
+
+                // Update filter badge
+                var label = tipo === 'nuevos' ? 'Nuevos' : 'Existentes en MEGA';
+                document.getElementById('filtro-label').textContent = 'Filtrando: ' + label;
+                document.getElementById('filtro-count').textContent = data.total;
+                document.getElementById('filtro-activo').style.display = 'block';
+
+                // Switch to Analizador tab
+                var tabEl = document.getElementById('tab-analizador');
+                var tab = new bootstrap.Tab(tabEl);
+                tab.show();
+
+                // After tab is shown, init map and load first filtered polygon
+                // The shown.bs.tab handler will call initMap + invalidateSize
+                // But we need to load the first filtered polygon, not index 0
+                // So we set a flag to prevent the default load in shown.bs.tab
+            })
+            .catch(function(err) {
+                console.error('Error cargando filtro:', err);
+            });
+    }
+
+    function limpiarFiltro() {
+        filteredIndices = null;
+        filteredPos = 0;
+        activeFilter = null;
+        document.getElementById('filtro-activo').style.display = 'none';
+
+        // Restore total count
+        fetch('/api/analizador/total')
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                totalPoligonos = data.total || 0;
+                currentIndex = 0;
+                updateNavCounter();
+                cargarPoligono(0);
             });
     }
 
@@ -894,23 +1003,48 @@
 
     // ── Navegación ← → ───────────────────────────────────────────────────────
     document.getElementById('btn-prev').addEventListener('click', function () {
-        if (currentIndex > 0) {
-            cargarPoligono(--currentIndex);
+        if (filteredIndices !== null) {
+            if (filteredPos > 0) {
+                filteredPos--;
+                currentIndex = filteredIndices[filteredPos];
+                cargarPoligono(currentIndex);
+            }
+        } else {
+            if (currentIndex > 0) {
+                cargarPoligono(--currentIndex);
+            }
         }
     });
 
     document.getElementById('btn-next').addEventListener('click', function () {
-        if (currentIndex < totalPoligonos - 1) {
-            cargarPoligono(++currentIndex);
+        if (filteredIndices !== null) {
+            if (filteredPos < filteredIndices.length - 1) {
+                filteredPos++;
+                currentIndex = filteredIndices[filteredPos];
+                cargarPoligono(currentIndex);
+            }
+        } else {
+            if (currentIndex < totalPoligonos - 1) {
+                cargarPoligono(++currentIndex);
+            }
         }
     });
 
     // ── Ir a índice ───────────────────────────────────────────────────────────
     document.getElementById('btn-goto').addEventListener('click', function () {
         var val = parseInt(document.getElementById('goto-input').value, 10);
-        if (!isNaN(val) && val >= 0 && val < totalPoligonos) {
-            currentIndex = val;
-            cargarPoligono(currentIndex);
+        if (filteredIndices !== null) {
+            // In filtered mode, 'goto' means position within filtered list (0-based)
+            if (!isNaN(val) && val >= 0 && val < filteredIndices.length) {
+                filteredPos = val;
+                currentIndex = filteredIndices[filteredPos];
+                cargarPoligono(currentIndex);
+            }
+        } else {
+            if (!isNaN(val) && val >= 0 && val < totalPoligonos) {
+                currentIndex = val;
+                cargarPoligono(currentIndex);
+            }
         }
     });
 
@@ -1071,6 +1205,19 @@
         } else {
             if (historicoBgLayer) map.removeLayer(historicoBgLayer);
         }
+    });
+
+    // ── Click handlers para tarjetas del Dashboard ───────────────────────────
+    document.getElementById('card-nuevos').addEventListener('click', function() {
+        aplicarFiltro('nuevos');
+    });
+
+    document.getElementById('card-existentes').addEventListener('click', function() {
+        aplicarFiltro('existentes');
+    });
+
+    document.getElementById('btn-limpiar-filtro').addEventListener('click', function() {
+        limpiarFiltro();
     });
 
     // ── Carga inicial ─────────────────────────────────────────────────────────

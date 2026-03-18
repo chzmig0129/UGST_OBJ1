@@ -82,6 +82,7 @@ except Exception as e:
 
 # Cache para el dashboard de estatus (se computa una vez al primer request)
 _dashboard_cache = None
+_indices_filtrados_cache = None
 
 # Función para obtener municipio y estado desde coordenadas
 def obtener_ubicacion(lat, lon):
@@ -4459,6 +4460,27 @@ def api_analizador_dashboard_estatus():
         'existentes': existentes,
     }
     return jsonify(_dashboard_cache)
+
+
+@app.route('/api/analizador/indices-filtrados')
+def api_analizador_indices_filtrados():
+    global _indices_filtrados_cache
+    if validacion_gdf is None or mega_gdf is None:
+        return jsonify({'error': 'Shapefiles no cargados'}), 500
+    filtro = request.args.get('filtro')
+    if filtro not in ('nuevos', 'existentes'):
+        return jsonify({'error': 'Parámetro filtro inválido. Use nuevos o existentes'}), 400
+    if _indices_filtrados_cache is None:
+        mega_ids = set(mega_gdf['ID_POLIGON'].astype(str).str.strip())
+        mask_nuevos = ~validacion_gdf['ID_POLIGON'].astype(str).str.strip().isin(mega_ids)
+        indices_nuevos = [int(i) for i in validacion_gdf.index[mask_nuevos]]
+        indices_existentes = [int(i) for i in validacion_gdf.index[~mask_nuevos]]
+        _indices_filtrados_cache = {
+            'nuevos': indices_nuevos,
+            'existentes': indices_existentes,
+        }
+    indices = _indices_filtrados_cache[filtro]
+    return jsonify({'filtro': filtro, 'indices': indices, 'total': len(indices)})
 
 
 # ─────────────────────────────────────────────────────────────────────────────
