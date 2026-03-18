@@ -84,7 +84,7 @@ except Exception as e:
 # Cache para el dashboard de estatus (se computa una vez al primer request)
 _dashboard_cache = None
 _indices_filtrados_cache = None
-_clasif_nuevos_state = {'status': 'idle', 'progress': 0, 'processed': 0, 'total': 0, 'result': None, 'error': None}
+_clasif_nuevos_state = {'status': 'idle', 'progress': 0, 'processed': 0, 'total': 0, 'result': None, 'indices_por_clasif': None, 'error': None}
 
 # Función para obtener municipio y estado desde coordenadas
 def obtener_ubicacion(lat, lon):
@@ -4510,6 +4510,13 @@ def _run_clasificacion_nuevos():
             'sin_conflicto': 0,
             'sin_matches': 0,
         }
+        indices_por_clasif = {
+            'duplicado': [],
+            'traslape_interno': [],
+            'traslape_relevante': [],
+            'sin_conflicto': [],
+            'sin_matches': [],
+        }
 
         for i, idx in enumerate(indices):
             try:
@@ -4517,23 +4524,30 @@ def _run_clasificacion_nuevos():
                 resumen = data['resumen']
                 if resumen['duplicados'] > 0:
                     counts['duplicado'] += 1
+                    indices_por_clasif['duplicado'].append(idx)
                 elif resumen['traslape_interno'] > 0:
                     counts['traslape_interno'] += 1
+                    indices_por_clasif['traslape_interno'].append(idx)
                 elif resumen['traslape_relevante'] > 0:
                     counts['traslape_relevante'] += 1
+                    indices_por_clasif['traslape_relevante'].append(idx)
                 elif resumen['sin_conflicto'] > 0:
                     counts['sin_conflicto'] += 1
+                    indices_por_clasif['sin_conflicto'].append(idx)
                 else:
                     counts['sin_matches'] += 1
+                    indices_por_clasif['sin_matches'].append(idx)
             except Exception:
                 # Skip individual polygon errors without crashing the batch
                 counts['sin_matches'] += 1
+                indices_por_clasif['sin_matches'].append(idx)
 
             processed = i + 1
             _clasif_nuevos_state['processed'] = processed
             _clasif_nuevos_state['progress'] = int(processed / total * 100) if total > 0 else 100
 
         _clasif_nuevos_state['result'] = counts
+        _clasif_nuevos_state['indices_por_clasif'] = indices_por_clasif
         _clasif_nuevos_state['status'] = 'done'
         _clasif_nuevos_state['progress'] = 100
     except Exception as e:
@@ -4564,6 +4578,7 @@ def api_clasificacion_nuevos_iniciar():
     _clasif_nuevos_state['progress'] = 0
     _clasif_nuevos_state['processed'] = 0
     _clasif_nuevos_state['result'] = None
+    _clasif_nuevos_state['indices_por_clasif'] = None
     _clasif_nuevos_state['error'] = None
 
     # Determine total upfront for the response (use cache if available)
@@ -4593,6 +4608,18 @@ def api_clasificacion_nuevos_estado():
     if state['status'] == 'error':
         response['error'] = state['error']
     return jsonify(response)
+
+
+@app.route('/api/analizador/clasificacion-nuevos/indices')
+def api_clasificacion_nuevos_indices():
+    clasif = request.args.get('clasif')
+    valid_clasifs = ['duplicado', 'traslape_interno', 'traslape_relevante', 'sin_conflicto', 'sin_matches']
+    if clasif not in valid_clasifs:
+        return jsonify({'error': 'Clasificación inválida. Use: ' + ', '.join(valid_clasifs)}), 400
+    if _clasif_nuevos_state['status'] != 'done' or _clasif_nuevos_state['indices_por_clasif'] is None:
+        return jsonify({'error': 'Clasificación no completada aún'}), 409
+    indices = _clasif_nuevos_state['indices_por_clasif'][clasif]
+    return jsonify({'clasif': clasif, 'indices': indices, 'total': len(indices)})
 
 
 # ─────────────────────────────────────────────────────────────────────────────
