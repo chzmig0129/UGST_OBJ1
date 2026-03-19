@@ -499,7 +499,11 @@
                             <tbody>
                                 <tr class="clasif-row" data-clasif="duplicado" style="cursor:pointer;" title="Click para ver en Analizador">
                                     <td><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:#dc3545;"></span></td>
-                                    <td><strong>Duplicado</strong><br><small class="text-muted">Mismo/diferente crédito, superficie ≥85% y traslape ≥85%</small></td>
+                                    <td>
+                                        <strong>Duplicado</strong><br>
+                                        <small class="text-muted">Mismo/diferente crédito, superficie ≥85% y traslape ≥85%</small><br>
+                                        <small class="text-muted">Mismo crédito: <span id="clasif-duplicado-mismo">0</span> | Diferente crédito: <span id="clasif-duplicado-diferente">0</span></small>
+                                    </td>
                                     <td style="text-align:right; font-weight:700;" id="clasif-duplicado">—</td>
                                     <td style="text-align:right;" id="clasif-duplicado-pct">—</td>
                                 </tr>
@@ -938,6 +942,8 @@
         function pct(n) { return t > 0 ? (n / t * 100).toFixed(1) + '%' : '—'; }
         
         var dup = result.duplicado || 0;
+        var dupMismo = Number(result.duplicados_mismo_credito || result.duplicado_mismo_credito || 0);
+        var dupDiferente = Number(result.duplicados_diferente_credito || result.duplicado_diferente_credito || 0);
         var ti = result.traslape_interno || 0;
         var tr = result.traslape_relevante || 0;
         var sc = result.sin_conflicto || 0;
@@ -945,6 +951,8 @@
         
         document.getElementById('clasif-duplicado').textContent = dup.toLocaleString('es-MX');
         document.getElementById('clasif-duplicado-pct').textContent = pct(dup);
+        document.getElementById('clasif-duplicado-mismo').textContent = dupMismo.toLocaleString('es-MX');
+        document.getElementById('clasif-duplicado-diferente').textContent = dupDiferente.toLocaleString('es-MX');
         document.getElementById('clasif-traslape-int').textContent = ti.toLocaleString('es-MX');
         document.getElementById('clasif-traslape-int-pct').textContent = pct(ti);
         document.getElementById('clasif-traslape-rel').textContent = tr.toLocaleString('es-MX');
