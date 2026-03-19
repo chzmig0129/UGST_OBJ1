@@ -4386,8 +4386,14 @@ def calcular_traslapes(idx):
     }
 
     # Resumen de clasificaciones
+    duplicados = [m for m in matches if m['clasificacion'] == 'duplicado']
+    duplicados_mismo_credito = sum(1 for m in duplicados if m.get('same_credit'))
+    duplicados_diferente_credito = len(duplicados) - duplicados_mismo_credito
+
     resumen = {
-        'duplicados': len([m for m in matches if m['clasificacion'] == 'duplicado']),
+        'duplicados': len(duplicados),
+        'duplicados_mismo_credito': duplicados_mismo_credito,
+        'duplicados_diferente_credito': duplicados_diferente_credito,
         'traslape_interno': len([m for m in matches if m['clasificacion'] == 'traslape_interno']),
         'traslape_relevante': len([m for m in matches if m['clasificacion'] == 'traslape_relevante']),
         'sin_conflicto': len([m for m in matches if m['clasificacion'] == 'sin_conflicto']),
