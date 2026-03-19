@@ -4520,6 +4520,8 @@ def _run_clasificacion_nuevos():
         }
         indices_por_clasif = {
             'duplicado': [],
+            'duplicado_mismo_credito': [],
+            'duplicado_diferente_credito': [],
             'traslape_interno': [],
             'traslape_relevante': [],
             'sin_conflicto': [],
@@ -4535,8 +4537,10 @@ def _run_clasificacion_nuevos():
                     # Keep one subtotal per polygon so breakdown matches duplicated count.
                     if resumen.get('duplicados_mismo_credito', 0) > 0:
                         counts['duplicados_mismo_credito'] += 1
+                        indices_por_clasif['duplicado_mismo_credito'].append(idx)
                     else:
                         counts['duplicados_diferente_credito'] += 1
+                        indices_por_clasif['duplicado_diferente_credito'].append(idx)
                     indices_por_clasif['duplicado'].append(idx)
                 elif resumen['traslape_interno'] > 0:
                     counts['traslape_interno'] += 1
@@ -4626,13 +4630,30 @@ def api_clasificacion_nuevos_estado():
 @app.route('/api/analizador/clasificacion-nuevos/indices')
 def api_clasificacion_nuevos_indices():
     clasif = request.args.get('clasif')
+    subfiltro = request.args.get('subfiltro')
     valid_clasifs = ['duplicado', 'traslape_interno', 'traslape_relevante', 'sin_conflicto', 'sin_matches']
     if clasif not in valid_clasifs:
         return jsonify({'error': 'Clasificación inválida. Use: ' + ', '.join(valid_clasifs)}), 400
     if _clasif_nuevos_state['status'] != 'done' or _clasif_nuevos_state['indices_por_clasif'] is None:
         return jsonify({'error': 'Clasificación no completada aún'}), 409
-    indices = _clasif_nuevos_state['indices_por_clasif'][clasif]
-    return jsonify({'clasif': clasif, 'indices': indices, 'total': len(indices)})
+
+    indices_key = clasif
+    if clasif == 'duplicado':
+        valid_subfiltros = [None, '', 'mismo_credito', 'diferente_credito']
+        if subfiltro not in valid_subfiltros:
+            return jsonify({'error': 'Subfiltro inválido para duplicado. Use: mismo_credito o diferente_credito'}), 400
+        if subfiltro == 'mismo_credito':
+            indices_key = 'duplicado_mismo_credito'
+        elif subfiltro == 'diferente_credito':
+            indices_key = 'duplicado_diferente_credito'
+    elif subfiltro not in (None, ''):
+        return jsonify({'error': 'El parámetro subfiltro solo aplica cuando clasif=duplicado'}), 400
+
+    indices = _clasif_nuevos_state['indices_por_clasif'][indices_key]
+    response = {'clasif': clasif, 'indices': indices, 'total': len(indices)}
+    if clasif == 'duplicado' and subfiltro not in (None, ''):
+        response['subfiltro'] = subfiltro
+    return jsonify(response)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
