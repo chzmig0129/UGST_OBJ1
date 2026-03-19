@@ -389,6 +389,29 @@
         color: #0d6efd;
         font-weight: 600;
     }
+
+    .dup-subfilter-link {
+        color: #0d6efd;
+        text-decoration: underline;
+        font-weight: 600;
+        cursor: pointer;
+    }
+
+    .dup-subfilter-link:hover {
+        color: #0a58ca;
+    }
+
+    .dup-subfilter-link.is-disabled {
+        color: #adb5bd;
+        text-decoration: none;
+        cursor: not-allowed;
+        font-weight: 500;
+    }
+
+    .dup-subfilter-sep {
+        margin: 0 6px;
+        color: #adb5bd;
+    }
 </style>
 {% endblock %}
 
@@ -502,7 +525,11 @@
                                     <td>
                                         <strong>Duplicado</strong><br>
                                         <small class="text-muted">Mismo/diferente crédito, superficie ≥85% y traslape ≥85%</small><br>
-                                        <small class="text-muted">Mismo crédito: <span id="clasif-duplicado-mismo">0</span> | Diferente crédito: <span id="clasif-duplicado-diferente">0</span></small>
+                                        <small class="text-muted">
+                                            <a href="#" class="dup-subfilter-link is-disabled" id="btn-dup-mismo" data-clasif="duplicado" data-subfiltro="mismo_credito" data-count="0" aria-disabled="true">Mismo crédito: <span id="clasif-duplicado-mismo">0</span></a>
+                                            <span class="dup-subfilter-sep">|</span>
+                                            <a href="#" class="dup-subfilter-link is-disabled" id="btn-dup-diferente" data-clasif="duplicado" data-subfiltro="diferente_credito" data-count="0" aria-disabled="true">Diferente crédito: <span id="clasif-duplicado-diferente">0</span></a>
+                                        </small>
                                     </td>
                                     <td style="text-align:right; font-weight:700;" id="clasif-duplicado">—</td>
                                     <td style="text-align:right;" id="clasif-duplicado-pct">—</td>
@@ -953,6 +980,8 @@
         document.getElementById('clasif-duplicado-pct').textContent = pct(dup);
         document.getElementById('clasif-duplicado-mismo').textContent = dupMismo.toLocaleString('es-MX');
         document.getElementById('clasif-duplicado-diferente').textContent = dupDiferente.toLocaleString('es-MX');
+        actualizarEstadoSubfiltroDuplicado('btn-dup-mismo', dupMismo, 'Ver solo duplicados de mismo crédito');
+        actualizarEstadoSubfiltroDuplicado('btn-dup-diferente', dupDiferente, 'Ver solo duplicados de diferente crédito');
         document.getElementById('clasif-traslape-int').textContent = ti.toLocaleString('es-MX');
         document.getElementById('clasif-traslape-int-pct').textContent = pct(ti);
         document.getElementById('clasif-traslape-rel').textContent = tr.toLocaleString('es-MX');
@@ -977,8 +1006,31 @@
         });
     }
 
-    function filtrarPorClasificacion(clasif) {
-        fetch('/api/analizador/clasificacion-nuevos/indices?clasif=' + clasif)
+    function actualizarEstadoSubfiltroDuplicado(linkId, count, enabledTitle) {
+        var link = document.getElementById(linkId);
+        if (!link) return;
+
+        var n = Number(count) || 0;
+        link.setAttribute('data-count', String(n));
+
+        if (n > 0) {
+            link.classList.remove('is-disabled');
+            link.removeAttribute('aria-disabled');
+            link.setAttribute('title', enabledTitle);
+        } else {
+            link.classList.add('is-disabled');
+            link.setAttribute('aria-disabled', 'true');
+            link.setAttribute('title', 'Sin polígonos en este subtotal');
+        }
+    }
+
+    function filtrarPorClasificacion(clasif, subfiltro) {
+        var url = '/api/analizador/clasificacion-nuevos/indices?clasif=' + encodeURIComponent(clasif);
+        if (subfiltro) {
+            url += '&subfiltro=' + encodeURIComponent(subfiltro);
+        }
+
+        fetch(url)
             .then(function(r) {
                 if (!r.ok) throw new Error('HTTP ' + r.status);
                 return r.json();
@@ -990,7 +1042,7 @@
                 }
                 filteredIndices = data.indices;
                 filteredPos = 0;
-                activeFilter = clasif;
+                activeFilter = clasif + (subfiltro ? ':' + subfiltro : '');
                 totalPoligonos = data.total;
 
                 // Map clasif keys to display labels
@@ -1002,8 +1054,18 @@
                     'sin_matches': 'Sin Matches'
                 };
 
+                var subLabels = {
+                    'mismo_credito': 'mismo crédito',
+                    'diferente_credito': 'diferente crédito'
+                };
+
+                var filterLabel = labels[clasif] || clasif;
+                if (clasif === 'duplicado' && subfiltro && subLabels[subfiltro]) {
+                    filterLabel += ' / ' + subLabels[subfiltro];
+                }
+
                 // Update filter badge
-                document.getElementById('filtro-label').textContent = 'Filtrando: ' + (labels[clasif] || clasif);
+                document.getElementById('filtro-label').textContent = 'Filtrando: ' + filterLabel;
                 document.getElementById('filtro-count').textContent = data.total;
                 document.getElementById('filtro-activo').style.display = 'block';
 
@@ -1355,6 +1417,24 @@
 
     // Click on classification table rows
     document.addEventListener('click', function(e) {
+        var subfilterLink = e.target.closest('.dup-subfilter-link');
+        if (subfilterLink) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            var count = Number(subfilterLink.getAttribute('data-count') || 0);
+            if (count <= 0 || subfilterLink.classList.contains('is-disabled')) {
+                return;
+            }
+
+            var subClasif = subfilterLink.getAttribute('data-clasif');
+            var subfiltro = subfilterLink.getAttribute('data-subfiltro');
+            if (subClasif && subfiltro) {
+                filtrarPorClasificacion(subClasif, subfiltro);
+            }
+            return;
+        }
+
         var row = e.target.closest('.clasif-row');
         if (row) {
             var clasif = row.getAttribute('data-clasif');
