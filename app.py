@@ -4511,6 +4511,8 @@ def _run_clasificacion_nuevos():
 
         counts = {
             'duplicado': 0,
+            'duplicados_mismo_credito': 0,
+            'duplicados_diferente_credito': 0,
             'traslape_interno': 0,
             'traslape_relevante': 0,
             'sin_conflicto': 0,
@@ -4530,6 +4532,11 @@ def _run_clasificacion_nuevos():
                 resumen = data['resumen']
                 if resumen['duplicados'] > 0:
                     counts['duplicado'] += 1
+                    # Keep one subtotal per polygon so breakdown matches duplicated count.
+                    if resumen.get('duplicados_mismo_credito', 0) > 0:
+                        counts['duplicados_mismo_credito'] += 1
+                    else:
+                        counts['duplicados_diferente_credito'] += 1
                     indices_por_clasif['duplicado'].append(idx)
                 elif resumen['traslape_interno'] > 0:
                     counts['traslape_interno'] += 1
