@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container d-flex justify-content-center align-items-center" style="min-height: 80vh;">
+    <div class="card shadow" style="width: 100%; max-width: 460px;">
+        <div class="card-body p-4">
+            <h4 class="card-title text-center mb-4">
+                <i class="bi bi-person-plus me-2"></i>Crear Cuenta
+            </h4>
+
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            <form method="POST" action="{{ url_for('auth.register') }}">
+                <div class="mb-3">
+                    <label for="username" class="form-label">Usuario</label>
+                    <input
+                        type="text"
+                        class="form-control"
+                        id="username"
+                        name="username"
+                        placeholder="Elige un nombre de usuario"
+                        required
+                        autofocus
+                    >
+                </div>
+
+                <div class="mb-3">
+                    <label for="email" class="form-label">Correo electrónico</label>
+                    <input
+                        type="email"
+                        class="form-control"
+                        id="email"
+                        name="email"
+                        placeholder="tu@correo.com"
+                        required
+                    >
+                </div>
+
+                <div class="mb-3">
+                    <label for="password" class="form-label">Contraseña</label>
+                    <input
+                        type="password"
+                        class="form-control"
+                        id="password"
+                        name="password"
+                        placeholder="Mínimo 6 caracteres"
+                        required
+                    >
+                </div>
+
+                <div class="mb-3">
+                    <label for="confirm_password" class="form-label">Confirmar contraseña</label>
+                    <input
+                        type="password"
+                        class="form-control"
+                        id="confirm_password"
+                        name="confirm_password"
+                        placeholder="Repite tu contraseña"
+                        required
+                    >
+                </div>
+
+                <div class="d-grid mt-4">
+                    <button type="submit" class="btn btn-success">
+                        <i class="bi bi-person-check me-1"></i>Registrarse
+                    </button>
+                </div>
+            </form>
+
+            <hr>
+            <p class="text-center mb-0 text-muted small">
+                ¿Ya tienes cuenta?
+                <a href="{{ url_for('auth.login') }}">Inicia sesión aquí</a>
+            </p>
+        </div>
+    </div>
+</div>
+{% endblock %}

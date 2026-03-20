@@ -1,4 +1,5 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, send_file, session, jsonify
+from flask_login import LoginManager, login_required, current_user
 import os
 import pandas as pd
 import numpy as np
@@ -79,6 +80,24 @@ def obtener_ubicacion(lat, lon):
 
 db = SQLAlchemy(app)
 
+# Flask-Bcrypt for password hashing
+from flask_bcrypt import Bcrypt  # noqa: E402
+bcrypt = Bcrypt(app)
+
+# Flask-Login setup
+login_manager = LoginManager(app)
+login_manager.login_view = 'auth.login'
+login_manager.login_message = 'Por favor inicia sesión para acceder a esta página.'
+login_manager.login_message_category = 'warning'
+
+# User model (created after db and bcrypt are available)
+from models.user import get_user_model  # noqa: E402
+User = get_user_model(db, bcrypt)
+
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
+
 # Definición del modelo para la base de datos
 class Poligono(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -113,6 +132,10 @@ excel_data = {
 # Asegurar que exista el directorio de uploads
 if not os.path.exists(app.config['UPLOAD_FOLDER']):
     os.makedirs(app.config['UPLOAD_FOLDER'])
+
+# Register auth blueprint
+from auth import auth as auth_blueprint  # noqa: E402
+app.register_blueprint(auth_blueprint)
 
 # Crear tablas que no existan todavía — nunca elimina datos existentes.
 with app.app_context():
@@ -525,10 +548,12 @@ def index():
     return render_template('index.html')
 
 @app.route('/validacion-rapida')
+@login_required
 def validacion_rapida():
     return "Página de validación rápida en desarrollo"
 
 @app.route('/unir-archivos')
+@login_required
 def unir_archivos():
     # Verificar si hay resultados en la sesión
     resultado = session.pop('resultado_shp', None)
@@ -539,6 +564,7 @@ def unir_archivos():
 
 @app.route('/validacion-poligonos', defaults={'tab': 'cargar'})
 @app.route('/validacion-poligonos/<tab>')
+@login_required
 def validacion_poligonos(tab):
     valid_tabs = ['cargar', 'lista', 'editar', 'generar']
     
@@ -752,6 +778,7 @@ def validacion_poligonos(tab):
                            filename=excel_data['filename'])
 
 @app.route('/cargar-excel', methods=['POST'])
+@login_required
 def cargar_excel():
     global excel_data
     
@@ -898,6 +925,7 @@ def cargar_excel():
     return redirect(url_for('validacion_poligonos'))
 
 @app.route('/actualizar-fila', methods=['POST'])
+@login_required
 def actualizar_fila():
     global excel_data
     
@@ -1072,6 +1100,7 @@ def actualizar_fila():
         return redirect(url_for('validacion_poligonos', tab='lista'))
 
 @app.route('/get-original-coords/<int:row_index>')
+@login_required
 def get_original_coords(row_index):
     """Endpoint para obtener coordenadas originales (AJAX)"""
     # Intentar obtener el ID de la base de datos si está presente
@@ -1095,6 +1124,7 @@ def get_original_coords(row_index):
         return jsonify({'error': 'Índice inválido'}), 404
 
 @app.route('/marcar-como-modificado', methods=['POST'])
+@login_required
 def marcar_como_modificado():
     """Endpoint para marcar un polígono como modificado cuando se edita en el mapa"""
     try:
@@ -1124,6 +1154,7 @@ def marcar_como_modificado():
         return jsonify({'error': f'Error al marcar como modificado: {str(e)}'}), 500
 
 @app.route('/diagnostico-poligono/<int:db_id>')
+@login_required
 def diagnostico_poligono(db_id):
     """Endpoint para mostrar información de diagnóstico de un polígono"""
     poligono = Poligono.query.get(db_id)
@@ -1154,6 +1185,7 @@ def diagnostico_poligono(db_id):
     return jsonify(datos)
 
 @app.route('/get-historico-poligonos')
+@login_required
 def get_historico_poligonos():
     """Endpoint para cargar y devolver los polígonos históricos como GeoJSON"""
     try:
@@ -1192,6 +1224,7 @@ def get_historico_poligonos():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/get-historico-poligonos-radio/<int:polygon_id>')
+@login_required
 def get_historico_poligonos_radio(polygon_id):
     """Endpoint para cargar y devolver los polígonos históricos dentro de un radio de 5km"""
     try:
@@ -1295,6 +1328,7 @@ def get_historico_poligonos_radio(polygon_id):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/obtener_ubicacion', methods=['POST'])
+@login_required
 def get_ubicacion():
     """Endpoint para obtener municipio y estado desde coordenadas"""
     try:
@@ -1345,6 +1379,7 @@ def allowed_file(filename):
            filename.rsplit('.', 1)[1].lower() in {'xlsx', 'xls'}
 
 @app.route('/generar_shapefiles', methods=['POST'])
+@login_required
 def generar_shapefiles():
     """Ruta para generar archivos shapefile de polígonos seleccionados"""
     # Obtener los índices de polígonos seleccionados
@@ -1408,6 +1443,7 @@ def generar_shapefiles():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/generar_paquete_completo', methods=['POST'])
+@login_required
 def generar_paquete_completo():
     """Ruta para generar un paquete completo con fichas PDF y shapefiles"""
     # Obtener los índices de polígonos seleccionados
@@ -1534,6 +1570,7 @@ def generar_paquete_completo():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/generar_shapefile_unico', methods=['POST'])
+@login_required
 def generar_shapefile_unico():
     """Ruta para generar un único shapefile con todos los polígonos seleccionados"""
     try:
@@ -2127,6 +2164,7 @@ def corregir_codificacion(texto):
         return texto
 
 @app.route('/generar_shapefiles_y_mapas', methods=['POST'])
+@login_required
 def generar_shapefiles_y_mapas():
     """Ruta para generar archivos shapefile y mapas PNG de polígonos seleccionados"""
     # Obtener los índices de polígonos seleccionados
@@ -2213,6 +2251,7 @@ def generar_shapefiles_y_mapas():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/procesar-shp', methods=['POST'])
+@login_required
 def procesar_shp():
     try:
         print("Ruta /procesar-shp llamada", flush=True)
@@ -2661,6 +2700,7 @@ def procesar_shp():
             return redirect(url_for('unir_archivos'))
 
 @app.route('/descargar-shp-unificado')
+@login_required
 def descargar_shp_unificado():
     zip_path = os.path.join(app.config['UPLOAD_FOLDER'], 'shp_unified', 'unified_shp.zip')
     if os.path.exists(zip_path):
@@ -2670,6 +2710,7 @@ def descargar_shp_unificado():
         return redirect(url_for('unir_archivos'))
 
 @app.route('/generar_ficha_tecnica_template/<int:db_id>')
+@login_required
 def generar_ficha_tecnica_template_route(db_id):
     """Genera una ficha técnica con la nueva plantilla para un polígono específico"""
     try:
@@ -2729,6 +2770,7 @@ def generar_ficha_tecnica_template_route(db_id):
         return jsonify({"error": str(e)}), 500
 
 @app.route('/generar_paquete_completo_con_plantilla', methods=['POST'])
+@login_required
 def generar_paquete_completo_con_plantilla():
     """Ruta para generar un paquete completo con fichas PDF basadas en plantilla y shapefiles"""
     # Obtener los índices de polígonos seleccionados
@@ -2993,6 +3035,7 @@ def generar_paquete_completo_con_plantilla():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/generar_excel', methods=['GET'])
+@login_required
 def generar_excel():
     """Ruta para generar un archivo Excel con todos los registros de la base de datos - réplica completa"""
     try:
@@ -3154,6 +3197,7 @@ def safe_process_coordinates(geometry):
 
 @app.route('/validacion_rapida_shp')
 @app.route('/validacion_rapida_shp/<tab>')
+@login_required
 def validacion_rapida_shp(tab=None):
     """
     Main route for the SHP validation functionality.
@@ -3282,6 +3326,7 @@ def validacion_rapida_shp(tab=None):
                           shp_archivos=shp_archivos)
 
 @app.route('/cargar_shp_zip', methods=['POST'])
+@login_required
 def cargar_shp_zip():
     """
     Handle the upload of a ZIP file containing SHP files.
@@ -3485,6 +3530,7 @@ def cargar_shp_zip():
             return redirect(url_for('validacion_rapida_shp', tab='cargar'))
 
 @app.route('/actualizar_shp_record', methods=['POST'])
+@login_required
 def actualizar_shp_record():
     """
     Update an SHP record with new information (comments, status, and geometry if provided).
@@ -3553,6 +3599,7 @@ def actualizar_shp_record():
     return redirect(url_for('validacion_rapida_shp', tab='lista'))
 
 @app.route('/eliminar_shp_record', methods=['POST'])
+@login_required
 def eliminar_shp_record():
     """
     Delete an SHP record from the database.
@@ -3572,6 +3619,7 @@ def eliminar_shp_record():
     return redirect(url_for('validacion_rapida_shp', tab='lista'))
 
 @app.route('/exportar_shp_lista')
+@login_required
 def exportar_shp_lista():
     """
     Export the SHP records list to Excel.
@@ -3627,6 +3675,7 @@ def exportar_shp_lista():
     )
 
 @app.route('/generar_shp_archivos')
+@login_required
 def generar_shp_archivos():
     """
     Generate Excel file with all SHP records data
@@ -3717,6 +3766,7 @@ def generar_shp_archivos():
     )
 
 @app.route('/generar_shp_zip_completo')
+@login_required
 def generar_shp_zip_completo():
     """
     Generate a complete Excel file with all SHP records, expanding attributes into columns.
@@ -3852,6 +3902,7 @@ def clean_none(value):
     return str(value)
 
 @app.route('/get-poligonos-actuales-traslapes/<int:polygon_id>')
+@login_required
 def get_poligonos_actuales_traslapes(polygon_id):
     """Endpoint para detectar y devolver polígonos actuales que traslapan con el polígono dado"""
     try:
