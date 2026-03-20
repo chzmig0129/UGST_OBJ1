@@ -46,6 +46,12 @@ class ProductionConfig(Config):
 
     DEBUG = False
 
+    # Session security
+    SESSION_COOKIE_SECURE = True
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = 'Lax'
+    PERMANENT_SESSION_LIFETIME = 3600  # 1 hour in seconds
+
     @property
     def SECRET_KEY(self):  # type: ignore[override]
         key = os.environ.get('SECRET_KEY')

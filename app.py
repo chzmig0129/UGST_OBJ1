@@ -1,5 +1,8 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, send_file, session, jsonify
 from flask_login import LoginManager, login_required, current_user
+from flask_talisman import Talisman
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 import os
 import pandas as pd
 import numpy as np
@@ -37,6 +40,47 @@ app.config.from_object(get_config())
 
 # SECRET_KEY must be set on app.secret_key as well for Flask session signing.
 app.secret_key = app.config['SECRET_KEY']
+
+# ---------------------------------------------------------------------------
+# Security: Flask-Talisman (security headers) — production only
+# ---------------------------------------------------------------------------
+# Only enforce HTTPS and strict headers when not in debug mode.
+# CSP allows 'self' plus the external origins needed by Leaflet maps.
+if not app.debug:
+    _csp = {
+        'default-src': ["'self'"],
+        'script-src': ["'self'", 'cdn.jsdelivr.net', 'unpkg.com'],
+        'style-src': ["'self'", "'unsafe-inline'", 'cdn.jsdelivr.net', 'unpkg.com'],
+        'img-src': [
+            "'self'",
+            'data:',
+            'tile.openstreetmap.org',
+            '*.tile.openstreetmap.org',
+            'cdn.jsdelivr.net',
+        ],
+        'font-src': ["'self'", 'cdn.jsdelivr.net', 'unpkg.com'],
+        'connect-src': ["'self'", 'tile.openstreetmap.org', '*.tile.openstreetmap.org'],
+    }
+    Talisman(
+        app,
+        force_https=True,
+        strict_transport_security=True,
+        content_security_policy=_csp,
+        session_cookie_secure=True,
+        session_cookie_http_only=True,
+    )
+
+# ---------------------------------------------------------------------------
+# Security: Flask-Limiter (rate limiting)
+# ---------------------------------------------------------------------------
+# Uses in-memory storage (compatible with preload_app / single-worker setups).
+# Default limits: 200 requests/day, 50 requests/hour.
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=["200 per day", "50 per hour"],
+    storage_uri="memory://",
+)
 
 # Añadir filtro personalizado para slice
 @app.template_filter('slice')
@@ -136,6 +180,11 @@ if not os.path.exists(app.config['UPLOAD_FOLDER']):
 # Register auth blueprint
 from auth import auth as auth_blueprint  # noqa: E402
 app.register_blueprint(auth_blueprint)
+
+# Apply per-route rate limits to auth blueprint views.
+# limiter.limit() can be applied to a view function after blueprint registration.
+limiter.limit("5 per minute")(auth_blueprint.view_functions['login'])
+limiter.limit("3 per hour")(auth_blueprint.view_functions['register'])
 
 # Crear tablas que no existan todavía — nunca elimina datos existentes.
 with app.app_context():
@@ -779,6 +828,7 @@ def validacion_poligonos(tab):
 
 @app.route('/cargar-excel', methods=['POST'])
 @login_required
+@limiter.limit("10 per hour")
 def cargar_excel():
     global excel_data
     
@@ -2252,6 +2302,7 @@ def generar_shapefiles_y_mapas():
 
 @app.route('/procesar-shp', methods=['POST'])
 @login_required
+@limiter.limit("10 per hour")
 def procesar_shp():
     try:
         print("Ruta /procesar-shp llamada", flush=True)
