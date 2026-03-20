@@ -4457,6 +4457,122 @@ def obtener_candidatos_nuevos_relacionados(idx, overlap_min_pct=0.1):
     return candidatos
 
 
+def generar_propuesta_chapingo_nuevo(idx, analisis_mega=None, candidatos_intra_15k=None):
+    """Genera propuesta automatica Chapingo para un poligono nuevo."""
+    if validacion_gdf is None or mega_gdf is None:
+        raise RuntimeError('Shapefiles no cargados')
+    if idx < 0 or idx >= len(validacion_gdf):
+        raise ValueError(f'Indice fuera de rango (0-{len(validacion_gdf)-1})')
+
+    base_row = validacion_gdf.iloc[idx]
+    id_poligono_base = str(base_row.get('ID_POLIGON', '') or '').strip()
+
+    if analisis_mega is None:
+        analisis_mega = calcular_traslapes(idx)
+    if candidatos_intra_15k is None:
+        candidatos_intra_15k = obtener_candidatos_nuevos_relacionados(idx)
+
+    poligono_props = (analisis_mega.get('poligono') or {}).get('properties') or {}
+    superficie_base = poligono_props.get('area_ha')
+    superficie_base = round(float(superficie_base), 4) if superficie_base is not None else None
+
+    propuesta = {
+        'estatus_chapingo_propuesto': None,
+        'id_poligono_unico_propuesto': None,
+        'superficie_chapingo_propuesta': None,
+        'comentario_chapingo_propuesto': 'No hay informacion suficiente para decision automatica; revisar manualmente.',
+        'reglas_disparadas': []
+    }
+
+    cache = _build_nuevos_relacionados_cache()
+    if idx not in cache['nuevos_indices_set']:
+        propuesta['comentario_chapingo_propuesto'] = 'El indice no pertenece al subconjunto nuevos; propuesta automatica no aplica.'
+        propuesta['reglas_disparadas'].append('indice_fuera_subconjunto_nuevos')
+        return propuesta
+
+    matches_mega = analisis_mega.get('matches') or []
+    if matches_mega:
+        propuesta['comentario_chapingo_propuesto'] = (
+            'Se detectaron traslapes con Mega; mantener propuesta parcial y revisar manualmente antes de definir estatus Chapingo.'
+        )
+        propuesta['reglas_disparadas'].extend(['match_mega_detectado', 'revision_manual_requerida'])
+        return propuesta
+
+    propuesta['reglas_disparadas'].append('sin_match_mega')
+
+    mismos_credito = [c for c in candidatos_intra_15k if c.get('same_credit')]
+    diferentes_credito = [c for c in candidatos_intra_15k if not c.get('same_credit')]
+
+    if mismos_credito:
+        ranking = [
+            {
+                'idx': int(idx),
+                'id_poligon': id_poligono_base,
+                'superficie_ha': superficie_base
+            }
+        ]
+        ranking.extend({
+            'idx': int(c['idx']),
+            'id_poligon': c.get('id_poligon'),
+            'superficie_ha': c.get('superficie_ha')
+        } for c in mismos_credito)
+
+        ranking_valid = [r for r in ranking if r.get('superficie_ha') is not None]
+        if not ranking_valid:
+            propuesta['comentario_chapingo_propuesto'] = (
+                'No hay superficies suficientes para resolver duplicados de mismo credito; revisar manualmente.'
+            )
+            propuesta['reglas_disparadas'].extend(['duplicado_mismo_credito', 'superficie_insuficiente'])
+            return propuesta
+
+        superficie_ganadora = max(r['superficie_ha'] for r in ranking_valid)
+        ganadores = [r for r in ranking_valid if abs(r['superficie_ha'] - superficie_ganadora) < 1e-6]
+        if len(ganadores) != 1:
+            propuesta['comentario_chapingo_propuesto'] = (
+                'Se detecto empate de superficie en duplicados de mismo credito; revisar manualmente para elegir poligono unico.'
+            )
+            propuesta['reglas_disparadas'].extend(['duplicado_mismo_credito', 'empate_superficie'])
+            return propuesta
+
+        ganador = ganadores[0]
+        propuesta['id_poligono_unico_propuesto'] = ganador.get('id_poligon')
+        propuesta['superficie_chapingo_propuesta'] = round(float(ganador['superficie_ha']), 4)
+        propuesta['reglas_disparadas'].append('duplicado_mismo_credito_ganador_por_superficie')
+
+        if int(ganador['idx']) == int(idx):
+            propuesta['estatus_chapingo_propuesto'] = 'NUEVO'
+            propuesta['comentario_chapingo_propuesto'] = (
+                'Sin match en Mega. Entre nuevos con mismo credito, este poligono es el de mayor superficie y se propone como unico NUEVO.'
+            )
+            propuesta['reglas_disparadas'].append('ganador_permanece_nuevo')
+        else:
+            propuesta['estatus_chapingo_propuesto'] = 'VINCULAR'
+            propuesta['comentario_chapingo_propuesto'] = (
+                f"Sin match en Mega. Se detecto duplicado con mismo credito y mayor superficie en {ganador.get('id_poligon')}; se propone VINCULAR este indice."
+            )
+            propuesta['reglas_disparadas'].append('no_ganador_propuesto_vincular')
+
+        return propuesta
+
+    propuesta['estatus_chapingo_propuesto'] = 'NUEVO'
+    propuesta['id_poligono_unico_propuesto'] = id_poligono_base or None
+    propuesta['superficie_chapingo_propuesta'] = superficie_base
+
+    if diferentes_credito:
+        propuesta['comentario_chapingo_propuesto'] = (
+            'Sin match en Mega. Existen traslapes con diferente credito en nuevos; no se fuerza vinculacion automatica y se mantiene NUEVO.'
+        )
+        propuesta['reglas_disparadas'].extend([
+            'traslape_diferente_credito',
+            'diferente_credito_no_fuerza_vinculacion'
+        ])
+    else:
+        propuesta['comentario_chapingo_propuesto'] = 'Sin match en Mega y sin conflicto intra-15K; se propone NUEVO.'
+        propuesta['reglas_disparadas'].append('sin_conflicto_intra_15k')
+
+    return propuesta
+
+
 @app.route('/api/analizador/total')
 def api_analizador_total():
     if validacion_gdf is None:
@@ -5039,6 +5155,23 @@ def api_validacion_15k_poligono(idx):
             'razon': 'Ningún traslape >= 50% con polígonos históricos'
         }
 
+    try:
+        candidatos_intra_15k = obtener_candidatos_nuevos_relacionados(idx)
+        propuesta_chapingo = generar_propuesta_chapingo_nuevo(
+            idx,
+            analisis_mega=data,
+            candidatos_intra_15k=candidatos_intra_15k
+        )
+    except Exception as e:
+        candidatos_intra_15k = []
+        propuesta_chapingo = {
+            'estatus_chapingo_propuesto': None,
+            'id_poligono_unico_propuesto': None,
+            'superficie_chapingo_propuesta': None,
+            'comentario_chapingo_propuesto': f'No fue posible generar propuesta automatica: {str(e)}',
+            'reglas_disparadas': ['error_generando_propuesta']
+        }
+
     return jsonify({
         'index': idx,
         'total': len(validacion_gdf),
@@ -5046,8 +5179,10 @@ def api_validacion_15k_poligono(idx):
         'matches': data['matches'],
         'match_features': data['match_features'],
         'resumen': data['resumen'],
+        'candidatos_intra_15k': candidatos_intra_15k,
         'validacion': validacion,
-        'sugerencia': sugerencia
+        'sugerencia': sugerencia,
+        'propuesta_chapingo': propuesta_chapingo
     })
 
 
