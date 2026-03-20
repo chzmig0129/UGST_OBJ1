@@ -23,7 +23,9 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from app import app, db, User  # noqa: E402 — must come after sys.path adjustment
+from app import app  # noqa: E402 — must come after sys.path adjustment
+from extensions import db  # noqa: E402
+from models.user import User  # noqa: E402
 
 
 def parse_args():

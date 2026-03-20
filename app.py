@@ -11,7 +11,6 @@ import json
 from werkzeug.utils import secure_filename
 from flask import jsonify
 import sqlite3
-from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 from shapely.geometry import Polygon, Point
 from geopy.distance import geodesic
@@ -126,11 +125,13 @@ def obtener_ubicacion(lat, lon):
         app.logger.error(f"Error al obtener ubicación: {e}")
     return None
 
-db = SQLAlchemy(app)
-
-# Flask-Bcrypt for password hashing
-from flask_bcrypt import Bcrypt  # noqa: E402
-bcrypt = Bcrypt(app)
+# db and bcrypt are defined in extensions.py and initialised here via init_app.
+# This is the standard Flask pattern that avoids circular imports: any module
+# (auth.py, models/user.py, scripts/…) can safely import db/bcrypt from
+# extensions without pulling in the full app object.
+from extensions import db, bcrypt  # noqa: E402
+db.init_app(app)
+bcrypt.init_app(app)
 
 # Flask-Login setup
 login_manager = LoginManager(app)
@@ -138,9 +139,8 @@ login_manager.login_view = 'auth.login'
 login_manager.login_message = 'Por favor inicia sesión para acceder a esta página.'
 login_manager.login_message_category = 'warning'
 
-# User model (created after db and bcrypt are available)
-from models.user import get_user_model  # noqa: E402
-User = get_user_model(db, bcrypt)
+# User model — import after extensions are wired up so db is ready.
+from models.user import User  # noqa: E402
 
 @login_manager.user_loader
 def load_user(user_id):

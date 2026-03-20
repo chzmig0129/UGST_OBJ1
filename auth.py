@@ -7,6 +7,9 @@ Provides /auth/login, /auth/register, and /auth/logout routes.
 from flask import Blueprint, render_template, redirect, url_for, flash, request
 from flask_login import login_user, logout_user, login_required, current_user
 
+from extensions import db
+from models.user import User
+
 auth = Blueprint('auth', __name__, url_prefix='/auth')
 
 
@@ -24,8 +27,6 @@ def login():
             flash('Por favor ingresa tu usuario y contraseña.', 'error')
             return render_template('auth/login.html')
 
-        # Import User here to avoid circular imports at module load time.
-        from app import User  # noqa: PLC0415
         user = User.query.filter_by(username=username).first()
 
         if user is None or not user.check_password(password):
@@ -69,8 +70,6 @@ def register():
         if len(password) < 6:
             flash('La contraseña debe tener al menos 6 caracteres.', 'error')
             return render_template('auth/register.html')
-
-        from app import User, db  # noqa: PLC0415
 
         # Check for existing username or email
         if User.query.filter_by(username=username).first():
