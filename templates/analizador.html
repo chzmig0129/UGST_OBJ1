@@ -106,29 +106,6 @@
         color: #0d6efd;
     }
 
-    /* ── Badges de resumen ──────────────────────────────────────────────────── */
-    .resumen-badges {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
-    }
-
-    .resumen-badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        padding: 4px 10px;
-        border-radius: 20px;
-        font-size: 12px;
-        font-weight: 600;
-        color: #fff;
-    }
-
-    .badge-duplicados   { background: #dc3545; }
-    .badge-traslape-int { background: #ffc107; color: #212529; }
-    .badge-traslape-rel { background: #fd7e14; }
-    .badge-sin-conf     { background: #28a745; }
-
     /* ── Lista de matches ───────────────────────────────────────────────────── */
     #matches-list {
         max-height: 400px;
@@ -229,78 +206,6 @@
         color: #adb5bd;
         padding: 16px 0;
         font-size: 13px;
-    }
-
-    /* ── Panel editable Chapingo ───────────────────────────────────────────── */
-    .chapingo-readonly {
-        background: #f8f9fa;
-        border: 1px solid #dee2e6;
-        border-radius: 6px;
-        padding: 8px 10px;
-        font-size: 12px;
-    }
-
-    .chapingo-kv {
-        display: grid;
-        grid-template-columns: 120px 1fr;
-        gap: 4px 8px;
-        margin-bottom: 6px;
-    }
-
-    .chapingo-kv .k {
-        color: #6c757d;
-        font-weight: 600;
-    }
-
-    .chapingo-kv .v {
-        color: #212529;
-        font-weight: 600;
-        word-break: break-word;
-    }
-
-    #chapingo-reglas-list {
-        margin: 0;
-        padding-left: 18px;
-    }
-
-    #chapingo-reglas-list li {
-        margin-bottom: 2px;
-        color: #495057;
-    }
-
-    #chapingo-candidatos-list {
-        margin: 0;
-        padding-left: 18px;
-    }
-
-    #chapingo-candidatos-list li {
-        margin-bottom: 4px;
-        color: #495057;
-    }
-
-    .chapingo-candidato-item {
-        list-style: none;
-        margin-left: -18px;
-        padding: 6px 8px;
-        border: 1px solid #e9ecef;
-        border-radius: 6px;
-        background: #f8f9fa;
-    }
-
-    .chapingo-candidato-item .linea-principal {
-        font-size: 12px;
-        font-weight: 600;
-        color: #212529;
-    }
-
-    .chapingo-candidato-item .linea-secundaria {
-        font-size: 11px;
-        color: #495057;
-    }
-
-    .chapingo-note {
-        font-size: 11px;
-        color: #6c757d;
     }
 
     /* ── Dashboard de Estatus ──────────────────────────────────────────────── */
@@ -801,29 +706,19 @@
 
                         <div class="info-label">Área</div>
                         <div class="info-value" id="info-area">—</div>
-                    </div>
 
-                    <!-- ── Sección 3: Resumen de análisis ───────────────────── -->
-                    <div class="panel-section" id="section-resumen">
-                        <div class="panel-section-title"><i class="bi bi-bar-chart me-1"></i>Resumen de Análisis</div>
+                        <!-- Propuesta automática -->
+                        <div style="border-top: 1px solid #dee2e6; margin-top: 10px; padding-top: 10px;">
+                            <div class="info-label">Estatus Propuesto</div>
+                            <div class="info-value">
+                                <span class="badge" id="info-estatus-propuesto" style="font-size: 13px;">—</span>
+                            </div>
 
-                        <div class="resumen-badges mb-2">
-                            <span class="resumen-badge badge-duplicados">
-                                🔴 Duplicados: <span id="res-duplicados">0</span>
-                            </span>
-                            <span class="resumen-badge badge-traslape-int">
-                                🟡 Traslape interno: <span id="res-traslape-int">0</span>
-                            </span>
-                            <span class="resumen-badge badge-traslape-rel">
-                                🟠 Traslape relevante: <span id="res-traslape-rel">0</span>
-                            </span>
-                            <span class="resumen-badge badge-sin-conf">
-                                🟢 Sin conflicto: <span id="res-sin-conf">0</span>
-                            </span>
-                        </div>
+                            <div class="info-label">ID Polígono Único</div>
+                            <div class="info-value" id="info-id-unico-propuesto">—</div>
 
-                        <div class="small text-muted">
-                            Total matches: <strong id="res-total">0</strong>
+                            <div class="info-label">Superficie Calculada</div>
+                            <div class="info-value" id="info-superficie-calculada">—</div>
                         </div>
                     </div>
 
@@ -833,30 +728,10 @@
 
                         <div id="chapingo-loading" class="small text-muted mb-2" style="display:none;">
                             <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
-                            Cargando propuesta editable...
+                            Cargando...
                         </div>
 
                         <div id="chapingo-no-aplica" class="alert alert-info py-2 px-2 mb-2" style="display:none; font-size:12px;"></div>
-
-                        <!-- Superficie Calculada (read-only, auto-populated) -->
-                        <div class="chapingo-readonly mb-2" id="chapingo-superficie-auto" style="display:none;">
-                            <div class="chapingo-kv">
-                                <div class="k">Superficie Calculada</div>
-                                <div class="v" id="chapingo-superficie-calculada">—</div>
-                            </div>
-                        </div>
-
-                        <!-- Intra-15K classification badge -->
-                        <div id="intra-clasif-badge" class="mb-2" style="display:none;">
-                            <span class="badge" id="intra-clasif-badge-text">—</span>
-                        </div>
-
-                        <!-- Vincular info box (shown when estatus is VINCULAR) -->
-                        <div id="vincular-info" class="alert alert-info py-2 px-2 mb-2" style="display:none; font-size:12px;">
-                            <i class="bi bi-link-45deg me-1"></i>
-                            Vinculado a: <strong id="vincular-id-poligon">—</strong>
-                            <br>Superficie del principal: <strong id="vincular-superficie">—</strong>
-                        </div>
 
                         <form id="chapingo-form" style="display:none;">
                             <div class="mb-2">
@@ -865,90 +740,52 @@
                                     <option value="">Seleccionar...</option>
                                     <option value="NUEVO">NUEVO</option>
                                     <option value="VINCULAR">VINCULAR</option>
-                                    <option value="ENCIMA">ENCIMA</option>
+                                    <option value="ELIMINAR">ELIMINAR</option>
                                 </select>
                             </div>
 
                             <div class="mb-2">
                                 <label for="chapingo-id-unico" class="form-label small text-muted mb-1">ID polígono único</label>
-                                <input id="chapingo-id-unico" type="text" class="form-control form-control-sm" placeholder="Ej. P-12345">
+                                <input id="chapingo-id-unico" type="text" class="form-control form-control-sm" placeholder="Ej. 28-5910-00030626-1">
                             </div>
 
                             <div class="mb-2">
-                                <label for="chapingo-superficie" class="form-label small text-muted mb-1">Superficie Chapingo (ha)</label>
-                                <input id="chapingo-superficie" type="number" step="0.0001" min="0" class="form-control form-control-sm" placeholder="0.0000">
-                            </div>
-
-                            <div class="mb-2">
-                                <label for="chapingo-comentario" class="form-label small text-muted mb-1">Comentario</label>
-                                <textarea id="chapingo-comentario" rows="3" class="form-control form-control-sm" placeholder="Observaciones de validación..."></textarea>
+                                <label for="chapingo-superficie" class="form-label small text-muted mb-1">Superficie Calculada (ha)</label>
+                                <input id="chapingo-superficie" type="number" step="0.0001" min="0" class="form-control form-control-sm" placeholder="0.0000" readonly style="background:#f8f9fa;">
                             </div>
 
                             <div id="chapingo-form-error" class="alert alert-danger py-2 px-2 mb-2" style="display:none; font-size:12px;"></div>
                             <div id="chapingo-form-success" class="alert alert-success py-2 px-2 mb-2" style="display:none; font-size:12px;"></div>
 
-                            <div class="d-flex align-items-center gap-2 mb-2">
-                                <button id="chapingo-btn-guardar" type="submit" class="btn btn-sm btn-primary">
-                                    <span class="spinner-border spinner-border-sm me-1" id="chapingo-save-spinner" role="status" aria-hidden="true" style="display:none;"></span>
-                                    Guardar decisión
-                                </button>
-                                <small class="text-muted" id="chapingo-save-hint">Los valores guardados se mantienen en este índice.</small>
-                            </div>
-
-                            <div class="chapingo-readonly mt-2">
-                                <div class="small text-muted mb-1">Estado de captura</div>
-                                <div class="chapingo-note mb-2" id="chapingo-input-source">Inicializando...</div>
-
-                                <div class="small text-muted mb-1">Propuesta automática</div>
-                                <div class="chapingo-kv">
-                                    <div class="k">Estatus</div>
-                                    <div class="v" id="chapingo-propuesta-estatus">—</div>
-                                    <div class="k">ID único</div>
-                                    <div class="v" id="chapingo-propuesta-id">—</div>
-                                    <div class="k">Superficie</div>
-                                    <div class="v" id="chapingo-propuesta-superficie">—</div>
-                                </div>
-                                <div class="small text-muted mb-1">Reglas disparadas</div>
-                                <ul id="chapingo-reglas-list">
-                                    <li>Sin reglas disponibles</li>
-                                </ul>
-
-                                <div class="small text-muted mt-2 mb-1">Último guardado</div>
-                                <div class="chapingo-kv">
-                                    <div class="k">Estatus</div>
-                                    <div class="v" id="chapingo-guardado-estatus">—</div>
-                                    <div class="k">ID único</div>
-                                    <div class="v" id="chapingo-guardado-id">—</div>
-                                    <div class="k">Superficie</div>
-                                    <div class="v" id="chapingo-guardado-superficie">—</div>
-                                    <div class="k">Comentario</div>
-                                    <div class="v" id="chapingo-guardado-comentario">—</div>
-                                </div>
-
-                                <div class="small text-muted mb-1">Candidatos intra-15K</div>
-                                <ul id="chapingo-candidatos-list">
-                                    <li>Sin candidatos intra-15K relacionados para este polígono.</li>
-                                </ul>
-
-                                <div class="small text-muted mt-2 mb-1">Evidencia rápida (4 escenarios)</div>
-                                <div class="d-flex align-items-center gap-2 mb-1">
-                                    <button id="chapingo-btn-verificar-evidencia" type="button" class="btn btn-sm btn-outline-secondary">
-                                        Verificar flujo Chapingo
-                                    </button>
-                                    <small id="chapingo-evidencia-estado" class="text-muted">Sin ejecutar</small>
-                                </div>
-                                <ul id="chapingo-evidencia-list">
-                                    <li class="text-muted">Ejecuta la verificación para obtener evidencia reproducible.</li>
-                                </ul>
-                            </div>
+                            <button id="chapingo-btn-guardar" type="submit" class="btn btn-sm btn-primary w-100">
+                                <span class="spinner-border spinner-border-sm me-1" id="chapingo-save-spinner" role="status" aria-hidden="true" style="display:none;"></span>
+                                <i class="bi bi-check-lg me-1"></i>Guardar decisión
+                            </button>
                         </form>
                     </div>
 
-                    <!-- ── Sección 5: Lista de matches ──────────────────────── -->
+                    <!-- ── Sección 5: Polígonos Traslapados ─────────────────── -->
                     <div class="panel-section" id="section-matches">
-                        <div class="panel-section-title"><i class="bi bi-list-ul me-1"></i>Matches Encontrados</div>
-                        <div id="matches-list">
-                            <div class="empty-state">Cargando primer polígono...</div>
+                        <div class="panel-section-title"><i class="bi bi-layers me-1"></i>Polígonos Traslapados</div>
+
+                        <!-- Intra-15K subsection -->
+                        <div id="matches-intra-15k" class="mb-2">
+                            <div class="small text-muted fw-bold mb-1" style="font-size:10px; text-transform:uppercase; letter-spacing:0.05em;">
+                                <i class="bi bi-diagram-3 me-1"></i>Intra-15K (mismos nuevos)
+                            </div>
+                            <div id="matches-intra-list">
+                                <div class="empty-state" style="padding:8px 0; font-size:12px;">Sin traslapes intra-15K</div>
+                            </div>
+                        </div>
+
+                        <!-- Megacapa subsection -->
+                        <div id="matches-mega">
+                            <div class="small text-muted fw-bold mb-1" style="font-size:10px; text-transform:uppercase; letter-spacing:0.05em;">
+                                <i class="bi bi-archive me-1"></i>Mega Capa (histórico)
+                            </div>
+                            <div id="matches-list">
+                                <div class="empty-state" style="padding:8px 0; font-size:12px;">Sin matches en Mega Capa</div>
+                            </div>
                         </div>
                     </div>
 
@@ -1010,7 +847,6 @@
     var chapingoPanelLoadedIdx = null;
     var chapingoFormDirty = false;
     var chapingoSaveInFlight = false;
-    var chapingoEvidenciaInFlight = false;
 
     // ── Variables para capas de fondo ─────────────────────────────────────────
     let validacionBgLayer  = null;
@@ -1084,21 +920,6 @@
         return isNaN(n) ? safeVal(v) : n.toFixed(4) + ' ha';
     }
 
-    function hayGuardadoChapingo(guardado) {
-        return hasValor(guardado.estatus_chapingo) ||
-            hasValor(guardado.id_poligono_unico) ||
-            hasValor(guardado.superficie_chapingo) ||
-            hasValor(guardado.comentario_chapingo);
-    }
-
-    function actualizarGuardadoChapingo(guardado) {
-        var data = guardado || {};
-        document.getElementById('chapingo-guardado-estatus').textContent = safeVal(data.estatus_chapingo);
-        document.getElementById('chapingo-guardado-id').textContent = safeVal(data.id_poligono_unico);
-        document.getElementById('chapingo-guardado-superficie').textContent = formatSuperficie(data.superficie_chapingo);
-        document.getElementById('chapingo-guardado-comentario').textContent = safeVal(data.comentario_chapingo);
-    }
-
     function limpiarMensajesChapingo() {
         var errorEl = document.getElementById('chapingo-form-error');
         var successEl = document.getElementById('chapingo-form-success');
@@ -1112,148 +933,34 @@
         chapingoSaveInFlight = isSaving;
         var btn = document.getElementById('chapingo-btn-guardar');
         var spinner = document.getElementById('chapingo-save-spinner');
-        var hint = document.getElementById('chapingo-save-hint');
         btn.disabled = isSaving;
         spinner.style.display = isSaving ? 'inline-block' : 'none';
-        hint.textContent = isSaving
-            ? 'Guardando decisión...'
-            : 'Los valores guardados se mantienen en este índice.';
     }
 
-    function setCandidatosIntra15k(candidatos) {
-        var list = document.getElementById('chapingo-candidatos-list');
-        list.innerHTML = '';
-
-        if (!Array.isArray(candidatos) || candidatos.length === 0) {
-            list.innerHTML = '<li class="text-muted">Sin candidatos intra-15K relacionados para este polígono.</li>';
+    function poblarListaIntra15k(candidatos) {
+        var container = document.getElementById('matches-intra-list');
+        if (!candidatos || candidatos.length === 0) {
+            container.innerHTML = '<div class="empty-state" style="padding:8px 0; font-size:12px;">Sin traslapes intra-15K</div>';
             return;
         }
-
+        container.innerHTML = '';
         candidatos.forEach(function(c) {
-            var li = document.createElement('li');
-            li.className = 'chapingo-candidato-item';
+            var card = document.createElement('div');
+            card.className = 'match-card';
+            var borderColor = c.same_credit ? '#0d6efd' : '#6f42c1';
+            card.style.borderLeftColor = borderColor;
 
-            var relacionRaw = String(c.relacion_credito || '').toLowerCase();
-            var relacionLabel = relacionRaw === 'mismo_credito'
-                ? 'Mismo crédito'
-                : relacionRaw === 'diferente_credito'
-                    ? 'Diferente crédito'
-                    : safeVal(c.tipo_relacion || c.relacion_credito);
+            var relacionLabel = c.same_credit ? 'Mismo crédito' : 'Diferente crédito';
+            var badgeColor = c.same_credit ? '#0d6efd' : '#6f42c1';
 
-            var traslapeLabel = hasValor(c.overlap_pct) ? safeVal(c.overlap_pct) + '%' : '—';
+            card.innerHTML =
+                '<div class="match-id">' + safeVal(c.id_poligon) + '</div>' +
+                '<div class="match-meta">Crédito: ' + safeVal(c.id_credito) + '</div>' +
+                '<div class="match-meta">Traslape: <strong>' + fmt(c.overlap_pct, 1) + '%</strong> · Superficie: <strong>' + fmt(c.superficie_ha, 4) + ' ha</strong></div>' +
+                '<span class="match-badge" style="background:' + badgeColor + ';">' + relacionLabel + '</span>';
 
-            li.innerHTML =
-                '<div class="linea-principal">ID polígono: ' + safeVal(c.id_poligon) + ' · ID crédito: ' + safeVal(c.id_credito) + '</div>' +
-                '<div class="linea-secundaria">Relación: ' + relacionLabel + ' · Traslape: ' + traslapeLabel + '</div>';
-            list.appendChild(li);
+            container.appendChild(card);
         });
-    }
-
-    function setPropuestaReglas(reglas) {
-        var list = document.getElementById('chapingo-reglas-list');
-        list.innerHTML = '';
-
-        if (!Array.isArray(reglas) || reglas.length === 0) {
-            list.innerHTML = '<li>Sin reglas disponibles</li>';
-            return;
-        }
-
-        reglas.forEach(function(regla) {
-            var li = document.createElement('li');
-            li.textContent = regla;
-            list.appendChild(li);
-        });
-    }
-
-    function setEstadoEvidenciaChapingo(isRunning, text) {
-        chapingoEvidenciaInFlight = isRunning;
-        var btn = document.getElementById('chapingo-btn-verificar-evidencia');
-        var estado = document.getElementById('chapingo-evidencia-estado');
-        btn.disabled = isRunning;
-        estado.textContent = text || (isRunning ? 'Ejecutando...' : 'Sin ejecutar');
-        estado.className = isRunning ? 'text-muted' : estado.className;
-    }
-
-    function renderEvidenciaChapingo(payload) {
-        var list = document.getElementById('chapingo-evidencia-list');
-        var estado = document.getElementById('chapingo-evidencia-estado');
-        list.innerHTML = '';
-
-        var escenarios = (payload && payload.escenarios) ? payload.escenarios : {};
-        var etiquetas = {
-            nuevo_sin_conflictos: 'Nuevo sin conflictos',
-            nuevo_conflicto_mismo_credito: 'Nuevo con conflicto mismo crédito',
-            nuevo_conflicto_diferente_credito: 'Nuevo con conflicto diferente crédito',
-            indice_no_nuevo_panel_no_aplica: 'Índice no nuevo (panel no aplica)'
-        };
-
-        Object.keys(etiquetas).forEach(function(key) {
-            var ev = escenarios[key];
-            var li = document.createElement('li');
-
-            if (!ev) {
-                li.innerHTML = '<strong>' + etiquetas[key] + ':</strong> no encontrado';
-                list.appendChild(li);
-                return;
-            }
-
-            var idxLabel = hasValor(ev.idx) ? ('idx #' + ev.idx) : 'sin idx';
-            var cumple = (ev.cumple !== false);
-            var estadoCaso = cumple ? 'OK' : 'REVISAR';
-            var detalle = '';
-
-            if (key === 'indice_no_nuevo_panel_no_aplica') {
-                detalle = 'aplica_panel_editable=' + String(Boolean(ev.aplica_panel_editable));
-            } else if (key === 'nuevo_conflicto_mismo_credito') {
-                detalle = 'estatus=' + safeVal(ev.estatus_propuesto) + ' | propuesto=' + safeVal(ev.id_poligono_unico_propuesto) + ' | ganador=' + safeVal(ev.ganador_esperado);
-            } else {
-                detalle = 'estatus=' + safeVal(ev.estatus_propuesto) + ' | id=' + safeVal(ev.id_poligono_unico_propuesto);
-            }
-
-            li.innerHTML = '<strong>' + etiquetas[key] + ':</strong> ' + estadoCaso + ' (' + idxLabel + ') · ' + detalle;
-            list.appendChild(li);
-        });
-
-        if (payload && payload.ok) {
-            estado.textContent = '4/4 escenarios validados';
-            estado.className = 'text-success';
-        } else {
-            var faltantes = Array.isArray(payload && payload.faltantes) ? payload.faltantes.length : 0;
-            var fallidos = Array.isArray(payload && payload.fallidos) ? payload.fallidos.length : 0;
-            estado.textContent = 'Pendientes: ' + (faltantes + fallidos);
-            estado.className = 'text-warning';
-        }
-    }
-
-    function verificarEvidenciaChapingo() {
-        if (chapingoEvidenciaInFlight) return;
-        setEstadoEvidenciaChapingo(true, 'Ejecutando evidencia...');
-
-        fetch('/api/analizador/chapingo-evidencia')
-            .then(function(r) {
-                return r.json().catch(function() { return {}; }).then(function(data) {
-                    if (!r.ok) {
-                        var err = new Error(data.error || ('HTTP ' + r.status));
-                        throw err;
-                    }
-                    return data;
-                });
-            })
-            .then(function(data) {
-                renderEvidenciaChapingo(data);
-            })
-            .catch(function(err) {
-                var estado = document.getElementById('chapingo-evidencia-estado');
-                var list = document.getElementById('chapingo-evidencia-list');
-                estado.textContent = 'Error al verificar';
-                estado.className = 'text-danger';
-                list.innerHTML = '<li class="text-danger">No fue posible generar evidencia: ' + err.message + '</li>';
-            })
-            .finally(function() {
-                if (!chapingoEvidenciaInFlight) return;
-                chapingoEvidenciaInFlight = false;
-                document.getElementById('chapingo-btn-verificar-evidencia').disabled = false;
-            });
     }
 
     function actualizarPanelChapingo(idx) {
@@ -1286,6 +993,29 @@
                 var candidatos = payload.candidatos_intra_15k || [];
                 var esNuevo = Boolean(payload.es_nuevo) && Boolean(propuesta.aplica);
 
+                // ── Populate info section with proposed values ────────────
+                var estatusPropuesto = propuesta.estatus_chapingo_propuesto;
+                var badgeEl = document.getElementById('info-estatus-propuesto');
+                badgeEl.textContent = safeVal(estatusPropuesto);
+                if (estatusPropuesto === 'NUEVO') {
+                    badgeEl.style.background = '#198754';
+                    badgeEl.style.color = '#fff';
+                } else if (estatusPropuesto === 'VINCULAR') {
+                    badgeEl.style.background = '#0d6efd';
+                    badgeEl.style.color = '#fff';
+                } else if (estatusPropuesto === 'ELIMINAR') {
+                    badgeEl.style.background = '#dc3545';
+                    badgeEl.style.color = '#fff';
+                } else {
+                    badgeEl.style.background = '#6c757d';
+                    badgeEl.style.color = '#fff';
+                }
+                document.getElementById('info-id-unico-propuesto').textContent = safeVal(propuesta.id_poligono_unico_propuesto);
+                document.getElementById('info-superficie-calculada').textContent = formatSuperficie(propuesta.superficie_chapingo_propuesta);
+
+                // ── Populate intra-15K matches list ───────────────────────
+                poblarListaIntra15k(candidatos);
+
                 if (!esNuevo) {
                     noAplicaEl.textContent = propuesta.comentario_chapingo_propuesto || 'Este índice no pertenece al subconjunto de nuevos. El formulario editable de decisión Chapingo no aplica para este polígono.';
                     noAplicaEl.style.display = 'block';
@@ -1296,7 +1026,10 @@
 
                 formEl.style.display = 'block';
 
-                var usarGuardado = hayGuardadoChapingo(guardado);
+                // Pre-fill form with proposed values (guardado takes priority if exists)
+                var usarGuardado = hasValor(guardado.estatus_chapingo) ||
+                    hasValor(guardado.id_poligono_unico) ||
+                    hasValor(guardado.superficie_chapingo);
 
                 document.getElementById('chapingo-estatus').value = valorEditable(
                     usarGuardado ? guardado.estatus_chapingo : propuesta.estatus_chapingo_propuesto
@@ -1305,81 +1038,8 @@
                     usarGuardado ? guardado.id_poligono_unico : propuesta.id_poligono_unico_propuesto
                 );
                 document.getElementById('chapingo-superficie').value = valorEditable(
-                    usarGuardado ? guardado.superficie_chapingo : propuesta.superficie_chapingo_propuesta
+                    propuesta.superficie_chapingo_propuesta
                 );
-                document.getElementById('chapingo-comentario').value = valorEditable(
-                    usarGuardado ? guardado.comentario_chapingo : propuesta.comentario_chapingo_propuesto
-                );
-
-                document.getElementById('chapingo-input-source').textContent = usarGuardado
-                    ? 'Inputs inicializados desde el guardado previo; la propuesta automática se mantiene como referencia.'
-                    : 'Sin guardado previo; inputs inicializados desde la propuesta automática.';
-
-                document.getElementById('chapingo-propuesta-estatus').textContent = safeVal(propuesta.estatus_chapingo_propuesto);
-                document.getElementById('chapingo-propuesta-id').textContent = safeVal(propuesta.id_poligono_unico_propuesto);
-                document.getElementById('chapingo-propuesta-superficie').textContent = formatSuperficie(propuesta.superficie_chapingo_propuesta);
-
-                actualizarGuardadoChapingo(guardado);
-
-                setPropuestaReglas(propuesta.reglas_disparadas);
-                setCandidatosIntra15k(candidatos);
-
-                // ── Superficie Calculada (read-only display) ──────────────
-                var supAutoEl = document.getElementById('chapingo-superficie-auto');
-                var supCalcEl = document.getElementById('chapingo-superficie-calculada');
-                if (propuesta.superficie_chapingo_propuesta !== null && propuesta.superficie_chapingo_propuesta !== undefined && propuesta.superficie_chapingo_propuesta !== '') {
-                    supCalcEl.textContent = formatSuperficie(propuesta.superficie_chapingo_propuesta);
-                    supAutoEl.style.display = 'block';
-                } else {
-                    supCalcEl.textContent = '—';
-                    supAutoEl.style.display = 'none';
-                }
-
-                // ── Intra-15K classification badge ────────────────────────
-                var badgeEl = document.getElementById('intra-clasif-badge');
-                var badgeTextEl = document.getElementById('intra-clasif-badge-text');
-                var reglas = Array.isArray(propuesta.reglas_disparadas) ? propuesta.reglas_disparadas : [];
-                var clasifLabel = '';
-                var clasifColor = '';
-                if (reglas.indexOf('sin_conflicto_intra_15k') !== -1) {
-                    clasifLabel = 'Sin traslape intra-15K';
-                    clasifColor = 'bg-secondary';
-                } else if (reglas.indexOf('traslape_diferente_credito') !== -1) {
-                    clasifLabel = 'Diferente Crédito - NUEVO';
-                    clasifColor = 'bg-purple text-white';
-                } else if (reglas.indexOf('duplicado_mismo_credito_ganador_por_superficie') !== -1) {
-                    if (reglas.indexOf('no_ganador_propuesto_vincular') !== -1) {
-                        clasifLabel = 'Mismo Crédito - VINCULAR';
-                        clasifColor = 'bg-primary';
-                    } else if (reglas.indexOf('ganador_permanece_nuevo') !== -1) {
-                        clasifLabel = 'Mismo Crédito - NUEVO (mayor superficie)';
-                        clasifColor = 'bg-success';
-                    } else {
-                        clasifLabel = 'Mismo Crédito';
-                        clasifColor = 'bg-secondary';
-                    }
-                }
-                if (clasifLabel) {
-                    badgeTextEl.textContent = clasifLabel;
-                    badgeTextEl.className = 'badge ' + clasifColor;
-                    badgeEl.style.display = 'block';
-                } else {
-                    badgeEl.style.display = 'none';
-                }
-
-                // ── Vincular info box ─────────────────────────────────────
-                var vincularInfoEl = document.getElementById('vincular-info');
-                var vincularIdEl = document.getElementById('vincular-id-poligon');
-                var vincularSupEl = document.getElementById('vincular-superficie');
-                var estatusActual = usarGuardado ? guardado.estatus_chapingo : propuesta.estatus_chapingo_propuesto;
-                if (estatusActual === 'VINCULAR') {
-                    var vinId = propuesta.id_poligono_unico_propuesto;
-                    vincularIdEl.textContent = safeVal(vinId);
-                    vincularSupEl.textContent = formatSuperficie(propuesta.superficie_chapingo_propuesta);
-                    vincularInfoEl.style.display = 'block';
-                } else {
-                    vincularInfoEl.style.display = 'none';
-                }
 
                 chapingoPanelLoadedIdx = idx;
                 chapingoFormDirty = false;
@@ -1865,14 +1525,6 @@
                         ? props.area_ha.toFixed(4) + ' ha'
                         : '—';
 
-                // ── Actualizar resumen ────────────────────────────────────
-                var res = data.resumen;
-                document.getElementById('res-duplicados').textContent   = res.duplicados;
-                document.getElementById('res-traslape-int').textContent = res.traslape_interno;
-                document.getElementById('res-traslape-rel').textContent = res.traslape_relevante;
-                document.getElementById('res-sin-conf').textContent     = res.sin_conflicto;
-                document.getElementById('res-total').textContent        = res.total_matches;
-
                 // ── Limpiar capas anteriores ──────────────────────────────
                 if (poligonoLayer) { map.removeLayer(poligonoLayer); poligonoLayer = null; }
                 if (matchesLayer)  { map.removeLayer(matchesLayer);  matchesLayer  = null; }
@@ -2289,7 +1941,7 @@
         iniciarClasificacion();
     });
 
-    ['chapingo-estatus', 'chapingo-id-unico', 'chapingo-superficie', 'chapingo-comentario'].forEach(function(id) {
+    ['chapingo-estatus', 'chapingo-id-unico', 'chapingo-superficie'].forEach(function(id) {
         var el = document.getElementById(id);
         if (!el) return;
         el.addEventListener('input', function() {
@@ -2300,22 +1952,6 @@
             chapingoFormDirty = true;
             limpiarMensajesChapingo();
         });
-    });
-
-    // Update vincular-info box when estatus dropdown changes
-    document.getElementById('chapingo-estatus').addEventListener('change', function() {
-        var vincularInfoEl = document.getElementById('vincular-info');
-        if (this.value === 'VINCULAR') {
-            var vincularIdEl = document.getElementById('vincular-id-poligon');
-            var vincularSupEl = document.getElementById('vincular-superficie');
-            var idUnico = document.getElementById('chapingo-id-unico').value;
-            var supCalc = document.getElementById('chapingo-superficie-calculada').textContent;
-            vincularIdEl.textContent = idUnico || '—';
-            vincularSupEl.textContent = supCalc || '—';
-            vincularInfoEl.style.display = 'block';
-        } else {
-            vincularInfoEl.style.display = 'none';
-        }
     });
 
     document.getElementById('chapingo-form').addEventListener('submit', function(e) {
@@ -2330,7 +1966,7 @@
             estatus_chapingo: document.getElementById('chapingo-estatus').value,
             id_poligono_unico: document.getElementById('chapingo-id-unico').value,
             superficie_chapingo: superficieRaw === '' ? null : Number(superficieRaw),
-            comentario_chapingo: document.getElementById('chapingo-comentario').value,
+            comentario_chapingo: null,
         };
 
         fetch('/api/analizador/propuesta-editable/' + chapingoPanelLoadedIdx + '/guardar', {
@@ -2355,12 +1991,20 @@
 
                 document.getElementById('chapingo-estatus').value = valorEditable(guardado.estatus_chapingo);
                 document.getElementById('chapingo-id-unico').value = valorEditable(guardado.id_poligono_unico);
-                document.getElementById('chapingo-superficie').value = valorEditable(guardado.superficie_chapingo);
-                document.getElementById('chapingo-comentario').value = valorEditable(guardado.comentario_chapingo);
-                actualizarGuardadoChapingo(guardado);
 
-                document.getElementById('chapingo-input-source').textContent =
-                    'Inputs actualizados desde el guardado normalizado del backend.';
+                // Update info section badge after save
+                var estatusGuardado = guardado.estatus_chapingo;
+                var badgeEl = document.getElementById('info-estatus-propuesto');
+                if (estatusGuardado) {
+                    badgeEl.textContent = estatusGuardado;
+                    if (estatusGuardado === 'NUEVO') {
+                        badgeEl.style.background = '#198754'; badgeEl.style.color = '#fff';
+                    } else if (estatusGuardado === 'VINCULAR') {
+                        badgeEl.style.background = '#0d6efd'; badgeEl.style.color = '#fff';
+                    } else if (estatusGuardado === 'ELIMINAR') {
+                        badgeEl.style.background = '#dc3545'; badgeEl.style.color = '#fff';
+                    }
+                }
 
                 var successEl = document.getElementById('chapingo-form-success');
                 successEl.textContent = 'Decisión guardada correctamente.';
@@ -2379,10 +2023,6 @@
             .finally(function() {
                 setEstadoGuardadoChapingo(false);
             });
-    });
-
-    document.getElementById('chapingo-btn-verificar-evidencia').addEventListener('click', function() {
-        verificarEvidenciaChapingo();
     });
 
     // ── Carga inicial ─────────────────────────────────────────────────────────
