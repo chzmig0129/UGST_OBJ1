@@ -41,6 +41,10 @@ app.config.from_object(get_config())
 # SECRET_KEY must be set on app.secret_key as well for Flask session signing.
 app.secret_key = app.config['SECRET_KEY']
 
+# Configure logging (must be done after app creation and config loading)
+from utils.logging_config import setup_logging  # noqa: E402
+setup_logging(app)
+
 # ---------------------------------------------------------------------------
 # Security: Flask-Talisman (security headers) — production only
 # ---------------------------------------------------------------------------
@@ -112,14 +116,14 @@ def obtener_ubicacion(lat, lon):
                 if isinstance(estado, str) and any(c in estado for c in ['Ã', 'Â', 'Á', 'É', 'Í', 'Ó', 'Ú']):
                     estado = estado.encode('latin-1').decode('utf-8')
             except Exception as encoding_error:
-                print(f"Error al corregir codificación: {encoding_error}")
+                app.logger.error(f"Error al corregir codificación: {encoding_error}")
                 
             return {
                 "municipio": municipio,
                 "estado": estado
             }
     except Exception as e:
-        print(f"Error al obtener ubicación: {e}")
+        app.logger.error(f"Error al obtener ubicación: {e}")
     return None
 
 db = SQLAlchemy(app)
@@ -179,7 +183,7 @@ if not os.path.exists(app.config['UPLOAD_FOLDER']):
 
 # Register auth blueprint
 from auth import auth as auth_blueprint  # noqa: E402
-app.register_blueprint(auth_blueprint)
+app.logger.debug(auth_blueprint)
 
 # Apply per-route rate limits to auth blueprint views.
 # limiter.limit() can be applied to a view function after blueprint registration.
@@ -190,9 +194,9 @@ limiter.limit("3 per hour")(auth_blueprint.view_functions['register'])
 with app.app_context():
     try:
         db.create_all()
-        print("Base de datos inicializada (db.create_all completado).")
+        app.logger.info("Base de datos inicializada (db.create_all completado).")
     except Exception as e:
-        print(f"Error al inicializar la base de datos: {e}")
+        app.logger.error(f"Error al inicializar la base de datos: {e}")
 
 # ==============================================
 # Funciones para procesamiento de coordenadas
@@ -298,7 +302,7 @@ def dms_a_decimal(coord):
             decimal *= -1
         return round(decimal, 6)  # Más precisión
     except Exception as e:
-        print(f"Error al convertir DMS a decimal: {coord} - {str(e)}")
+        app.logger.error(f"Error al convertir DMS a decimal: {coord} - {str(e)}")
         return np.nan
 
 def es_dms(coord):
@@ -343,7 +347,7 @@ def procesar_coordenadas_dms(fila):
     coord_list = [c.strip() for c in coord_list]
     
     # Depuración para ver las coordenadas procesadas
-    print(f"Coordenadas divididas: {coord_list}")
+    app.logger.debug(f"Coordenadas divididas: {coord_list}")
     
     coords_decimales = []
     
@@ -362,10 +366,10 @@ def procesar_coordenadas_dms(fila):
                 lon = dms_a_decimal(lon_str)
                 if not np.isnan(lat) and not np.isnan(lon):
                     coords_decimales.append(f"{lat:.6f},{lon:.6f}")
-                    print(f"Par procesado especial: {lat_str},{lon_str} -> {lat:.6f},{lon:.6f}")
+                    app.logger.debug(f"Par procesado especial: {lat_str},{lon_str} -> {lat:.6f},{lon:.6f}")
                 continue
             except Exception as e:
-                print(f"Error procesando formato especial {coord_pair}: {e}")
+                app.logger.error(f"Error procesando formato especial {coord_pair}: {e}")
             
         # Procesamiento normal
         if ' ' in coord_pair and ',' not in coord_pair:
@@ -432,7 +436,7 @@ def procesar_coordenadas_dms(fila):
                                 lon *= -1
                             coords_decimales.append(f"{lat:.6f},{lon:.6f}")
                     except Exception as e:
-                        print(f"Error procesando parte numérica {coord_pair}: {e}")
+                        app.logger.error(f"Error procesando parte numérica {coord_pair}: {e}")
                 continue
 
         # Limpieza adicional
@@ -440,32 +444,32 @@ def procesar_coordenadas_dms(fila):
         lon_str = limpiar_coordenada(lon_str) if lon_str else ''
         
         # Intentar procesarlas como DMS
-        print(f"Procesando: lat_str={lat_str}, lon_str={lon_str}")
+        app.logger.debug(f"Procesando: lat_str={lat_str}, lon_str={lon_str}")
         
         try:
             # Proceso de latitud
             if es_dms(lat_str):
                 lat = dms_a_decimal(lat_str)
-                print(f"Latitud DMS: {lat_str} -> {lat}")
+                app.logger.debug(f"Latitud DMS: {lat_str} -> {lat}")
             else:
                 lat_str_numeric = re.sub(r'[^\d\.\-]', '', lat_str)
                 lat = float(lat_str_numeric)
                 if 'S' in lat_str.upper():
                     lat *= -1
-                print(f"Latitud decimal: {lat_str} -> {lat}")
+                app.logger.debug(f"Latitud decimal: {lat_str} -> {lat}")
                 
             if np.isnan(lat):
-                print(f"Latitud inválida: {lat_str}")
+                app.logger.error(f"Latitud inválida: {lat_str}")
                 continue
         except Exception as e:
-            print(f"Error procesando latitud {lat_str}: {e}")
+            app.logger.error(f"Error procesando latitud {lat_str}: {e}")
             continue
 
         try:
             # Proceso de longitud
             if es_dms(lon_str):
                 lon = dms_a_decimal(lon_str)
-                print(f"Longitud DMS: {lon_str} -> {lon}")
+                app.logger.debug(f"Longitud DMS: {lon_str} -> {lon}")
             else:
                 lon_str_numeric = re.sub(r'[^\d\.\-]', '', lon_str)
                 lon = float(lon_str_numeric)
@@ -473,18 +477,18 @@ def procesar_coordenadas_dms(fila):
                     lon *= -1
                 elif lon > 0:
                     lon *= -1  # Asumir oeste para América
-                print(f"Longitud decimal: {lon_str} -> {lon}")
+                app.logger.debug(f"Longitud decimal: {lon_str} -> {lon}")
                 
             if np.isnan(lon):
-                print(f"Longitud inválida: {lon_str}")
+                app.logger.error(f"Longitud inválida: {lon_str}")
                 continue
         except Exception as e:
-            print(f"Error procesando longitud {lon_str}: {e}")
+            app.logger.error(f"Error procesando longitud {lon_str}: {e}")
             continue
 
         if not np.isnan(lat) and not np.isnan(lon):
             coords_decimales.append(f"{lat:.6f},{lon:.6f}")
-            print(f"Par añadido: {lat:.6f},{lon:.6f}")
+            app.logger.debug(f"Par añadido: {lat:.6f},{lon:.6f}")
 
     # Eliminar duplicados
     coords_decimales = list(dict.fromkeys(coords_decimales))
@@ -544,12 +548,12 @@ def calcular_area_poligono(coordenadas_str):
                     area += area_triangulo
                 else:
                     # Si el factor es negativo, usar un enfoque alternativo o 0
-                    print(f"Factor de área negativo: {area_factor}")
+                    app.logger.debug(f"Factor de área negativo: {area_factor}")
         
         # Convertir a hectáreas (1 ha = 10,000 m²)
         return area / 10000.0
     except Exception as e:
-        print(f"Error al calcular área geodésica: {e}")
+        app.logger.error(f"Error al calcular área geodésica: {e}")
         
         # Fallback: usar shapely para cálculo plano si el geodésico falla
         try:
@@ -579,13 +583,13 @@ def calcular_area_poligono(coordenadas_str):
                 if polygon.is_valid:
                     return polygon.area / 10000  # Convertir m² a hectáreas
                 else:
-                    print("Polígono inválido, regresando área 0")
+                    app.logger.error("Polígono inválido, regresando área 0")
                     return 0.0
             except:
-                print("No se pudo crear polígono válido, regresando área 0")
+                app.logger.error("No se pudo crear polígono válido, regresando área 0")
                 return 0.0
         except Exception as inner_e:
-            print(f"Error en fallback de cálculo de área: {inner_e}")
+            app.logger.error(f"Error en fallback de cálculo de área: {inner_e}")
             return 0.0
 
 # ==============================================
@@ -623,9 +627,9 @@ def validacion_poligonos(tab):
     if tab == 'lista':
         try:
             # Obtener datos de la base de datos
-            print("Consultando polígonos en la base de datos...")
+            app.logger.info("Consultando polígonos en la base de datos...")
             poligonos = Poligono.query.all()
-            print(f"Se encontraron {len(poligonos)} polígonos en la base de datos")
+            app.logger.info(f"Se encontraron {len(poligonos)} polígonos en la base de datos")
             
             # Convertir a formato compatible con la plantilla (LEYENDO DIRECTO DE COLUMNAS)
             data = []
@@ -660,7 +664,7 @@ def validacion_poligonos(tab):
             ]
             # --- FIN: Definir columnas fijas ---
 
-            print(f"Mostrando {len(columns_to_display)} columnas fijas: {columns_to_display}")
+            app.logger.info(f"Mostrando {len(columns_to_display)} columnas fijas: {columns_to_display}")
 
             return render_template('validacion_poligonos.html',
                                tab=tab,
@@ -668,7 +672,7 @@ def validacion_poligonos(tab):
                                columns=columns_to_display, # Usar la lista fija
                                filename=excel_data['filename']) # Mantener filename por compatibilidad
         except Exception as e:
-            print(f"ERROR AL CARGAR LISTA: {str(e)}")
+            app.logger.error(f"ERROR AL CARGAR LISTA: {str(e)}")
             import traceback
             traceback.print_exc()
             flash(f'Error al cargar datos: {str(e)}', 'error')
@@ -700,7 +704,7 @@ def validacion_poligonos(tab):
                                 lat, lon = pair.split(',')
                                 coords_para_mapa.append([float(lat.strip()), float(lon.strip())])
                     except Exception as e:
-                        print(f"Error al procesar coordenadas para el mapa: {e}")
+                        app.logger.error(f"Error al procesar coordenadas para el mapa: {e}")
                         coords_para_mapa = []
                 
                 # Detectar ubicación automáticamente si el estado y municipio están vacíos
@@ -709,7 +713,7 @@ def validacion_poligonos(tab):
                 municipio_detectado = poligono.municipio
                 
                 if (not estado_detectado or not municipio_detectado) and poligono.coordenadas_corregidas:
-                    print("Detectando ubicación automáticamente...")
+                    app.logger.debug("Detectando ubicación automáticamente...")
                     ubicacion = obtener_ubicacion_desde_poligono(poligono.coordenadas_corregidas)
                     if ubicacion:
                         if not estado_detectado:
@@ -718,7 +722,7 @@ def validacion_poligonos(tab):
                         if not municipio_detectado:
                             municipio_detectado = ubicacion['municipio']
                             ubicacion_auto = True
-                        print(f"Ubicación detectada: {municipio_detectado}, {estado_detectado}")
+                        app.logger.debug(f"Ubicación detectada: {municipio_detectado}, {estado_detectado}")
                 
                 # Crear diccionario con datos del polígono para la plantilla
                 poligono_data = {
@@ -749,7 +753,7 @@ def validacion_poligonos(tab):
                 flash('ID de polígono inválido', 'error')
                 return redirect(url_for('validacion_poligonos', tab='lista'))
             except Exception as e:
-                print(f"Error al cargar polígono para edición: {e}")
+                app.logger.error(f"Error al cargar polígono para edición: {e}")
                 flash('Error al cargar el polígono para edición', 'error')
                 return redirect(url_for('validacion_poligonos', tab='lista'))
         else:
@@ -808,7 +812,7 @@ def validacion_poligonos(tab):
                                data=data,
                                columns=columns)
         except Exception as e:
-            print(f"ERROR AL GENERAR REPORTE: {str(e)}")
+            app.logger.error(f"ERROR AL GENERAR REPORTE: {str(e)}")
             import traceback
             traceback.print_exc()
             flash(f'Error al generar reporte: {str(e)}', 'error')
@@ -850,13 +854,13 @@ def cargar_excel():
             archivo.save(filepath)
             
             # Leer el archivo Excel
-            print(f"Leyendo archivo Excel: {filename}")
+            app.logger.info(f"Leyendo archivo Excel: {filename}")
             df = pd.read_excel(filepath)
-            print(f"Columnas encontradas en el Excel: {df.columns.tolist()}")
+            app.logger.info(f"Columnas encontradas en el Excel: {df.columns.tolist()}")
             
             # Normalizar nombres de columnas (eliminar espacios, convertir a mayúsculas)
             df.columns = [col.strip().upper().replace(' ', '_') for col in df.columns]
-            print(f"Columnas normalizadas: {df.columns.tolist()}")
+            app.logger.info(f"Columnas normalizadas: {df.columns.tolist()}")
             
             # --- INICIO: Validar columnas requeridas ---
             required_columns = {'IF', 'ID_CREDITO', 'ID_PERSONA', 'ID_POLIGONO', 'SUPERFICIE', 'COORDENADAS'}
@@ -881,7 +885,7 @@ def cargar_excel():
             #     # Buscar una columna que pueda contener coordenadas (buscar patrones como 26°47'54"N)
             #     for col in df.columns:
             #         if df[col].dtype == 'object' and df[col].astype(str).str.contains('°|\'|"|N|W', regex=True).any():
-            #             print(f"Se encontró columna con posibles coordenadas: {col}")
+            #             app.logger.debug(f"Se encontró columna con posibles coordenadas: {col}")
             #             df['COORDENADAS'] = df[col]
             #             break
             #     
@@ -906,11 +910,11 @@ def cargar_excel():
             
             # GUARDAR EN LA BASE DE DATOS
             try:
-                print("Intentando guardar datos en la base de datos...")
+                app.logger.info("Intentando guardar datos en la base de datos...")
                 # Primero limpiamos la tabla para evitar duplicaciones al cargar un nuevo archivo
                 db.session.query(Poligono).delete()
                 db.session.commit()
-                print(f"Tabla 'poligono' limpiada. Insertando {len(df)} registros...")
+                app.logger.info(f"Tabla 'poligono' limpiada. Insertando {len(df)} registros...")
                 
                 count = 0
                 for index, row in df.iterrows():
@@ -943,15 +947,15 @@ def cargar_excel():
                     # Commit por lotes
                     if count % 100 == 0:
                         db.session.commit()
-                        print(f"Guardados {count} registros...")
+                        app.logger.info(f"Guardados {count} registros...")
                 
                 # Commit final
                 db.session.commit()
-                print(f"¡Guardados {count} registros en total en la base de datos!")
+                app.logger.info(f"¡Guardados {count} registros en total en la base de datos!")
                 flash(f'Archivo \'{filename}\' cargado y {count} registros guardados en la base de datos', 'success')
                 
             except Exception as db_error:
-                print(f"ERROR AL GUARDAR EN LA BASE DE DATOS: {str(db_error)}")
+                app.logger.error(f"ERROR AL GUARDAR EN LA BASE DE DATOS: {str(db_error)}")
                 import traceback
                 traceback.print_exc()
                 flash(f'Error al guardar en la base de datos: {str(db_error)}', 'error')
@@ -966,7 +970,7 @@ def cargar_excel():
             
         except Exception as e:
             flash(f'Error al procesar el archivo: {str(e)}', 'error')
-            print(f"ERROR GENERAL: {str(e)}")
+            app.logger.error(f"ERROR GENERAL: {str(e)}")
             import traceback
             traceback.print_exc()
             return redirect(url_for('validacion_poligonos'))
@@ -983,8 +987,8 @@ def actualizar_fila():
     db_id = request.form.get('db_id', type=int)
     
     # Imprimir información de la solicitud para depuración
-    print(f"Actualizando fila - db_id: {db_id}, row_index: {row_index}")
-    print(f"Datos del formulario: {request.form}")
+    app.logger.debug(f"Actualizando fila - db_id: {db_id}, row_index: {row_index}")
+    app.logger.debug(f"Datos del formulario: {request.form}")
     
     try:
         # Si tenemos db_id, actualizamos en la base de datos
@@ -994,7 +998,7 @@ def actualizar_fila():
                 flash('Registro no encontrado en la base de datos', 'error')
                 return redirect(url_for('validacion_poligonos', tab='lista'))
             
-            print(f"Actualizando polígono en la base de datos con ID: {db_id}")
+            app.logger.debug(f"Actualizando polígono en la base de datos con ID: {db_id}")
 
             # Cargar datos JSON actuales -> YA NO SE USA JSON
             # try:
@@ -1035,16 +1039,16 @@ def actualizar_fila():
                             # Para campos de texto, usar None en lugar de strings vacíos o 'None'
                             valor_actualizado = valor_form.strip() if valor_form.strip() and valor_form.strip().lower() != 'none' else None
                         setattr(poligono, atributo_modelo, valor_actualizado)
-                        print(f"Actualizado {atributo_modelo} a: {valor_actualizado}")
+                        app.logger.debug(f"Actualizado {atributo_modelo} a: {valor_actualizado}")
                     except ValueError:
-                         print(f"Error al convertir {campo_form} ('{valor_form}') a número para {atributo_modelo}. Se guarda como None/String.")
+                         app.logger.error(f"Error al convertir {campo_form} ('{valor_form}') a número para {atributo_modelo}. Se guarda como None/String.")
                          # Si falla la conversión numérica, decidir si guardar como None o string (depende del campo)
                          if atributo_modelo in ['superficie', 'area_digitalizada']:
                              setattr(poligono, atributo_modelo, None)
                          else: # Para campos de texto, guardar el valor original
                              setattr(poligono, atributo_modelo, valor_form)
                     except Exception as set_err:
-                         print(f"Error al actualizar {atributo_modelo}: {set_err}")
+                         app.logger.error(f"Error al actualizar {atributo_modelo}: {set_err}")
 
             # Guardar explícitamente el área digitalizada del formulario (redundante con el bucle, pero asegura tipo)
             # if 'AREA_DIGITALIZADA' in request.form and request.form['AREA_DIGITALIZADA'].strip():
@@ -1052,7 +1056,7 @@ def actualizar_fila():
             #         area_manual = float(request.form['AREA_DIGITALIZADA'])
             #         poligono.area_digitalizada = area_manual
             #         # datos_actuales['AREA_DIGITALIZADA'] = area_manual # No más JSON
-            #         print(f"Usando área ingresada manualmente: {area_manual} hectáreas")
+            #         app.logger.debug(f"Usando área ingresada manualmente: {area_manual} hectáreas")
             #     except ValueError:
             #         poligono.area_digitalizada = None # Poner None si no es válido
 
@@ -1071,7 +1075,7 @@ def actualizar_fila():
             # Guardar cambios en la base de datos
             try:
                 db.session.commit()
-                print("Cambios guardados exitosamente en la base de datos")
+                app.logger.info("Cambios guardados exitosamente en la base de datos")
                 flash('Cambios guardados correctamente en la base de datos', 'success')
                 
                 # Verificar si el usuario quiere ir al siguiente registro
@@ -1087,7 +1091,7 @@ def actualizar_fila():
                         return redirect(url_for('validacion_poligonos', tab='lista'))
                 
             except Exception as db_error:
-                print(f"Error al guardar en la base de datos: {db_error}")
+                app.logger.error(f"Error al guardar en la base de datos: {db_error}")
                 db.session.rollback()
                 flash(f'Error al guardar en la base de datos: {str(db_error)}', 'error')
             
@@ -1095,7 +1099,7 @@ def actualizar_fila():
         
         # Compatibilidad con el código anterior (mediante index)
         elif row_index is not None and row_index < len(excel_data['data']):
-            print(f"Actualizando polígono en memoria con índice: {row_index}")
+            app.logger.debug(f"Actualizando polígono en memoria con índice: {row_index}")
             
             # Actualizar todos los campos editables
             for col in excel_data['columns']:
@@ -1107,9 +1111,9 @@ def actualizar_fila():
                 try:
                     area_manual = float(request.form['AREA_DIGITALIZADA'])
                     excel_data['data'][row_index]['AREA_DIGITALIZADA'] = area_manual
-                    print(f"Usando área ingresada manualmente: {area_manual} hectáreas")
+                    app.logger.debug(f"Usando área ingresada manualmente: {area_manual} hectáreas")
                 except ValueError:
-                    print("Valor de área digitalizada no válido")
+                    app.logger.debug("Valor de área digitalizada no válido")
             
             # Actualizar coordenadas si se proporcionaron
             if 'COORDENADAS_DECIMALES_CORREGIDAS' in request.form:
@@ -1143,7 +1147,7 @@ def actualizar_fila():
             return redirect(url_for('validacion_poligonos', tab='lista'))
     
     except Exception as e:
-        print(f"ERROR GENERAL AL ACTUALIZAR: {str(e)}")
+        app.logger.error(f"ERROR GENERAL AL ACTUALIZAR: {str(e)}")
         import traceback
         traceback.print_exc()
         flash(f'Error al actualizar: {str(e)}', 'error')
@@ -1199,7 +1203,7 @@ def marcar_como_modificado():
         return jsonify({'success': True, 'message': 'Polígono marcado como modificado'})
         
     except Exception as e:
-        print(f"Error al marcar como modificado: {str(e)}")
+        app.logger.error(f"Error al marcar como modificado: {str(e)}")
         db.session.rollback()
         return jsonify({'error': f'Error al marcar como modificado: {str(e)}'}), 500
 
@@ -1270,7 +1274,7 @@ def get_historico_poligonos():
         
         return jsonify(respuesta)
     except Exception as e:
-        print(f"Error al cargar el shapefile histórico: {e}")
+        app.logger.error(f"Error al cargar el shapefile histórico: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/get-historico-poligonos-radio/<int:polygon_id>')
@@ -1374,7 +1378,7 @@ def get_historico_poligonos_radio(polygon_id):
         
         return jsonify(respuesta)
     except Exception as e:
-        print(f"Error al cargar el shapefile histórico filtrado: {e}")
+        app.logger.error(f"Error al cargar el shapefile histórico filtrado: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/obtener_ubicacion', methods=['POST'])
@@ -1421,7 +1425,7 @@ def obtener_ubicacion_desde_poligono(coordenadas_str):
             ubicacion['estado'] = corregir_codificacion(ubicacion['estado'])
         return ubicacion
     except Exception as e:
-        print(f"Error al obtener ubicación desde polígono: {e}")
+        app.logger.error(f"Error al obtener ubicación desde polígono: {e}")
         return None
 
 def allowed_file(filename):
@@ -1452,19 +1456,19 @@ def generar_shapefiles():
                     
                     if poligono is None:
                         # Si no se encuentra, imprimir para depuración
-                        print(f"No se encontró polígono con ID {row_id}, buscando en posición")
+                        app.logger.error(f"No se encontró polígono con ID {row_id}, buscando en posición")
                         
                         # Intentar buscar por posición como fallback
                         poligonos = Poligono.query.all()
                         if 0 <= row_id < len(poligonos):
                             poligono = poligonos[row_id]
                         else:
-                            print(f"Índice {row_id} fuera de rango, hay {len(poligonos)} polígonos")
+                            app.logger.debug(f"Índice {row_id} fuera de rango, hay {len(poligonos)} polígonos")
                             continue
                     
-                    print(f"Generando shapefile para polígono ID={poligono.id}, ID_POLIGONO={poligono.id_poligono}")
+                    app.logger.debug(f"Generando shapefile para polígono ID={poligono.id}, ID_POLIGONO={poligono.id_poligono}")
                 except Exception as e:
-                    print(f"Error al recuperar polígono {row_id}: {e}")
+                    app.logger.error(f"Error al recuperar polígono {row_id}: {e}")
                     # Si no es un índice válido, continuar con el siguiente
                     continue
                 
@@ -1487,7 +1491,7 @@ def generar_shapefiles():
         )
     
     except Exception as e:
-        print(f"Error al generar shapefiles: {e}")
+        app.logger.error(f"Error al generar shapefiles: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
@@ -1522,19 +1526,19 @@ def generar_paquete_completo():
                     
                     if poligono is None:
                         # Si no se encuentra, imprimir para depuración
-                        print(f"No se encontró polígono con ID {row_id}, buscando en posición")
+                        app.logger.error(f"No se encontró polígono con ID {row_id}, buscando en posición")
                         
                         # Intentar buscar por posición como fallback
                         poligonos = Poligono.query.all()
                         if 0 <= row_id < len(poligonos):
                             poligono = poligonos[row_id]
                         else:
-                            print(f"Índice {row_id} fuera de rango, hay {len(poligonos)} polígonos")
+                            app.logger.debug(f"Índice {row_id} fuera de rango, hay {len(poligonos)} polígonos")
                             continue
                             
-                    print(f"Generando fichas para polígono ID={poligono.id}, ID_POLIGONO={poligono.id_poligono}")
+                    app.logger.debug(f"Generando fichas para polígono ID={poligono.id}, ID_POLIGONO={poligono.id_poligono}")
                 except Exception as e:
-                    print(f"Error al recuperar polígono {row_id}: {e}")
+                    app.logger.error(f"Error al recuperar polígono {row_id}: {e}")
                     # Si no es un ID válido, continuar con el siguiente
                     continue
                 
@@ -1573,7 +1577,7 @@ def generar_paquete_completo():
                                             png_name = f"{poligono.id_poligono or f'polygon-{row_id}'}.png"
                                             zf.writestr(f'mapas/{png_name}', png_file.read())
                     except Exception as e:
-                        print(f"Error al generar mapa PNG para polígono {row_id}: {e}")
+                        app.logger.error(f"Error al generar mapa PNG para polígono {row_id}: {e}")
                         error_msg = f"Error al generar mapa PNG para polígono {row_id}: {e}"
                         errores_detalles.append(error_msg)
                         errores += 1
@@ -1614,7 +1618,7 @@ def generar_paquete_completo():
         )
     
     except Exception as e:
-        print(f"Error al generar paquete completo: {e}")
+        app.logger.error(f"Error al generar paquete completo: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
@@ -1640,10 +1644,10 @@ def generar_shapefile_unico():
                 if poligono:
                     poligonos.append(poligono)
                 else:
-                    print(f"Polígono con ID {row_id} no encontrado")
+                    app.logger.debug(f"Polígono con ID {row_id} no encontrado")
                     
             except Exception as e:
-                print(f"Error al recuperar polígono {row_id}: {e}")
+                app.logger.error(f"Error al recuperar polígono {row_id}: {e}")
                 continue
         
         if not poligonos:
@@ -1663,7 +1667,7 @@ def generar_shapefile_unico():
         )
     
     except Exception as e:
-        print(f"Error general: {str(e)}")
+        app.logger.error(f"Error general: {str(e)}")
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
@@ -1736,10 +1740,10 @@ def generar_shapefile_individual(poligono, nombre_archivo):
                             lon = float(partes[1].strip())
                             coords.append([lon, lat])  # Shapefile usa [lon, lat]
                         except (ValueError, IndexError) as e:
-                            print(f"Error al procesar coordenada {par}: {e}")
+                            app.logger.error(f"Error al procesar coordenada {par}: {e}")
                             continue
                 
-                print(f"Coordenadas procesadas para shapefile: {coords}")
+                app.logger.debug(f"Coordenadas procesadas para shapefile: {coords}")
             
             # Limpiar todos los campos de texto antes de escribirlos al DBF
             id_poligono_limpio = limpiar_campo_texto(poligono.id_poligono)[:40]
@@ -1811,7 +1815,7 @@ def generar_shapefile_individual(poligono, nombre_archivo):
         return zip_buffer
     
     except Exception as e:
-        print(f"Error al generar shapefile individual: {e}")
+        app.logger.error(f"Error al generar shapefile individual: {e}")
         import traceback
         traceback.print_exc()
         return None
@@ -1838,7 +1842,7 @@ def generar_ficha_tecnica(poligono, nombre_archivo):
             if os.path.exists(logo_sec_path):
                 c.drawImage(logo_sec_path, 6.5*inch, 9.5*inch, width=1*inch, height=1*inch, preserveAspectRatio=True)
         except Exception as e:
-            print(f"Error al cargar logos: {e}")
+            app.logger.error(f"Error al cargar logos: {e}")
         
         # Título
         c.setFont("Helvetica-Bold", 14)
@@ -1912,7 +1916,7 @@ def generar_ficha_tecnica(poligono, nombre_archivo):
                             c.drawImage(mapa_image_path, 1.1*inch, mapa_y_pos + 0.1*inch, 
                                        width=map_width, height=map_height, preserveAspectRatio=True)
         except Exception as map_error:
-            print(f"Error al generar o insertar el mapa: {map_error}")
+            app.logger.error(f"Error al generar o insertar el mapa: {map_error}")
             import traceback
             traceback.print_exc()
         
@@ -2043,7 +2047,7 @@ def generar_ficha_tecnica(poligono, nombre_archivo):
         return buffer
     
     except Exception as e:
-        print(f"Error al generar ficha técnica: {e}")
+        app.logger.error(f"Error al generar ficha técnica: {e}")
         import traceback
         traceback.print_exc()
         return None
@@ -2118,10 +2122,10 @@ def generar_shapefile_unificado(poligonos, nombre_archivo):
                                 lon = float(partes[1].strip())
                                 coords.append([lon, lat])  # Shapefile usa [lon, lat]
                             except (ValueError, IndexError) as e:
-                                print(f"Error al procesar coordenada {par}: {e}")
+                                app.logger.error(f"Error al procesar coordenada {par}: {e}")
                                 continue
                     
-                    print(f"Coordenadas procesadas para polígono {poligono.id}: {coords}")
+                    app.logger.debug(f"Coordenadas procesadas para polígono {poligono.id}: {coords}")
                 
                 # Limpiar todos los campos de texto antes de escribirlos al DBF
                 id_poligono_limpio = limpiar_campo_texto(poligono.id_poligono)[:40]
@@ -2156,7 +2160,7 @@ def generar_shapefile_unificado(poligonos, nombre_archivo):
                         )
                     else:
                         # No hay coordenadas válidas, saltar este polígono
-                        print(f"Saltando polígono {poligono.id} - coordenadas insuficientes")
+                        app.logger.debug(f"Saltando polígono {poligono.id} - coordenadas insuficientes")
                         continue
                 else:
                     # Crear un polígono
@@ -2194,7 +2198,7 @@ def generar_shapefile_unificado(poligonos, nombre_archivo):
         return zip_buffer
     
     except Exception as e:
-        print(f"Error al generar shapefile unificado: {e}")
+        app.logger.error(f"Error al generar shapefile unificado: {e}")
         import traceback
         traceback.print_exc()
         return None
@@ -2210,7 +2214,7 @@ def corregir_codificacion(texto):
             return texto.encode('latin-1').decode('utf-8')
         return texto
     except Exception as e:
-        print(f"Error al corregir codificación: {e}")
+        app.logger.error(f"Error al corregir codificación: {e}")
         return texto
 
 @app.route('/generar_shapefiles_y_mapas', methods=['POST'])
@@ -2240,19 +2244,19 @@ def generar_shapefiles_y_mapas():
                     
                     if poligono is None:
                         # Si no se encuentra, imprimir para depuración
-                        print(f"No se encontró polígono con ID {row_id}, buscando en posición")
+                        app.logger.error(f"No se encontró polígono con ID {row_id}, buscando en posición")
                         
                         # Intentar buscar por posición como fallback
                         poligonos = Poligono.query.all()
                         if 0 <= row_id < len(poligonos):
                             poligono = poligonos[row_id]
                         else:
-                            print(f"Índice {row_id} fuera de rango, hay {len(poligonos)} polígonos")
+                            app.logger.debug(f"Índice {row_id} fuera de rango, hay {len(poligonos)} polígonos")
                             continue
                     
-                    print(f"Generando shapefile para polígono ID={poligono.id}, ID_POLIGONO={poligono.id_poligono}")
+                    app.logger.debug(f"Generando shapefile para polígono ID={poligono.id}, ID_POLIGONO={poligono.id_poligono}")
                 except Exception as e:
-                    print(f"Error al recuperar polígono {row_id}: {e}")
+                    app.logger.error(f"Error al recuperar polígono {row_id}: {e}")
                     # Si no es un índice válido, continuar con el siguiente
                     continue
                 
@@ -2279,7 +2283,7 @@ def generar_shapefiles_y_mapas():
                                         with open(png_path, 'rb') as png_file:
                                             zf.writestr(f'mapas/{png_filename}', png_file.read())
                     except Exception as e:
-                        print(f"Error al generar mapa PNG para polígono {row_id}: {e}")
+                        app.logger.error(f"Error al generar mapa PNG para polígono {row_id}: {e}")
                         import traceback
                         traceback.print_exc()
         
@@ -2295,7 +2299,7 @@ def generar_shapefiles_y_mapas():
         )
     
     except Exception as e:
-        print(f"Error al generar shapefiles y mapas: {e}")
+        app.logger.error(f"Error al generar shapefiles y mapas: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
@@ -2305,21 +2309,21 @@ def generar_shapefiles_y_mapas():
 @limiter.limit("10 per hour")
 def procesar_shp():
     try:
-        print("Ruta /procesar-shp llamada", flush=True)
+        app.logger.debug("Ruta /procesar-shp llamada")
         
         # Verificar que el directorio de uploads existe
         if not os.path.exists(app.config['UPLOAD_FOLDER']):
             os.makedirs(app.config['UPLOAD_FOLDER'])
-            print(f"Directorio de uploads creado: {app.config['UPLOAD_FOLDER']}", flush=True)
+            app.logger.info(f"Directorio de uploads creado: {app.config['UPLOAD_FOLDER']}")
         
         # Verificar que el directorio de uploads tiene permisos de escritura
         if not os.access(app.config['UPLOAD_FOLDER'], os.W_OK):
             error_msg = f"Error: No hay permisos de escritura en el directorio {app.config['UPLOAD_FOLDER']}"
-            print(error_msg, flush=True)
+            app.logger.error(error_msg)
             return jsonify({'error': error_msg}), 500
         
         if 'zipfile' not in request.files:
-            print("Error: No hay archivo en la solicitud", flush=True)
+            app.logger.error("Error: No hay archivo en la solicitud")
             # Verificar si es una solicitud AJAX o un formulario directo
             if request.is_xhr or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return jsonify({'error': 'No se ha enviado ningún archivo'}), 400
@@ -2328,10 +2332,10 @@ def procesar_shp():
                 return redirect(url_for('unir_archivos'))
         
         archivo = request.files['zipfile']
-        print(f"Archivo recibido: {archivo.filename}", flush=True)
+        app.logger.debug(f"Archivo recibido: {archivo.filename}")
         
         if archivo.filename == '':
-            print("Error: Nombre de archivo vacío", flush=True)
+            app.logger.error("Error: Nombre de archivo vacío")
             # Verificar si es una solicitud AJAX o un formulario directo
             if request.is_xhr or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return jsonify({'error': 'No se ha seleccionado ningún archivo'}), 400
@@ -2347,30 +2351,30 @@ def procesar_shp():
         
         if file_size > MAX_FILE_SIZE:
             error_msg = f"El archivo es demasiado grande. Tamaño máximo permitido: 50 MB"
-            print(error_msg, flush=True)
+            app.logger.error(error_msg)
             return jsonify({'error': error_msg}), 413  # Request Entity Too Large
         
         if archivo and archivo.filename.endswith('.zip'):
             try:
-                print(f"Procesando archivo ZIP: {archivo.filename}", flush=True)
+                app.logger.debug(f"Procesando archivo ZIP: {archivo.filename}")
                 
                 # Crear directorio temporal para extracción
                 try:
                     temp_dir = tempfile.mkdtemp()
-                    print(f"Directorio temporal creado: {temp_dir}", flush=True)
+                    app.logger.debug(f"Directorio temporal creado: {temp_dir}")
                 except Exception as e:
                     error_msg = f"Error al crear directorio temporal: {str(e)}"
-                    print(error_msg, flush=True)
+                    app.logger.error(error_msg)
                     return jsonify({'error': error_msg}), 500
                 
                 # Guardar archivo ZIP
                 try:
                     zip_path = os.path.join(temp_dir, 'input.zip')
                     archivo.save(zip_path)
-                    print(f"Archivo guardado en: {zip_path}", flush=True)
+                    app.logger.debug(f"Archivo guardado en: {zip_path}")
                 except Exception as e:
                     error_msg = f"Error al guardar archivo: {str(e)}"
-                    print(error_msg, flush=True)
+                    app.logger.error(error_msg)
                     return jsonify({'error': error_msg}), 500
                 
                 # Verificar si es un ZIP válido
@@ -2379,14 +2383,14 @@ def procesar_shp():
                         # Verificar si el ZIP no está dañado
                         if zip_ref.testzip() is not None:
                             error_msg = "El archivo ZIP está dañado"
-                            print(error_msg, flush=True)
+                            app.logger.error(error_msg)
                             return jsonify({'error': error_msg}), 400
                         
                         # Limitar el número de archivos dentro del ZIP
                         MAX_FILES = 500
                         if len(zip_ref.namelist()) > MAX_FILES:
                             error_msg = f"El archivo ZIP contiene demasiados archivos (máximo {MAX_FILES})"
-                            print(error_msg, flush=True)
+                            app.logger.error(error_msg)
                             return jsonify({'error': error_msg}), 413
                         
                         # Verificar que el tamaño descomprimido no sea excesivo
@@ -2394,19 +2398,19 @@ def procesar_shp():
                         total_size = sum(info.file_size for info in zip_ref.infolist())
                         if total_size > MAX_UNCOMPRESSED_SIZE:
                             error_msg = f"El tamaño descomprimido del ZIP es demasiado grande (máximo 200 MB)"
-                            print(error_msg, flush=True)
+                            app.logger.error(error_msg)
                             return jsonify({'error': error_msg}), 413
                         
                         # Extraer el ZIP
                         zip_ref.extractall(temp_dir)
-                    print(f"Archivo ZIP extraído en: {temp_dir}", flush=True)
+                    app.logger.debug(f"Archivo ZIP extraído en: {temp_dir}")
                 except zipfile.BadZipFile:
                     error_msg = "El archivo no es un ZIP válido"
-                    print(error_msg, flush=True)
+                    app.logger.error(error_msg)
                     return jsonify({'error': error_msg}), 400
                 except Exception as e:
                     error_msg = f"Error al extraer archivo ZIP: {str(e)}"
-                    print(error_msg, flush=True)
+                    app.logger.error(error_msg)
                     return jsonify({'error': error_msg}), 500
                 
                 # Buscar archivos SHP o ZIPs anidados
@@ -2422,16 +2426,16 @@ def procesar_shp():
                             elif file.endswith('.zip'):
                                 internal_zips.append(os.path.join(root, file))
                     
-                    print(f"Archivos SHP encontrados (primer nivel): {len(shp_files)}", flush=True)
-                    print(f"Archivos ZIP internos encontrados: {len(internal_zips)}", flush=True)
+                    app.logger.debug(f"Archivos SHP encontrados (primer nivel): {len(shp_files)}")
+                    app.logger.debug(f"Archivos ZIP internos encontrados: {len(internal_zips)}")
                     
                     # Extraer y procesar ZIPs anidados si no se encontraron archivos SHP
                     if not shp_files and internal_zips:
-                        print("Extrayendo archivos ZIP internos...", flush=True)
+                        app.logger.debug("Extrayendo archivos ZIP internos...")
                         # Limitar el número de ZIPs anidados a procesar
                         MAX_NESTED_ZIPS = 10
                         if len(internal_zips) > MAX_NESTED_ZIPS:
-                            print(f"Limitando a {MAX_NESTED_ZIPS} ZIPs anidados", flush=True)
+                            app.logger.debug(f"Limitando a {MAX_NESTED_ZIPS} ZIPs anidados")
                             internal_zips = internal_zips[:MAX_NESTED_ZIPS]
                         
                         for zip_file in internal_zips:
@@ -2440,23 +2444,23 @@ def procesar_shp():
                             os.makedirs(extract_subdir, exist_ok=True)
                             
                             try:
-                                print(f"Extrayendo ZIP interno: {zip_name} en {extract_subdir}", flush=True)
+                                app.logger.debug(f"Extrayendo ZIP interno: {zip_name} en {extract_subdir}")
                                 # Verificar el ZIP interno antes de extraerlo
                                 with zipfile.ZipFile(zip_file, 'r') as zip_ref:
                                     # Verificar ZIP no dañado
                                     if zip_ref.testzip() is not None:
-                                        print(f"ZIP interno {zip_name} está dañado, omitiendo", flush=True)
+                                        app.logger.error(f"ZIP interno {zip_name} está dañado, omitiendo")
                                         continue
                                     
                                     # Verificar número de archivos
                                     if len(zip_ref.namelist()) > MAX_FILES:
-                                        print(f"ZIP interno {zip_name} tiene demasiados archivos, omitiendo", flush=True)
+                                        app.logger.debug(f"ZIP interno {zip_name} tiene demasiados archivos, omitiendo")
                                         continue
                                     
                                     # Verificar tamaño descomprimido
                                     nested_total_size = sum(info.file_size for info in zip_ref.infolist())
                                     if nested_total_size > MAX_UNCOMPRESSED_SIZE:
-                                        print(f"ZIP interno {zip_name} es demasiado grande, omitiendo", flush=True)
+                                        app.logger.debug(f"ZIP interno {zip_name} es demasiado grande, omitiendo")
                                         continue
                                     
                                     # Extraer archivos
@@ -2468,42 +2472,42 @@ def procesar_shp():
                                         if file.endswith('.shp'):
                                             shp_path = os.path.join(root, file)
                                             shp_files.append(shp_path)
-                                            print(f"  - SHP encontrado en ZIP interno: {shp_path}", flush=True)
+                                            app.logger.debug(f"  - SHP encontrado en ZIP interno: {shp_path}")
                             except zipfile.BadZipFile:
-                                print(f"ZIP interno {zip_name} no es válido, omitiendo", flush=True)
+                                app.logger.debug(f"ZIP interno {zip_name} no es válido, omitiendo")
                                 continue
                             except Exception as e:
-                                print(f"Error al extraer ZIP interno {zip_name}: {str(e)}", flush=True)
+                                app.logger.error(f"Error al extraer ZIP interno {zip_name}: {str(e)}")
                                 # Continúa con el siguiente ZIP
                     
-                    print(f"Total de archivos SHP encontrados: {len(shp_files)}", flush=True)
+                    app.logger.debug(f"Total de archivos SHP encontrados: {len(shp_files)}")
                     for shp in shp_files:
-                        print(f"  - {shp}", flush=True)
+                        app.logger.debug(f"  - {shp}")
                     
                     if not shp_files:
                         error_msg = "No se encontraron archivos SHP en el archivo ZIP"
-                        print(error_msg, flush=True)
+                        app.logger.error(error_msg)
                         return jsonify({'error': error_msg}), 400
                 except Exception as e:
                     error_msg = f"Error al buscar archivos SHP: {str(e)}"
-                    print(error_msg, flush=True)
+                    app.logger.error(error_msg)
                     return jsonify({'error': error_msg}), 500
                 
                 # Limitar el número de archivos SHP a procesar
                 MAX_SHP_FILES = 20
                 if len(shp_files) > MAX_SHP_FILES:
-                    print(f"Limitando a {MAX_SHP_FILES} archivos SHP", flush=True)
+                    app.logger.debug(f"Limitando a {MAX_SHP_FILES} archivos SHP")
                     shp_files = shp_files[:MAX_SHP_FILES]
                 
                 # Unir archivos SHP con geopandas
                 try:
                     merged_gdf = None
                     for shp_file in shp_files:
-                        print(f"Procesando archivo: {shp_file}", flush=True)
+                        app.logger.debug(f"Procesando archivo: {shp_file}")
                         try:
                             # Verificar tamaño del archivo SHP
                             if os.path.getsize(shp_file) > 20 * 1024 * 1024:  # 20 MB
-                                print(f"  - SHP demasiado grande, omitiendo: {shp_file}", flush=True)
+                                app.logger.debug(f"  - SHP demasiado grande, omitiendo: {shp_file}")
                                 continue
                             
                             gdf = gpd.read_file(shp_file)
@@ -2511,55 +2515,55 @@ def procesar_shp():
                             # Limitar el número de geometrías
                             MAX_FEATURES = 5000
                             if len(gdf) > MAX_FEATURES:
-                                print(f"  - Demasiadas geometrías ({len(gdf)}), limitando a {MAX_FEATURES}", flush=True)
+                                app.logger.debug(f"  - Demasiadas geometrías ({len(gdf)}), limitando a {MAX_FEATURES}")
                                 gdf = gdf.head(MAX_FEATURES)
                             
-                            print(f"  - Geometrías: {len(gdf)}, CRS: {gdf.crs}", flush=True)
+                            app.logger.debug(f"  - Geometrías: {len(gdf)}, CRS: {gdf.crs}")
                             
                             if merged_gdf is None:
                                 merged_gdf = gdf
                             else:
                                 # Asegurarse de que tienen el mismo CRS
                                 if gdf.crs != merged_gdf.crs and gdf.crs is not None:
-                                    print(f"  - Convirtiendo CRS de {gdf.crs} a {merged_gdf.crs}", flush=True)
+                                    app.logger.debug(f"  - Convirtiendo CRS de {gdf.crs} a {merged_gdf.crs}")
                                     gdf = gdf.to_crs(merged_gdf.crs)
                                 
                                 # Concatenar con seguridad
                                 try:
                                     merged_gdf = pd.concat([merged_gdf, gdf])
                                 except Exception as concat_error:
-                                    print(f"  - Error al concatenar: {str(concat_error)}", flush=True)
+                                    app.logger.error(f"  - Error al concatenar: {str(concat_error)}")
                                     # Si falla la concatenación, intentar solo con geometrías
                                     try:
-                                        print("  - Intentando concatenar solo geometrías...", flush=True)
+                                        app.logger.debug("  - Intentando concatenar solo geometrías...")
                                         # Crear un nuevo GeoDataFrame con solo geometrías
                                         simple_gdf = gpd.GeoDataFrame(geometry=gdf.geometry)
                                         merged_gdf = pd.concat([merged_gdf, simple_gdf])
                                     except Exception as simple_concat_error:
-                                        print(f"  - Error en concatenación simple: {str(simple_concat_error)}", flush=True)
+                                        app.logger.error(f"  - Error en concatenación simple: {str(simple_concat_error)}")
                                         # Continuar con el siguiente archivo
                                         continue
                         except Exception as e:
                             error_msg = f"Error al procesar archivo {os.path.basename(shp_file)}: {str(e)}"
-                            print(error_msg, flush=True)
+                            app.logger.error(error_msg)
                             # Continuamos con el siguiente archivo en lugar de fallar completamente
                             continue
                     
                     if merged_gdf is None or len(merged_gdf) == 0:
                         error_msg = "No se pudieron procesar los archivos SHP"
-                        print(error_msg, flush=True)
+                        app.logger.error(error_msg)
                         return jsonify({'error': error_msg}), 500
                     
                     # Limitar el tamaño final del GeoDataFrame
                     MAX_FINAL_FEATURES = 10000
                     if len(merged_gdf) > MAX_FINAL_FEATURES:
-                        print(f"GeoDataFrame final demasiado grande ({len(merged_gdf)}), limitando a {MAX_FINAL_FEATURES}", flush=True)
+                        app.logger.debug(f"GeoDataFrame final demasiado grande ({len(merged_gdf)}), limitando a {MAX_FINAL_FEATURES}")
                         merged_gdf = merged_gdf.head(MAX_FINAL_FEATURES)
                     
-                    print(f"Unión completada: {len(merged_gdf)} geometrías", flush=True)
+                    app.logger.info(f"Unión completada: {len(merged_gdf)} geometrías")
                 except Exception as e:
                     error_msg = f"Error al unir archivos SHP: {str(e)}"
-                    print(error_msg, flush=True)
+                    app.logger.error(error_msg)
                     return jsonify({'error': error_msg}), 500
                 
                 # Guardar el archivo unificado
@@ -2567,33 +2571,33 @@ def procesar_shp():
                     output_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'shp_unified')
                     if not os.path.exists(output_dir):
                         os.makedirs(output_dir)
-                    print(f"Directorio de salida creado: {output_dir}", flush=True)
+                    app.logger.debug(f"Directorio de salida creado: {output_dir}")
                     
                     output_shp = os.path.join(temp_dir, 'unified.shp')
-                    print(f"Guardando archivo unificado en: {output_shp}", flush=True)
+                    app.logger.debug(f"Guardando archivo unificado en: {output_shp}")
                     
                     # Simplificar el GeoDataFrame para la escritura
                     try:
                         # Intentar guardar con todas las columnas
                         merged_gdf.to_file(output_shp)
                     except Exception as save_error:
-                        print(f"Error al guardar GeoDataFrame completo: {str(save_error)}", flush=True)
-                        print("Intentando guardar con columnas reducidas...", flush=True)
+                        app.logger.error(f"Error al guardar GeoDataFrame completo: {str(save_error)}")
+                        app.logger.debug("Intentando guardar con columnas reducidas...")
                         
                         # Crear un GeoDataFrame simplificado con solo la geometría
                         simple_gdf = gpd.GeoDataFrame(geometry=merged_gdf.geometry)
                         simple_gdf.to_file(output_shp)
                     
-                    print(f"Archivo guardado correctamente", flush=True)
+                    app.logger.debug(f"Archivo guardado correctamente")
                 except Exception as e:
                     error_msg = f"Error al guardar archivo unificado: {str(e)}"
-                    print(error_msg, flush=True)
+                    app.logger.error(error_msg)
                     return jsonify({'error': error_msg}), 500
                 
                 # Crear archivo ZIP con los archivos resultantes
                 try:
                     output_zip = os.path.join(output_dir, 'unified_shp.zip')
-                    print(f"Creando archivo ZIP de salida: {output_zip}", flush=True)
+                    app.logger.debug(f"Creando archivo ZIP de salida: {output_zip}")
                     
                     # Incluir archivos auxiliares (.dbf, .shx, .prj)
                     base_name = os.path.splitext(output_shp)[0]
@@ -2601,11 +2605,11 @@ def procesar_shp():
                         for ext in ['.shp', '.dbf', '.shx', '.prj']:
                             file_path = base_name + ext
                             if os.path.exists(file_path):
-                                print(f"  - Añadiendo archivo: {os.path.basename(file_path)}", flush=True)
+                                app.logger.debug(f"  - Añadiendo archivo: {os.path.basename(file_path)}")
                                 zipf.write(file_path, os.path.basename(file_path))
                 except Exception as e:
                     error_msg = f"Error al crear archivo ZIP de salida: {str(e)}"
-                    print(error_msg, flush=True)
+                    app.logger.error(error_msg)
                     return jsonify({'error': error_msg}), 500
                 
                 # Preparar datos para respuesta
@@ -2623,29 +2627,29 @@ def procesar_shp():
                             try:
                                 sample_gdf.geometry = sample_gdf.geometry.simplify(tolerance=0.01)
                             except Exception as simplify_error:
-                                print(f"Error al simplificar geometrías de muestra: {str(simplify_error)}", flush=True)
+                                app.logger.error(f"Error al simplificar geometrías de muestra: {str(simplify_error)}")
                             
                             # Eliminar todas las columnas excepto la geometría
                             simplified_gdf = gpd.GeoDataFrame(geometry=sample_gdf.geometry)
-                            print(f"GeoJSON simplificado creado con {len(simplified_gdf)} geometrías de muestra", flush=True)
+                            app.logger.debug(f"GeoJSON simplificado creado con {len(simplified_gdf)} geometrías de muestra")
                     except Exception as sample_error:
-                        print(f"Error al crear muestra de GeoJSON: {str(sample_error)}", flush=True)
+                        app.logger.error(f"Error al crear muestra de GeoJSON: {str(sample_error)}")
                         # Continuar sin GeoJSON si hay error
                     
                     # Si no se pudo crear una versión simplificada, usar un GeoJSON vacío
                     if simplified_gdf is None or len(simplified_gdf) == 0:
                         geojson_data = '{"type":"FeatureCollection","features":[]}'
-                        print("Usando GeoJSON vacío para la respuesta", flush=True)
+                        app.logger.debug("Usando GeoJSON vacío para la respuesta")
                     else:
                         # Convertir a GeoJSON con manejo de errores
                         try:
                             geojson_data = simplified_gdf.to_json()
                             # Verificar tamaño del JSON
                             if len(geojson_data) > 1000000:  # Más de 1MB
-                                print(f"GeoJSON demasiado grande ({len(geojson_data)} bytes), usando vacío", flush=True)
+                                app.logger.debug(f"GeoJSON demasiado grande ({len(geojson_data)} bytes), usando vacío")
                                 geojson_data = '{"type":"FeatureCollection","features":[]}'
                         except Exception as json_error:
-                            print(f"Error al convertir a GeoJSON: {str(json_error)}", flush=True)
+                            app.logger.error(f"Error al convertir a GeoJSON: {str(json_error)}")
                             geojson_data = '{"type":"FeatureCollection","features":[]}'
                     
                     # Obtener conteo de polígonos
@@ -2655,13 +2659,13 @@ def procesar_shp():
                     try:
                         area_total = merged_gdf.geometry.area.sum() / 10000  # Convertir a hectáreas
                     except Exception as area_error:
-                        print(f"Error al calcular área: {str(area_error)}", flush=True)
+                        app.logger.error(f"Error al calcular área: {str(area_error)}")
                         area_total = 0
                     
-                    print(f"Datos preparados: {num_poligonos} polígonos, {area_total:.2f} ha", flush=True)
+                    app.logger.debug(f"Datos preparados: {num_poligonos} polígonos, {area_total:.2f} ha")
                 except Exception as e:
                     error_msg = f"Error al preparar datos para respuesta: {str(e)}"
-                    print(error_msg, flush=True)
+                    app.logger.error(error_msg)
                     # No fallar aquí, continuar con valores predeterminados
                     geojson_data = '{"type":"FeatureCollection","features":[]}'
                     num_poligonos = 0
@@ -2688,25 +2692,25 @@ def procesar_shp():
                 try:
                     import shutil
                     shutil.rmtree(temp_dir)
-                    print(f"Directorio temporal eliminado: {temp_dir}", flush=True)
+                    app.logger.debug(f"Directorio temporal eliminado: {temp_dir}")
                 except Exception as e:
-                    print(f"Advertencia: No se pudo eliminar el directorio temporal: {str(e)}", flush=True)
+                    app.logger.error(f"Advertencia: No se pudo eliminar el directorio temporal: {str(e)}")
                 
                 # Verificar si es una solicitud AJAX o un formulario directo
                 is_ajax = request.is_xhr or request.headers.get('X-Requested-With') == 'XMLHttpRequest'
                 if is_ajax:
-                    print("Enviando respuesta JSON", flush=True)
+                    app.logger.debug("Enviando respuesta JSON")
                     try:
                         return jsonify(response_data)
                     except Exception as json_error:
-                        print(f"Error al serializar respuesta JSON: {str(json_error)}", flush=True)
+                        app.logger.error(f"Error al serializar respuesta JSON: {str(json_error)}")
                         # Intentar con una respuesta más sencilla sin GeoJSON
                         del response_data['geojson']
                         response_data['geojson_status'] = 'error_serializacion'
                         return jsonify(response_data)
                 else:
                     # Si es un formulario directo, guardar datos en sesión y redirigir
-                    print("Redireccionando con datos en sesión", flush=True)
+                    app.logger.debug("Redireccionando con datos en sesión")
                     flash('Archivos SHP unidos correctamente. Puede descargar el resultado.', 'success')
                     session['resultado_shp'] = {
                         'num_archivos': len(shp_files),
@@ -2719,7 +2723,7 @@ def procesar_shp():
                 import traceback
                 traceback.print_exc()
                 error_msg = f"Error al procesar archivos: {str(e)}"
-                print(f"Error al procesar: {error_msg}", flush=True)
+                app.logger.error(f"Error al procesar: {error_msg}")
                 
                 # Verificar si es una solicitud AJAX o un formulario directo
                 if request.is_xhr or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
@@ -2729,7 +2733,7 @@ def procesar_shp():
                     return redirect(url_for('unir_archivos'))
         else:
             error_msg = "Formato de archivo no válido. Debe ser un archivo ZIP"
-            print(error_msg, flush=True)
+            app.logger.error(error_msg)
             # Verificar si es una solicitud AJAX o un formulario directo
             if request.is_xhr or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return jsonify({'error': error_msg}), 400
@@ -2741,7 +2745,7 @@ def procesar_shp():
         import traceback
         traceback.print_exc()
         error_msg = f"Error interno del servidor: {str(e)}"
-        print(f"ERROR NO MANEJADO: {error_msg}", flush=True)
+        app.logger.error(f"ERROR NO MANEJADO: {error_msg}")
         
         # Siempre devolver una respuesta JSON válida
         if request.is_xhr or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
@@ -2777,7 +2781,7 @@ def generar_ficha_tecnica_template_route(db_id):
         # Verificar que PyMuPDF esté correctamente configurado
         pymupdf_funcional = garantizar_pymupdf()
         if not pymupdf_funcional:
-            print("ADVERTENCIA: PyMuPDF no está correctamente configurado, se usará el método alternativo")
+            app.logger.error("ADVERTENCIA: PyMuPDF no está correctamente configurado, se usará el método alternativo")
         
         # Generar mapa del polígono
         shapefile_buffer = generar_shapefile_individual(poligono, f'polygon-{db_id}')
@@ -2815,7 +2819,7 @@ def generar_ficha_tecnica_template_route(db_id):
             )
     
     except Exception as e:
-        print(f"Error al generar ficha técnica con plantilla: {e}")
+        app.logger.error(f"Error al generar ficha técnica con plantilla: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
@@ -2830,8 +2834,8 @@ def generar_paquete_completo_con_plantilla():
     fecha_final = request.json.get('fecha_final')
     
     # Debugging: Log the received dates
-    print(f"DEBUG - Fecha de Referencia recibida: {fecha_referencia}")
-    print(f"DEBUG - Fecha Final recibida: {fecha_final}")
+    app.logger.debug(f"DEBUG - Fecha de Referencia recibida: {fecha_referencia}")
+    app.logger.debug(f"DEBUG - Fecha Final recibida: {fecha_final}")
     
     if not selected_rows:
         return jsonify({'error': 'No se seleccionaron polígonos'}), 400
@@ -2841,7 +2845,7 @@ def generar_paquete_completo_con_plantilla():
         from utils.pdf_generator import garantizar_pymupdf
         pymupdf_funcional = garantizar_pymupdf()
         if not pymupdf_funcional:
-            print("ADVERTENCIA: PyMuPDF no está correctamente configurado, se usará el método alternativo")
+            app.logger.error("ADVERTENCIA: PyMuPDF no está correctamente configurado, se usará el método alternativo")
             
         # Verificar que la plantilla existe - usar el directorio static/plantilla
         plantilla_path = os.path.join('static', 'plantilla', 'Plantilla_2.pdf')
@@ -2849,7 +2853,7 @@ def generar_paquete_completo_con_plantilla():
         
         if os.path.exists(plantilla_path):
             plantilla_encontrada = True
-            print(f"Plantilla encontrada en: {os.path.abspath(plantilla_path)}")
+            app.logger.debug(f"Plantilla encontrada en: {os.path.abspath(plantilla_path)}")
         else:
             # Verificar rutas alternativas
             rutas_alternativas = [
@@ -2863,12 +2867,12 @@ def generar_paquete_completo_con_plantilla():
                 if os.path.exists(ruta):
                     plantilla_path = ruta
                     plantilla_encontrada = True
-                    print(f"Plantilla encontrada en ruta alternativa: {os.path.abspath(ruta)}")
+                    app.logger.debug(f"Plantilla encontrada en ruta alternativa: {os.path.abspath(ruta)}")
                     break
             
         # Añadir mensaje de advertencia si no se encontró la plantilla
         if not plantilla_encontrada:
-            print("ADVERTENCIA: No se encontró la plantilla, se usará el método alternativo")
+            app.logger.error("ADVERTENCIA: No se encontró la plantilla, se usará el método alternativo")
             
         # Continuamos con el proceso independientemente de la plantilla
 
@@ -2877,10 +2881,10 @@ def generar_paquete_completo_con_plantilla():
             if plantilla_encontrada:
                 with open(plantilla_path, 'rb') as f:
                     _ = f.read(1)  # Leer un byte para verificar acceso
-                    print(f"Archivo de plantilla accesible: {plantilla_path}")
+                    app.logger.debug(f"Archivo de plantilla accesible: {plantilla_path}")
         except Exception as e:
-            print(f"Error al acceder a la plantilla: {e}")
-            print("Se utilizará el método alternativo para generar PDFs")
+            app.logger.error(f"Error al acceder a la plantilla: {e}")
+            app.logger.debug("Se utilizará el método alternativo para generar PDFs")
             
         # Preparar un archivo ZIP en memoria para contener todos los archivos
         memory_file = io.BytesIO()
@@ -2909,22 +2913,22 @@ def generar_paquete_completo_con_plantilla():
                     
                     if poligono is None:
                         # Si no se encuentra, imprimir para depuración
-                        print(f"No se encontró polígono con ID {row_id}, buscando en posición")
+                        app.logger.error(f"No se encontró polígono con ID {row_id}, buscando en posición")
                         
                         # Intentar buscar por posición como fallback
                         poligonos = Poligono.query.all()
                         if 0 <= row_id < len(poligonos):
                             poligono = poligonos[row_id]
                         else:
-                            print(f"Índice {row_id} fuera de rango, hay {len(poligonos)} polígonos")
+                            app.logger.debug(f"Índice {row_id} fuera de rango, hay {len(poligonos)} polígonos")
                             error_msg = f"Índice {row_id} fuera de rango, hay {len(poligonos)} polígonos"
                             errores_detalles.append(error_msg)
                             errores += 1
                             continue
                             
-                    print(f"Generando fichas para polígono ID={poligono.id}, ID_POLIGONO={poligono.id_poligono}")
+                    app.logger.debug(f"Generando fichas para polígono ID={poligono.id}, ID_POLIGONO={poligono.id_poligono}")
                 except Exception as e:
-                    print(f"Error al recuperar polígono {row_id}: {e}")
+                    app.logger.error(f"Error al recuperar polígono {row_id}: {e}")
                     error_msg = f"Error al recuperar polígono {row_id}: {e}"
                     errores_detalles.append(error_msg)
                     errores += 1
@@ -2966,7 +2970,7 @@ def generar_paquete_completo_con_plantilla():
                                             png_name = f"{poligono.id_poligono or f'polygon-{row_id}'}.png"
                                             zf.writestr(f'mapas/{png_name}', png_file.read())
                     except Exception as e:
-                        print(f"Error al generar mapa PNG para polígono {row_id}: {e}")
+                        app.logger.error(f"Error al generar mapa PNG para polígono {row_id}: {e}")
                         error_msg = f"Error al generar mapa PNG para polígono {row_id}: {e}"
                         errores_detalles.append(error_msg)
                         errores += 1
@@ -3034,7 +3038,7 @@ def generar_paquete_completo_con_plantilla():
                             error_msg = f"No se pudo generar el PDF para el polígono {row_id} - ID_POLIGONO={poligono.id_poligono}"
                             errores_detalles.append(error_msg)
                     except Exception as e:
-                        print(f"Error al generar PDF para polígono {row_id}: {e}")
+                        app.logger.error(f"Error al generar PDF para polígono {row_id}: {e}")
                         log_buffer.write(f"EXCEPCIÓN: {str(e)}\n")
                         import traceback
                         error_traceback = traceback.format_exc()
@@ -3051,7 +3055,7 @@ def generar_paquete_completo_con_plantilla():
                     error_msg = f"No se pudo generar mapa para polígono {row_id}"
                     errores_detalles.append(error_msg)
                     errores += 1
-                    print(f"Error: No se pudo generar mapa para polígono {row_id}")
+                    app.logger.error(f"Error: No se pudo generar mapa para polígono {row_id}")
             
             # Añadir un resumen en el ZIP
             resumen = f"""
@@ -3080,7 +3084,7 @@ def generar_paquete_completo_con_plantilla():
         )
     
     except Exception as e:
-        print(f"Error al generar paquete completo con plantilla: {e}")
+        app.logger.error(f"Error al generar paquete completo con plantilla: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
@@ -3186,7 +3190,7 @@ def generar_excel():
         )
         
     except Exception as e:
-        print(f"ERROR AL GENERAR EXCEL: {str(e)}")
+        app.logger.error(f"ERROR AL GENERAR EXCEL: {str(e)}")
         import traceback
         traceback.print_exc()
         flash(f'Error al generar archivo Excel: {str(e)}', 'error')
@@ -3237,11 +3241,11 @@ def safe_process_coordinates(geometry):
             return coords
         
         # Return empty list if geometry type is not handled
-        print(f"Geometry type not handled: {geometry.geom_type}")
+        app.logger.debug(f"Geometry type not handled: {geometry.geom_type}")
         return []
         
     except Exception as e:
-        print(f"Error safely processing coordinates: {e}")
+        app.logger.error(f"Error safely processing coordinates: {e}")
         import traceback
         traceback.print_exc()
         return []
@@ -3314,7 +3318,7 @@ def validacion_rapida_shp(tab=None):
                                 lat, lon = pair.split(',')
                                 coords_para_mapa.append([float(lat.strip()), float(lon.strip())])
                     except Exception as e:
-                        print(f"Error al procesar coordenadas para el mapa: {e}")
+                        app.logger.error(f"Error al procesar coordenadas para el mapa: {e}")
                         coords_para_mapa = []
                 
                 # Detectar ubicación automáticamente si el estado y municipio están vacíos
@@ -3323,7 +3327,7 @@ def validacion_rapida_shp(tab=None):
                 municipio_detectado = poligono.municipio
                 
                 if (not estado_detectado or not municipio_detectado) and poligono.coordenadas_corregidas:
-                    print("Detectando ubicación automáticamente...")
+                    app.logger.debug("Detectando ubicación automáticamente...")
                     ubicacion = obtener_ubicacion_desde_poligono(poligono.coordenadas_corregidas)
                     if ubicacion:
                         if not estado_detectado:
@@ -3332,7 +3336,7 @@ def validacion_rapida_shp(tab=None):
                         if not municipio_detectado:
                             municipio_detectado = ubicacion['municipio']
                             ubicacion_auto = True
-                        print(f"Ubicación detectada: {municipio_detectado}, {estado_detectado}")
+                        app.logger.debug(f"Ubicación detectada: {municipio_detectado}, {estado_detectado}")
                 
                 # Crear diccionario con datos del polígono para la plantilla
                 poligono_data = {
@@ -3362,7 +3366,7 @@ def validacion_rapida_shp(tab=None):
                 flash('ID de polígono inválido', 'error')
                 return redirect(url_for('validacion_poligonos', tab='lista'))
             except Exception as e:
-                print(f"Error al cargar polígono para edición: {e}")
+                app.logger.error(f"Error al cargar polígono para edición: {e}")
                 flash('Error al cargar el polígono para edición', 'error')
                 return redirect(url_for('validacion_poligonos', tab='lista'))
         else:
@@ -3539,7 +3543,7 @@ def cargar_shp_zip():
                     
                     # Verificar si esta geometría ya fue procesada
                     if geometry_signature in processed_geometries:
-                        print(f"Geometría duplicada detectada, saltando: {geometry_signature[:50]}...")
+                        app.logger.debug(f"Geometría duplicada detectada, saltando: {geometry_signature[:50]}...")
                         continue
                     
                     # Marcar esta geometría como procesada
@@ -3797,7 +3801,7 @@ def generar_shp_archivos():
                 # Remove the original JSON string to avoid duplication
                 del row_data['atributos']
             except Exception as e:
-                print(f"Error parsing JSON attributes: {e}")
+                app.logger.error(f"Error parsing JSON attributes: {e}")
                 # Keep the original column if parsing fails
         
         data.append(row_data)
@@ -3845,7 +3849,7 @@ def generar_shp_zip_completo():
                 for key in atributos.keys():
                     all_attributes.add(key)
             except Exception as e:
-                print(f"Error parsing JSON attributes: {e}")
+                app.logger.error(f"Error parsing JSON attributes: {e}")
     
     # Second pass - create complete data rows with all attributes
     for record in records:
@@ -3868,7 +3872,7 @@ def generar_shp_zip_completo():
                 # Remove the original JSON string to avoid duplication
                 del row_data['atributos']
             except Exception as e:
-                print(f"Error parsing JSON attributes for record {record['shp_id']}: {e}")
+                app.logger.error(f"Error parsing JSON attributes for record {record['shp_id']}: {e}")
         
         # Combine base record data with attribute data
         row_data.update(attr_values)
@@ -3986,7 +3990,7 @@ def get_poligonos_actuales_traslapes(polygon_id):
                 else:
                     return None
             except Exception as e:
-                print(f"Error al convertir coordenadas a geometría: {e}")
+                app.logger.error(f"Error al convertir coordenadas a geometría: {e}")
                 return None
         
         def coordenadas_a_geojson_coords(coord_str):
@@ -4007,7 +4011,7 @@ def get_poligonos_actuales_traslapes(polygon_id):
                 else:
                     return None
             except Exception as e:
-                print(f"Error al convertir coordenadas a GeoJSON: {e}")
+                app.logger.error(f"Error al convertir coordenadas a GeoJSON: {e}")
                 return None
         
         geometria_actual = coordenadas_a_geometria(coordenadas_corregidas)
@@ -4064,7 +4068,7 @@ def get_poligonos_actuales_traslapes(polygon_id):
                         features_geojson.append(feature)
                         
             except Exception as e:
-                print(f"Error al verificar traslape con polígono {otro_poligono.id}: {e}")
+                app.logger.error(f"Error al verificar traslape con polígono {otro_poligono.id}: {e}")
                 continue
         
         # Crear GeoJSON completo
@@ -4080,11 +4084,11 @@ def get_poligonos_actuales_traslapes(polygon_id):
             'geojson': geojson_data
         }
         
-        print(f"Polígonos actuales traslapados encontrados: {len(poligonos_traslapados)}")
+        app.logger.debug(f"Polígonos actuales traslapados encontrados: {len(poligonos_traslapados)}")
         return jsonify(respuesta)
         
     except Exception as e:
-        print(f"Error al detectar traslapes entre polígonos actuales: {e}")
+        app.logger.error(f"Error al detectar traslapes entre polígonos actuales: {e}")
         return jsonify({'error': str(e)}), 500
 
 shp_cache.preload_all()  # Preload in production for gunicorn preload_app
