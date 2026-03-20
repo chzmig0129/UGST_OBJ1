@@ -17,6 +17,11 @@ services:
     depends_on:
       - db
     restart: unless-stopped
+    healthcheck:
+      test: curl -f http://localhost:8000/health || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   db:
     image: postgres:16-postgis

@@ -596,6 +596,32 @@ def calcular_area_poligono(coordenadas_str):
 # Rutas de la aplicación
 # ==============================================
 
+@app.route('/health')
+def health_check():
+    status = {
+        'status': 'ok',
+        'database': False,
+        'shapefiles': False,
+        'timestamp': datetime.utcnow().isoformat()
+    }
+
+    # Check database connectivity
+    try:
+        db.session.execute(db.text('SELECT 1'))
+        status['database'] = True
+    except Exception:
+        status['status'] = 'degraded'
+
+    # Check if shapefiles are loaded
+    try:
+        status['shapefiles'] = shp_cache.municipios is not None
+    except Exception:
+        status['status'] = 'degraded'
+
+    http_code = 200 if status['status'] == 'ok' else 503
+    return jsonify(status), http_code
+
+
 @app.route('/')
 def index():
     return render_template('index.html')
