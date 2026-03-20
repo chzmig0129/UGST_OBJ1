@@ -44,6 +44,36 @@ def slice_filter(iterable, start, end=None):
         return iterable[start:]
     return iterable[start:end]
 
+
+def obtener_estatus_validacion(row):
+    """Obtiene el estatus de validación priorizando ESTA_CHA sobre ESTATUS."""
+    estatus_esta_cha = row.get('ESTA_CHA')
+    if pd.notna(estatus_esta_cha):
+        estatus_esta_cha_str = str(estatus_esta_cha).strip()
+        if estatus_esta_cha_str:
+            return estatus_esta_cha_str
+
+    estatus_legacy = row.get('ESTATUS')
+    if pd.notna(estatus_legacy):
+        return str(estatus_legacy).strip()
+    return ''
+
+
+def normalizar_columna_estatus_validacion(gdf):
+    """Garantiza compatibilidad de estatus 15K usando ESTA_CHA con fallback a ESTATUS."""
+    if gdf is None:
+        return gdf
+
+    if 'ESTA_CHA' in gdf.columns:
+        if 'ESTATUS' in gdf.columns:
+            esta_cha_serie = gdf['ESTA_CHA']
+            esta_cha_valida = (~esta_cha_serie.isna()) & (esta_cha_serie.astype(str).str.strip() != '')
+            gdf['ESTATUS'] = esta_cha_serie.where(esta_cha_valida, gdf['ESTATUS'])
+        else:
+            gdf['ESTATUS'] = gdf['ESTA_CHA']
+
+    return gdf
+
 # Cargar shapefile de municipios de México
 try:
     municipios_gdf = gpd.read_file("data/mun22gw.shp")
@@ -61,6 +91,7 @@ except Exception as e:
 print('Cargando shapefiles para análisis de traslapes...')
 try:
     validacion_gdf = gpd.read_file('data/VALIDACION_UNIFICADO.shp')
+    validacion_gdf = normalizar_columna_estatus_validacion(validacion_gdf)
     if validacion_gdf.crs is not None and validacion_gdf.crs.to_epsg() != 4326:
         validacion_gdf = validacion_gdf.to_crs(epsg=4326)
     # Fix geometrías inválidas
@@ -4380,6 +4411,7 @@ def calcular_traslapes(idx):
             'ID_POLIGON': str(vrow.get('ID_POLIGON', '')),
             'ID_CREDITO': str(vrow.get('ID_CREDITO', '')),
             'NOMBRE_ZIP': str(vrow.get('NOMBRE_ZIP', '')),
+            'ESTATUS': obtener_estatus_validacion(vrow),
             'area_ha': round(area_ha, 4)
         },
         'geometry': json.loads(shapely.to_geojson(vgeom))
