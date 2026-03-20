@@ -184,11 +184,13 @@ if not os.path.exists(app.config['UPLOAD_FOLDER']):
 # Register auth blueprint
 from auth import auth as auth_blueprint  # noqa: E402
 app.logger.debug(auth_blueprint)
+app.register_blueprint(auth_blueprint)
 
 # Apply per-route rate limits to auth blueprint views.
-# limiter.limit() can be applied to a view function after blueprint registration.
-limiter.limit("5 per minute")(auth_blueprint.view_functions['login'])
-limiter.limit("3 per hour")(auth_blueprint.view_functions['register'])
+# After blueprint registration, view functions are keyed as 'blueprint_name.func_name'
+# in app.view_functions (not in auth_blueprint.view_functions).
+limiter.limit("5 per minute")(app.view_functions['auth.login'])
+limiter.limit("3 per hour")(app.view_functions['auth.register'])
 
 # Crear tablas que no existan todavía — nunca elimina datos existentes.
 with app.app_context():
