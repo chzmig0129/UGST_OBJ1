@@ -29,6 +29,7 @@ from utils.pdf_generator import (generar_ficha_tecnica_desde_plantilla, verifica
 from utils.shapefile_cache import shp_cache
 import shutil
 import math
+import threading
 
 app = Flask(__name__)
 
@@ -93,6 +94,45 @@ def slice_filter(iterable, start, end=None):
     if end is None:
         return iterable[start:]
     return iterable[start:end]
+
+
+
+def obtener_estatus_validacion(row):
+    """Obtiene el estatus de validación priorizando ESTA_CHA."""
+    for field_name in ('ESTA_CHA', 'ESTATUS', 'Estatus'):
+        estatus = row.get(field_name)
+        if pd.notna(estatus):
+            estatus_str = str(estatus).strip()
+            if estatus_str:
+                return estatus_str
+    return ''
+
+
+def normalizar_columna_estatus_validacion(gdf):
+    """Garantiza compatibilidad de estatus 15K usando ESTA_CHA como nombre canonico."""
+    if gdf is None:
+        return gdf
+
+    if 'ESTA_CHA' in gdf.columns:
+        estatus_base = gdf['ESTA_CHA']
+    elif 'ESTATUS' in gdf.columns:
+        estatus_base = gdf['ESTATUS']
+    elif 'Estatus' in gdf.columns:
+        estatus_base = gdf['Estatus']
+    else:
+        return gdf
+
+    gdf['ESTA_CHA'] = estatus_base
+    gdf['ESTATUS'] = estatus_base
+
+    return gdf
+
+# Cache para el dashboard de estatus (se computa una vez al primer request)
+_dashboard_cache = None
+_indices_filtrados_cache = None
+_clasif_nuevos_state = {'status': 'idle', 'progress': 0, 'processed': 0, 'total': 0, 'result': None, 'indices_por_clasif': None, 'error': None}
+_nuevos_relacionados_cache = None
+
 
 # Función para obtener municipio y estado desde coordenadas
 def obtener_ubicacion(lat, lon):
@@ -3957,6 +3997,57 @@ def init_shp_db():
 # Call the initialization function when the app starts
 init_shp_db()
 
+def init_validacion_15k_db():
+    """
+    Initialize the database table for 15K validation results if it doesn't exist.
+    Reuses the same shp_records.db database as init_shp_db().
+    """
+    conn = get_db_connection()
+
+    conn.execute('''
+    CREATE TABLE IF NOT EXISTS validacion_15k (
+        val_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        idx INTEGER NOT NULL UNIQUE,
+        id_poligon_validacion TEXT,
+        id_credito_validacion TEXT,
+        nombre_zip TEXT,
+        estatus TEXT DEFAULT 'pendiente',
+        estatus_chapingo TEXT,
+        id_poligono_unico TEXT,
+        superficie_chapingo REAL,
+        comentario_chapingo TEXT,
+        id_poligon_historico TEXT,
+        mega_idx INTEGER,
+        overlap_pct REAL,
+        fecha_validacion TIMESTAMP,
+        validado_por TEXT DEFAULT 'usuario',
+        superficie_calculada REAL
+    )
+    ''')
+
+    existing_columns = {
+        row['name']
+        for row in conn.execute("PRAGMA table_info(validacion_15k)").fetchall()
+    }
+    required_columns = {
+        'estatus_chapingo': 'TEXT',
+        'id_poligono_unico': 'TEXT',
+        'superficie_chapingo': 'REAL',
+        'comentario_chapingo': 'TEXT',
+        'superficie_calculada': 'REAL',
+    }
+    for column_name, column_type in required_columns.items():
+        if column_name not in existing_columns:
+            conn.execute(
+                f'ALTER TABLE validacion_15k ADD COLUMN {column_name} {column_type}'
+            )
+
+    conn.commit()
+    conn.close()
+
+# Call the initialization function when the app starts
+init_validacion_15k_db()
+
 # Filtro personalizado para convertir strings JSON a diccionarios
 @app.template_filter('ensure_dict')
 def ensure_dict(value):
@@ -4118,6 +4209,1413 @@ def get_poligonos_actuales_traslapes(polygon_id):
     except Exception as e:
         app.logger.error(f"Error al detectar traslapes entre polígonos actuales: {e}")
         return jsonify({'error': str(e)}), 500
+
+def fix_encoding(val):
+    """Fix latin-1 artifacts in strings (e.g. 'MichoacÃ¡n' -> 'Michoacán')."""
+    if not isinstance(val, str):
+        return val
+    try:
+        return val.encode('latin-1').decode('utf-8')
+    except (UnicodeDecodeError, UnicodeEncodeError):
+        return val
+
+
+def enrich_with_location(gdf):
+    """Agrega columnas ESTADO y MUNICIPIO al GeoDataFrame usando spatial join con municipios de México."""
+    if shp_cache.municipios is None:
+        gdf['ESTADO'] = None
+        gdf['MUNICIPIO'] = None
+        return gdf
+    # Calcular centroide de cada polígono para el join
+    gdf_copy = gdf.copy()
+    gdf_copy['_centroid'] = gdf_copy.geometry.centroid
+    # Crear GeoDataFrame temporal con centroides como geometría
+    centroids_gdf = gpd.GeoDataFrame(gdf_copy, geometry='_centroid', crs=gdf.crs)
+    # Spatial join con municipios
+    joined = gpd.sjoin(centroids_gdf, shp_cache.municipios[['NOM_ENT', 'NOMGEO', 'geometry']], how='left', predicate='within')
+    # Drop duplicates in case a centroid falls on a boundary between two municipalities
+    joined = joined[~joined.index.duplicated(keep='first')]
+    # Copiar resultados al gdf original
+    gdf['ESTADO'] = joined['NOM_ENT'].values
+    gdf['MUNICIPIO'] = joined['NOMGEO'].values
+    # Limpiar encoding issues (latin-1 artifacts)
+    for col in ['ESTADO', 'MUNICIPIO']:
+        gdf[col] = gdf[col].apply(fix_encoding)
+    return gdf
+
+
+@app.route('/mapa-15k')
+@login_required
+def mapa_15k():
+    return render_template('mapa_15k.html')
+
+
+@app.route('/validacion-15k')
+@login_required
+def validacion_15k():
+    return render_template('validacion_15k.html')
+
+
+@app.route('/api/mapa-15k/validacion')
+@login_required
+def api_mapa_15k_validacion():
+    try:
+        gdf = gpd.read_file('data/VALIDACION_UNIFICADO.shp')
+        if gdf.crs is not None and gdf.crs.to_epsg() != 4326:
+            gdf = gdf.to_crs(epsg=4326)
+        gdf['geometry'] = gdf['geometry'].simplify(tolerance=0.0001, preserve_topology=True)
+        gdf = enrich_with_location(gdf)
+        # Calcular estados_disponibles ANTES de filtrar
+        estados_df = gdf.groupby('ESTADO').size().reset_index(name='count')
+        estados_disponibles = [
+            {'name': row['ESTADO'], 'count': int(row['count'])}
+            for _, row in estados_df.iterrows()
+            if row['ESTADO'] is not None
+        ]
+        estados_disponibles.sort(key=lambda x: x['name'] if x['name'] else '')
+        # Leer query params opcionales
+        estado = request.args.get('estado')
+        municipio = request.args.get('municipio')
+        id_credito = request.args.get('id_credito')
+        id_poligono = request.args.get('id_poligono')
+        # Calcular municipios_disponibles (del estado seleccionado, o todos)
+        if estado:
+            muns_gdf = gdf[gdf['ESTADO'] == estado]
+        else:
+            muns_gdf = gdf
+        municipios_disponibles = sorted(muns_gdf['MUNICIPIO'].dropna().unique().tolist())
+        # Aplicar filtros
+        if estado:
+            gdf = gdf[gdf['ESTADO'] == estado]
+        if municipio:
+            gdf = gdf[gdf['MUNICIPIO'] == municipio]
+        if id_credito:
+            gdf = gdf[gdf['ID_CREDITO'].astype(str).str.contains(id_credito, case=False, na=False)]
+        if id_poligono:
+            gdf = gdf[gdf['ID_POLIGON'].str.contains(id_poligono, case=False, na=False)]
+        geojson_data = json.loads(gdf.to_json())
+        return jsonify({
+            'geojson': geojson_data,
+            'total': len(gdf),
+            'fields': ['ID_POLIGON', 'ID_CREDITO', 'NOMBRE_ZIP'],
+            'estados_disponibles': estados_disponibles,
+            'municipios_disponibles': municipios_disponibles
+        })
+    except Exception as e:
+        app.logger.error(f"Error al cargar VALIDACION_UNIFICADO: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/mapa-15k/historico')
+@login_required
+def api_mapa_15k_historico():
+    try:
+        gdf = gpd.read_file('data/MEGA_CAPA_V1_OL.shp')
+        if gdf.crs is not None and gdf.crs.to_epsg() != 4326:
+            gdf = gdf.to_crs(epsg=4326)
+        gdf['geometry'] = gdf['geometry'].simplify(tolerance=0.0001, preserve_topology=True)
+        gdf = enrich_with_location(gdf)
+        # Calcular estados_disponibles ANTES de filtrar
+        estados_df = gdf.groupby('ESTADO').size().reset_index(name='count')
+        estados_disponibles = [
+            {'name': row['ESTADO'], 'count': int(row['count'])}
+            for _, row in estados_df.iterrows()
+            if row['ESTADO'] is not None
+        ]
+        estados_disponibles.sort(key=lambda x: x['name'] if x['name'] else '')
+        # Leer query params opcionales
+        estado = request.args.get('estado')
+        municipio = request.args.get('municipio')
+        id_credito = request.args.get('id_credito')
+        id_poligono = request.args.get('id_poligono')
+        # Calcular municipios_disponibles (del estado seleccionado, o todos)
+        if estado:
+            muns_gdf = gdf[gdf['ESTADO'] == estado]
+        else:
+            muns_gdf = gdf
+        municipios_disponibles = sorted(muns_gdf['MUNICIPIO'].dropna().unique().tolist())
+        # Aplicar filtros
+        if estado:
+            gdf = gdf[gdf['ESTADO'] == estado]
+        if municipio:
+            gdf = gdf[gdf['MUNICIPIO'] == municipio]
+        if id_credito:
+            gdf = gdf[gdf['ID_CREDITO'].astype(str).str.contains(id_credito, case=False, na=False)]
+        if id_poligono:
+            gdf = gdf[gdf['ID_POLIGON'].str.contains(id_poligono, case=False, na=False)]
+        geojson_data = json.loads(gdf.to_json())
+        return jsonify({
+            'geojson': geojson_data,
+            'total': len(gdf),
+            'fields': ['ID_POLIGON', 'ID_CREDITO'],
+            'estados_disponibles': estados_disponibles,
+            'municipios_disponibles': municipios_disponibles
+        })
+    except Exception as e:
+        app.logger.error(f"Error al cargar MEGA_CAPA_V1_OL: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/mapa-15k/estados')
+@login_required
+def api_mapa_15k_estados():
+    """Retorna lista de estados y municipios disponibles en los shapefiles."""
+    try:
+        gdf = gpd.read_file('data/VALIDACION_UNIFICADO.shp')
+        if gdf.crs is not None and gdf.crs.to_epsg() != 4326:
+            gdf = gdf.to_crs(epsg=4326)
+        gdf = enrich_with_location(gdf)
+        # Estados
+        estados = gdf.groupby('ESTADO').size().reset_index(name='count')
+        estados_list = [
+            {'name': row['ESTADO'], 'count': int(row['count'])}
+            for _, row in estados.iterrows()
+            if row['ESTADO'] is not None
+        ]
+        estados_list.sort(key=lambda x: x['name'] if x['name'] else '')
+        # Municipios agrupados por estado
+        municipios = {}
+        for estado in gdf['ESTADO'].dropna().unique():
+            muns = gdf[gdf['ESTADO'] == estado]['MUNICIPIO'].dropna().unique().tolist()
+            municipios[estado] = sorted(muns)
+        return jsonify({'estados': estados_list, 'municipios_por_estado': municipios})
+    except Exception as e:
+        app.logger.error(f'Error en /api/mapa-15k/estados: {e}')
+        return jsonify({'error': str(e)}), 500
+
+
+def clasificar_traslape(overlap_pct, area_ratio, same_credit):
+    """Clasifica el traslape según las reglas de negocio.
+
+    Returns: (clasificacion, color, descripcion)
+    """
+    if same_credit:
+        if area_ratio >= 85 and overlap_pct >= 85:
+            return 'duplicado', '#dc3545', 'Duplicado (mismo crédito)'
+        elif overlap_pct >= 10:
+            return 'traslape_interno', '#ffc107', 'Traslape interno - rechazar'
+        else:
+            return 'sin_conflicto', '#28a745', 'Sin conflicto'
+    else:
+        if area_ratio >= 85 and overlap_pct >= 85:
+            return 'duplicado', '#dc3545', 'Duplicado (diferente crédito)'
+        elif 30 <= overlap_pct <= 80:
+            return 'traslape_relevante', '#fd7e14', 'Traslape relevante - revisar'
+        else:
+            return 'sin_conflicto', '#28a745', 'Sin conflicto'
+
+
+def _build_nuevos_relacionados_cache():
+    """Build/cache spatial structures for validacion polygons marked as nuevos."""
+    global _nuevos_relacionados_cache, _indices_filtrados_cache
+
+    if shp_cache.validacion is None or shp_cache.mega is None:
+        raise RuntimeError('Shapefiles no cargados')
+
+    if _nuevos_relacionados_cache is not None:
+        return _nuevos_relacionados_cache
+
+    if _indices_filtrados_cache is not None and 'nuevos' in _indices_filtrados_cache:
+        nuevos_indices = [int(i) for i in _indices_filtrados_cache['nuevos']]
+    else:
+        mega_ids = set(shp_cache.mega['ID_POLIGON'].astype(str).str.strip())
+        mask_nuevos = ~shp_cache.validacion['ID_POLIGON'].astype(str).str.strip().isin(mega_ids)
+        nuevos_indices = [int(i) for i in shp_cache.validacion.index[mask_nuevos]]
+
+    nuevos_gdf = shp_cache.validacion.iloc[nuevos_indices].copy()
+    nuevos_gdf['__src_idx__'] = nuevos_indices
+
+    try:
+        nuevos_sindex = nuevos_gdf.sindex
+    except Exception:
+        nuevos_sindex = None
+
+    _nuevos_relacionados_cache = {
+        'nuevos_indices_set': set(nuevos_indices),
+        'nuevos_gdf': nuevos_gdf,
+        'nuevos_sindex': nuevos_sindex,
+    }
+    return _nuevos_relacionados_cache
+
+
+def generar_propuesta_chapingo_nuevo(idx, analisis_mega=None):
+    """Genera propuesta automatica Chapingo para un poligono nuevo basada SOLO en megacapa."""
+    if shp_cache.validacion is None or shp_cache.mega is None:
+        raise RuntimeError('Shapefiles no cargados')
+    if idx < 0 or idx >= len(shp_cache.validacion):
+        raise ValueError(f'Indice fuera de rango (0-{len(shp_cache.validacion)-1})')
+
+    base_row = shp_cache.validacion.iloc[idx]
+    id_poligono_base = str(base_row.get('ID_POLIGON', '') or '').strip()
+
+    if analisis_mega is None:
+        analisis_mega = calcular_traslapes(idx)
+
+    # Calculate surface of current polygon
+    poligono_props = (analisis_mega.get('poligono') or {}).get('properties') or {}
+    superficie_base = poligono_props.get('area_ha')
+    superficie_base = round(float(superficie_base), 4) if superficie_base is not None else None
+
+    propuesta = {
+        'estatus_chapingo_propuesto': None,
+        'id_poligono_unico_propuesto': None,
+        'superficie_chapingo_propuesta': superficie_base,
+        'comentario_chapingo_propuesto': None,
+    }
+
+    # Check if idx belongs to nuevos
+    cache = _build_nuevos_relacionados_cache()
+    if idx not in cache['nuevos_indices_set']:
+        propuesta['comentario_chapingo_propuesto'] = 'El indice no pertenece al subconjunto nuevos.'
+        return propuesta
+
+    matches_mega = analisis_mega.get('matches') or []
+
+    # No matches in megacapa → NUEVO
+    if not matches_mega:
+        propuesta['estatus_chapingo_propuesto'] = 'NUEVO'
+        propuesta['id_poligono_unico_propuesto'] = id_poligono_base
+        propuesta['comentario_chapingo_propuesto'] = 'Sin traslape con Mega Capa. Poligono nuevo.'
+        return propuesta
+
+    # Find the worst (most severe) match classification
+    # Priority: duplicado (VINCULAR) > traslape_interno (ELIMINAR) > traslape_relevante (REVISAR) > sin_conflicto (NUEVO)
+    worst_match = None
+    worst_priority = -1
+
+    priority_map = {
+        'duplicado': 3,
+        'traslape_interno': 2,
+        'traslape_relevante': 1,
+        'sin_conflicto': 0,
+    }
+
+    for m in matches_mega:
+        p = priority_map.get(m.get('clasificacion', ''), -1)
+        if p > worst_priority:
+            worst_priority = p
+            worst_match = m
+
+    if worst_match is None:
+        propuesta['estatus_chapingo_propuesto'] = 'NUEVO'
+        propuesta['id_poligono_unico_propuesto'] = id_poligono_base
+        propuesta['comentario_chapingo_propuesto'] = 'Sin clasificacion determinante en Mega Capa.'
+        return propuesta
+
+    clasificacion = worst_match.get('clasificacion', '')
+    mega_id_poligon = worst_match.get('id_poligon', '')
+    mega_overlap = worst_match.get('overlap_pct', 0)
+    mega_area_ratio = worst_match.get('area_ratio', 0)
+    mega_same_credit = worst_match.get('same_credit', False)
+
+    if clasificacion == 'duplicado':
+        # Superficie >=85% + traslape >=85% → VINCULAR al ID_POLIGONO de mega
+        propuesta['estatus_chapingo_propuesto'] = 'VINCULAR'
+        propuesta['id_poligono_unico_propuesto'] = mega_id_poligon
+        credito_tipo = 'mismo credito' if mega_same_credit else 'diferente credito'
+        propuesta['comentario_chapingo_propuesto'] = (
+            f'Duplicado en Mega ({credito_tipo}). '
+            f'Traslape: {mega_overlap:.1f}%, similitud superficie: {mega_area_ratio:.1f}%. '
+            f'Vinculado a {mega_id_poligon}.'
+        )
+
+    elif clasificacion == 'traslape_interno':
+        # Mismo credito, traslape 10-85% → ELIMINAR
+        propuesta['estatus_chapingo_propuesto'] = 'ELIMINAR'
+        propuesta['id_poligono_unico_propuesto'] = mega_id_poligon
+        propuesta['comentario_chapingo_propuesto'] = (
+            f'Traslape interno con Mega (mismo credito). '
+            f'Traslape: {mega_overlap:.1f}%. Se rechaza.'
+        )
+
+    elif clasificacion == 'traslape_relevante':
+        # Diferente credito, traslape 30-80% → Revisar (no se asigna estatus automatico)
+        propuesta['estatus_chapingo_propuesto'] = None
+        propuesta['id_poligono_unico_propuesto'] = mega_id_poligon
+        propuesta['comentario_chapingo_propuesto'] = (
+            f'Traslape relevante con Mega (diferente credito). '
+            f'Traslape: {mega_overlap:.1f}%. Revisar manualmente.'
+        )
+
+    else:
+        # sin_conflicto → NUEVO
+        propuesta['estatus_chapingo_propuesto'] = 'NUEVO'
+        propuesta['id_poligono_unico_propuesto'] = id_poligono_base
+        propuesta['comentario_chapingo_propuesto'] = (
+            f'Traslape minimo con Mega ({mega_overlap:.1f}%). Sin conflicto.'
+        )
+
+    return propuesta
+
+
+def construir_evidencia_flujo_chapingo():
+    """Build reproducible evidence for key Chapingo flow scenarios."""
+    if shp_cache.validacion is None or shp_cache.mega is None:
+        raise RuntimeError('Shapefiles no cargados')
+
+    cache = _build_nuevos_relacionados_cache()
+    nuevos_indices = list(cache['nuevos_indices_set'])
+
+    escenarios = {
+        'nuevo_sin_match': None,
+        'vincular_mismo_credito': None,
+        'vincular_diferente_credito': None,
+        'eliminar_traslape_interno': None,
+    }
+
+    for idx in nuevos_indices[:200]:
+        try:
+            data = calcular_traslapes(idx)
+            matches = data.get('matches', [])
+
+            if not matches and escenarios['nuevo_sin_match'] is None:
+                escenarios['nuevo_sin_match'] = {'idx': idx, 'cumple': True}
+
+            for m in matches:
+                clasif = m.get('clasificacion', '')
+                if clasif == 'duplicado' and m.get('same_credit') and escenarios['vincular_mismo_credito'] is None:
+                    escenarios['vincular_mismo_credito'] = {'idx': idx, 'cumple': True, 'mega_id': m.get('id_poligon')}
+                elif clasif == 'duplicado' and not m.get('same_credit') and escenarios['vincular_diferente_credito'] is None:
+                    escenarios['vincular_diferente_credito'] = {'idx': idx, 'cumple': True, 'mega_id': m.get('id_poligon')}
+                elif clasif == 'traslape_interno' and escenarios['eliminar_traslape_interno'] is None:
+                    escenarios['eliminar_traslape_interno'] = {'idx': idx, 'cumple': True, 'mega_id': m.get('id_poligon')}
+
+            if all(v is not None for v in escenarios.values()):
+                break
+        except Exception:
+            continue
+
+    return escenarios
+
+
+@app.route('/api/analizador/total')
+@login_required
+def api_analizador_total():
+    if shp_cache.validacion is None:
+        return jsonify({'error': 'Shapefiles no cargados'}), 500
+    return jsonify({'total': len(shp_cache.validacion)})
+
+
+def calcular_traslapes(idx):
+    """Helper: computes overlap analysis for shp_cache.validacion[idx] against shp_cache.mega.
+
+    Returns a dict with keys: poligono, matches, match_features, resumen.
+    Raises ValueError if idx is out of range.
+    Raises RuntimeError if shapefiles are not loaded.
+    """
+    if shp_cache.validacion is None or shp_cache.mega is None:
+        raise RuntimeError('Shapefiles no cargados')
+    if idx < 0 or idx >= len(shp_cache.validacion):
+        raise ValueError(f'Índice fuera de rango (0-{len(shp_cache.validacion)-1})')
+
+    import pyproj
+    import shapely
+    from shapely.ops import transform
+
+    vrow = shp_cache.validacion.iloc[idx]
+    vgeom = vrow.geometry
+
+    # Calcular área en hectáreas (proyectar a UTM zona basada en el centroide)
+    centroid = vgeom.centroid
+    utm_zone = int((centroid.x + 180) / 6) + 1
+    transformer = pyproj.Transformer.from_crs('EPSG:4326', f'EPSG:326{utm_zone:02d}', always_xy=True)
+    vgeom_utm = transform(transformer.transform, vgeom)
+    area_ha = vgeom_utm.area / 10000
+
+    # Buscar matches en MEGA usando spatial index
+    candidates = list(shp_cache.mega.sindex.intersection(vgeom.bounds))
+    matches = []
+    match_features = []
+
+    for ci in candidates:
+        mrow = shp_cache.mega.iloc[ci]
+        mgeom = mrow.geometry
+
+        if not vgeom.intersects(mgeom):
+            continue
+
+        intersection = vgeom.intersection(mgeom)
+
+        # Calcular áreas en UTM
+        mgeom_utm = transform(transformer.transform, mgeom)
+        intersection_utm = transform(transformer.transform, intersection)
+
+        area_v = vgeom_utm.area
+        area_m = mgeom_utm.area
+        area_inter = intersection_utm.area
+
+        overlap_pct = (area_inter / area_v * 100) if area_v > 0 else 0
+        area_ratio = (min(area_v, area_m) / max(area_v, area_m) * 100) if max(area_v, area_m) > 0 else 0
+
+        same_credit = str(vrow.get('ID_CREDITO', '')) == str(mrow.get('ID_CREDITO', ''))
+        clasificacion, color, descripcion = clasificar_traslape(overlap_pct, area_ratio, same_credit)
+
+        # Solo incluir matches con overlap > 0.1%
+        if overlap_pct < 0.1:
+            continue
+
+        match_info = {
+            'mega_index': int(ci),
+            'id_poligon': str(mrow.get('ID_POLIGON', '')),
+            'id_credito': str(mrow.get('ID_CREDITO', '')),
+            'area_ha': round(area_m / 10000, 4),
+            'overlap_pct': round(overlap_pct, 1),
+            'area_ratio': round(area_ratio, 1),
+            'same_credit': same_credit,
+            'clasificacion': clasificacion,
+            'color': color,
+            'descripcion': descripcion
+        }
+        matches.append(match_info)
+
+        match_feature = {
+            'type': 'Feature',
+            'properties': match_info,
+            'geometry': json.loads(shapely.to_geojson(mgeom))
+        }
+        match_features.append(match_feature)
+
+    # Ordenar matches por overlap descendente
+    matches.sort(key=lambda x: x['overlap_pct'], reverse=True)
+    match_features.sort(key=lambda x: x['properties']['overlap_pct'], reverse=True)
+
+    # GeoJSON del polígono actual
+    poligono_geojson = {
+        'type': 'Feature',
+        'properties': {
+            'ID_POLIGON': str(vrow.get('ID_POLIGON', '')),
+            'ID_CREDITO': str(vrow.get('ID_CREDITO', '')),
+            'NOMBRE_ZIP': str(vrow.get('NOMBRE_ZIP', '')),
+            'ESTATUS': obtener_estatus_validacion(vrow),
+            'area_ha': round(area_ha, 4)
+        },
+        'geometry': json.loads(shapely.to_geojson(vgeom))
+    }
+
+    # Resumen de clasificaciones con desglose mismo/diferente crédito
+    duplicados = [m for m in matches if m['clasificacion'] == 'duplicado']
+    traslape_interno_list = [m for m in matches if m['clasificacion'] == 'traslape_interno']
+    traslape_relevante_list = [m for m in matches if m['clasificacion'] == 'traslape_relevante']
+    sin_conflicto_list = [m for m in matches if m['clasificacion'] == 'sin_conflicto']
+
+    resumen = {
+        'duplicados': len(duplicados),
+        'duplicados_mismo_credito': sum(1 for m in duplicados if m.get('same_credit')),
+        'duplicados_diferente_credito': sum(1 for m in duplicados if not m.get('same_credit')),
+        'traslape_interno': len(traslape_interno_list),
+        'traslape_interno_mismo_credito': sum(1 for m in traslape_interno_list if m.get('same_credit')),
+        'traslape_interno_diferente_credito': sum(1 for m in traslape_interno_list if not m.get('same_credit')),
+        'traslape_relevante': len(traslape_relevante_list),
+        'traslape_relevante_mismo_credito': sum(1 for m in traslape_relevante_list if m.get('same_credit')),
+        'traslape_relevante_diferente_credito': sum(1 for m in traslape_relevante_list if not m.get('same_credit')),
+        'sin_conflicto': len(sin_conflicto_list),
+        'sin_conflicto_mismo_credito': sum(1 for m in sin_conflicto_list if m.get('same_credit')),
+        'sin_conflicto_diferente_credito': sum(1 for m in sin_conflicto_list if not m.get('same_credit')),
+        'total_matches': len(matches)
+    }
+
+    return {
+        'poligono': poligono_geojson,
+        'matches': matches,
+        'match_features': {
+            'type': 'FeatureCollection',
+            'features': match_features
+        },
+        'resumen': resumen
+    }
+
+
+def obtener_guardado_validacion_15k(idx):
+    """Return persisted 15K validation row mapped to stable keys."""
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            'SELECT * FROM validacion_15k WHERE idx = ?', (idx,)
+        ).fetchone()
+    finally:
+        conn.close()
+
+    if row is None:
+        return {
+            'estatus': 'pendiente',
+            'estatus_chapingo': None,
+            'id_poligono_unico': None,
+            'superficie_chapingo': None,
+            'comentario_chapingo': None,
+            'id_poligon_historico': None,
+            'mega_idx': None,
+            'overlap_pct': None,
+            'fecha_validacion': None,
+            'superficie_calculada': None
+        }
+
+    return {
+        'estatus': row['estatus'],
+        'estatus_chapingo': row['estatus_chapingo'],
+        'id_poligono_unico': row['id_poligono_unico'],
+        'superficie_chapingo': row['superficie_chapingo'],
+        'comentario_chapingo': row['comentario_chapingo'],
+        'id_poligon_historico': row['id_poligon_historico'],
+        'mega_idx': row['mega_idx'],
+        'overlap_pct': row['overlap_pct'],
+        'fecha_validacion': row['fecha_validacion'],
+        'superficie_calculada': row['superficie_calculada']
+    }
+
+
+def indice_pertenece_a_nuevos(idx):
+    """Return True when idx belongs to the computed subset 'nuevos'."""
+    cache = _build_nuevos_relacionados_cache()
+    return int(idx) in cache['nuevos_indices_set']
+
+
+def _normalizar_texto_chapingo(value, field_name):
+    """Normalize optional Chapingo text values and validate payload types."""
+    if value is None:
+        return None
+    if isinstance(value, (dict, list, tuple, set)):
+        raise ValueError(f'{field_name} debe ser texto')
+    text = str(value).strip()
+    return text or None
+
+
+def _normalizar_superficie_chapingo(value):
+    """Validate and normalize optional Chapingo area value."""
+    if value in (None, ''):
+        return None
+
+    try:
+        superficie = float(value)
+    except (TypeError, ValueError):
+        raise ValueError('superficie_chapingo debe ser numerica positiva')
+
+    if math.isnan(superficie) or math.isinf(superficie) or superficie <= 0:
+        raise ValueError('superficie_chapingo debe ser numerica positiva')
+
+    return round(superficie, 4)
+
+
+def _requiere_vinculacion_chapingo(idx, estatus_chapingo):
+    """Determine if an index requires linked polygon id for Chapingo decision."""
+    if estatus_chapingo == 'VINCULAR':
+        return True
+
+    try:
+        propuesta = generar_propuesta_chapingo_nuevo(idx)
+    except Exception:
+        return False
+
+    return propuesta.get('estatus_chapingo_propuesto') == 'VINCULAR'
+
+
+@app.route('/api/analizador/poligono/<int:idx>')
+@login_required
+def api_analizador_poligono(idx):
+    try:
+        data = calcular_traslapes(idx)
+    except RuntimeError as e:
+        return jsonify({'error': str(e)}), 500
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
+    return jsonify({
+        'index': idx,
+        'total': len(shp_cache.validacion),
+        'poligono': data['poligono'],
+        'matches': data['matches'],
+        'match_features': data['match_features'],
+        'resumen': data['resumen']
+    })
+
+
+@app.route('/api/analizador/propuesta-editable/<int:idx>')
+@login_required
+def api_analizador_propuesta_editable(idx):
+    """Return complete editable payload for Analizador proposal panel."""
+    try:
+        analisis_mega = calcular_traslapes(idx)
+        es_nuevo = indice_pertenece_a_nuevos(idx)
+    except RuntimeError as e:
+        return jsonify({'error': str(e)}), 500
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
+    guardado = obtener_guardado_validacion_15k(idx)
+
+    if es_nuevo:
+        propuesta = generar_propuesta_chapingo_nuevo(idx, analisis_mega=analisis_mega)
+        propuesta['aplica'] = True
+    else:
+        propuesta = {
+            'aplica': False,
+            'estatus_chapingo_propuesto': None,
+            'id_poligono_unico_propuesto': None,
+            'superficie_chapingo_propuesta': None,
+            'comentario_chapingo_propuesto': 'El indice no pertenece al subconjunto nuevos; propuesta automatica no aplica.',
+        }
+
+    return jsonify({
+        'index': idx,
+        'total': len(shp_cache.validacion),
+        'es_nuevo': es_nuevo,
+        'poligono': analisis_mega['poligono'],
+        'analisis_mega': {
+            'matches': analisis_mega['matches'],
+            'match_features': analisis_mega['match_features'],
+            'resumen': analisis_mega['resumen'],
+        },
+        'propuesta': propuesta,
+        'guardado': guardado,
+    })
+
+
+@app.route('/api/analizador/chapingo-evidencia')
+@login_required
+def api_analizador_chapingo_evidencia():
+    """Expose reproducible evidence for critical Chapingo flow scenarios."""
+    try:
+        escenarios = construir_evidencia_flujo_chapingo()
+    except RuntimeError as e:
+        return jsonify({'error': str(e)}), 500
+    except Exception as e:
+        return jsonify({'error': f'No fue posible generar evidencia Chapingo: {str(e)}'}), 500
+
+    faltantes = [k for k, v in escenarios.items() if v is None]
+    escenarios_fallidos = [
+        k for k, v in escenarios.items()
+        if isinstance(v, dict) and v.get('cumple') is False
+    ]
+
+    return jsonify({
+        'ok': not faltantes and not escenarios_fallidos,
+        'escenarios': escenarios,
+        'faltantes': faltantes,
+        'fallidos': escenarios_fallidos,
+    })
+
+
+@app.route('/api/analizador/propuesta-editable/<int:idx>/guardar', methods=['POST'])
+@login_required
+def api_analizador_guardar_propuesta_editable(idx):
+    """Save editable Chapingo decision values for a single index."""
+    if shp_cache.validacion is None:
+        return jsonify({'error': 'Shapefiles no cargados'}), 500
+    if idx < 0 or idx >= len(shp_cache.validacion):
+        return jsonify({'error': f'idx fuera de rango (0-{len(shp_cache.validacion)-1})'}), 400
+
+    data = request.get_json(force=True, silent=True) or {}
+
+    estatus_raw = data.get('estatus_chapingo')
+    if estatus_raw is None:
+        return jsonify({'error': 'estatus_chapingo es requerido'}), 400
+
+    estatus_chapingo = str(estatus_raw).strip().upper()
+    if not estatus_chapingo:
+        return jsonify({'error': 'estatus_chapingo no puede estar vacio'}), 400
+
+    try:
+        id_poligono_unico = _normalizar_texto_chapingo(
+            data.get('id_poligono_unico'),
+            'id_poligono_unico'
+        )
+        comentario_chapingo = _normalizar_texto_chapingo(
+            data.get('comentario_chapingo'),
+            'comentario_chapingo'
+        )
+        superficie_chapingo = _normalizar_superficie_chapingo(
+            data.get('superficie_chapingo')
+        )
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
+    if _requiere_vinculacion_chapingo(idx, estatus_chapingo) and not id_poligono_unico:
+        return jsonify({
+            'error': 'id_poligono_unico es requerido cuando la propuesta requiere vinculacion'
+        }), 400
+
+    # Auto-calculate surface area in hectares using UTM projection
+    import pyproj
+    from shapely.ops import transform
+    vrow = shp_cache.validacion.iloc[idx]
+    vgeom = vrow.geometry
+    centroid = vgeom.centroid
+    utm_zone = int((centroid.x + 180) / 6) + 1
+    transformer = pyproj.Transformer.from_crs('EPSG:4326', f'EPSG:326{utm_zone:02d}', always_xy=True)
+    vgeom_utm = transform(transformer.transform, vgeom)
+    superficie_calculada = round(vgeom_utm.area / 10000, 4)
+
+    conn = get_db_connection()
+    try:
+        conn.execute(
+            '''INSERT INTO validacion_15k
+               (idx, estatus_chapingo, id_poligono_unico, superficie_chapingo, comentario_chapingo, superficie_calculada)
+               VALUES (?, ?, ?, ?, ?, ?)
+               ON CONFLICT(idx) DO UPDATE SET
+                   estatus_chapingo = excluded.estatus_chapingo,
+                   id_poligono_unico = excluded.id_poligono_unico,
+                   superficie_chapingo = excluded.superficie_chapingo,
+                   comentario_chapingo = excluded.comentario_chapingo,
+                   superficie_calculada = excluded.superficie_calculada''',
+            (
+                idx,
+                estatus_chapingo,
+                id_poligono_unico,
+                superficie_chapingo,
+                comentario_chapingo,
+                superficie_calculada,
+            )
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    guardado = obtener_guardado_validacion_15k(idx)
+    return jsonify({
+        'success': True,
+        'idx': idx,
+        'guardado': {
+            'estatus_chapingo': guardado['estatus_chapingo'],
+            'id_poligono_unico': guardado['id_poligono_unico'],
+            'superficie_chapingo': guardado['superficie_chapingo'],
+            'comentario_chapingo': guardado['comentario_chapingo'],
+            'superficie_calculada': guardado['superficie_calculada'],
+        }
+    })
+
+
+@app.route('/api/analizador/buscar')
+@login_required
+def api_analizador_buscar():
+    if shp_cache.validacion is None:
+        return jsonify({'error': 'Shapefiles no cargados'}), 500
+    q = request.args.get('q', '').strip()
+    if not q:
+        return jsonify({'resultados': []})
+    resultados = []
+    for idx, row in shp_cache.validacion.iterrows():
+        if (q.lower() in str(row.get('ID_CREDITO', '')).lower() or
+                q.lower() in str(row.get('ID_POLIGON', '')).lower()):
+            resultados.append({
+                'index': int(idx),
+                'id_poligon': str(row.get('ID_POLIGON', '')),
+                'id_credito': str(row.get('ID_CREDITO', ''))
+            })
+        if len(resultados) >= 50:
+            break
+    return jsonify({'resultados': resultados, 'total': len(resultados)})
+
+
+@app.route('/api/analizador/dashboard-estatus')
+@login_required
+def api_analizador_dashboard_estatus():
+    global _dashboard_cache
+    if shp_cache.validacion is None or shp_cache.mega is None:
+        return jsonify({'error': 'Shapefiles no cargados'}), 500
+    if _dashboard_cache is not None:
+        return jsonify(_dashboard_cache)
+    mega_ids = set(shp_cache.mega['ID_POLIGON'].astype(str).str.strip())
+    total_15k = len(shp_cache.validacion)
+    nuevos = int((~shp_cache.validacion['ID_POLIGON'].astype(str).str.strip().isin(mega_ids)).sum())
+    existentes = total_15k - nuevos
+    _dashboard_cache = {
+        'total_15k': total_15k,
+        'nuevos': nuevos,
+        'existentes': existentes,
+    }
+    return jsonify(_dashboard_cache)
+
+
+@app.route('/api/analizador/indices-filtrados')
+@login_required
+def api_analizador_indices_filtrados():
+    global _indices_filtrados_cache
+    if shp_cache.validacion is None or shp_cache.mega is None:
+        return jsonify({'error': 'Shapefiles no cargados'}), 500
+    filtro = request.args.get('filtro')
+    if filtro not in ('nuevos', 'existentes'):
+        return jsonify({'error': 'Parámetro filtro inválido. Use nuevos o existentes'}), 400
+    if _indices_filtrados_cache is None:
+        mega_ids = set(shp_cache.mega['ID_POLIGON'].astype(str).str.strip())
+        mask_nuevos = ~shp_cache.validacion['ID_POLIGON'].astype(str).str.strip().isin(mega_ids)
+        indices_nuevos = [int(i) for i in shp_cache.validacion.index[mask_nuevos]]
+        indices_existentes = [int(i) for i in shp_cache.validacion.index[~mask_nuevos]]
+        _indices_filtrados_cache = {
+            'nuevos': indices_nuevos,
+            'existentes': indices_existentes,
+        }
+    indices = _indices_filtrados_cache[filtro]
+    return jsonify({'filtro': filtro, 'indices': indices, 'total': len(indices)})
+
+
+def _run_clasificacion_nuevos():
+    """Background thread: classifies all 'nuevo' polygons by their worst overlap category."""
+    global _clasif_nuevos_state, _indices_filtrados_cache
+    try:
+        # Get or compute the list of 'nuevo' indices
+        if _indices_filtrados_cache is None:
+            mega_ids = set(shp_cache.mega['ID_POLIGON'].astype(str).str.strip())
+            mask_nuevos = ~shp_cache.validacion['ID_POLIGON'].astype(str).str.strip().isin(mega_ids)
+            indices_nuevos = [int(i) for i in shp_cache.validacion.index[mask_nuevos]]
+            indices_existentes = [int(i) for i in shp_cache.validacion.index[~mask_nuevos]]
+            _indices_filtrados_cache = {
+                'nuevos': indices_nuevos,
+                'existentes': indices_existentes,
+            }
+        indices = _indices_filtrados_cache['nuevos']
+        total = len(indices)
+        _clasif_nuevos_state['total'] = total
+
+        counts = {
+            'duplicado': 0,
+            'duplicados_mismo_credito': 0,
+            'duplicados_diferente_credito': 0,
+            'traslape_interno': 0,
+            'traslape_interno_mismo_credito': 0,
+            'traslape_interno_diferente_credito': 0,
+            'traslape_relevante': 0,
+            'traslape_relevante_mismo_credito': 0,
+            'traslape_relevante_diferente_credito': 0,
+            'sin_conflicto': 0,
+            'sin_conflicto_mismo_credito': 0,
+            'sin_conflicto_diferente_credito': 0,
+            'sin_matches': 0,
+        }
+        indices_por_clasif = {
+            'duplicado': [],
+            'duplicado_mismo_credito': [],
+            'duplicado_diferente_credito': [],
+            'traslape_interno': [],
+            'traslape_interno_mismo_credito': [],
+            'traslape_interno_diferente_credito': [],
+            'traslape_relevante': [],
+            'traslape_relevante_mismo_credito': [],
+            'traslape_relevante_diferente_credito': [],
+            'sin_conflicto': [],
+            'sin_conflicto_mismo_credito': [],
+            'sin_conflicto_diferente_credito': [],
+            'sin_matches': [],
+        }
+
+        for i, idx in enumerate(indices):
+            try:
+                data = calcular_traslapes(idx)
+                resumen = data['resumen']
+                if resumen['duplicados'] > 0:
+                    counts['duplicado'] += 1
+                    indices_por_clasif['duplicado'].append(idx)
+                    if resumen.get('duplicados_mismo_credito', 0) > 0:
+                        counts['duplicados_mismo_credito'] += 1
+                        indices_por_clasif['duplicado_mismo_credito'].append(idx)
+                    else:
+                        counts['duplicados_diferente_credito'] += 1
+                        indices_por_clasif['duplicado_diferente_credito'].append(idx)
+                elif resumen['traslape_interno'] > 0:
+                    counts['traslape_interno'] += 1
+                    indices_por_clasif['traslape_interno'].append(idx)
+                    if resumen.get('traslape_interno_mismo_credito', 0) > 0:
+                        counts['traslape_interno_mismo_credito'] += 1
+                        indices_por_clasif['traslape_interno_mismo_credito'].append(idx)
+                    else:
+                        counts['traslape_interno_diferente_credito'] += 1
+                        indices_por_clasif['traslape_interno_diferente_credito'].append(idx)
+                elif resumen['traslape_relevante'] > 0:
+                    counts['traslape_relevante'] += 1
+                    indices_por_clasif['traslape_relevante'].append(idx)
+                    if resumen.get('traslape_relevante_mismo_credito', 0) > 0:
+                        counts['traslape_relevante_mismo_credito'] += 1
+                        indices_por_clasif['traslape_relevante_mismo_credito'].append(idx)
+                    else:
+                        counts['traslape_relevante_diferente_credito'] += 1
+                        indices_por_clasif['traslape_relevante_diferente_credito'].append(idx)
+                elif resumen['sin_conflicto'] > 0:
+                    counts['sin_conflicto'] += 1
+                    indices_por_clasif['sin_conflicto'].append(idx)
+                    if resumen.get('sin_conflicto_mismo_credito', 0) > 0:
+                        counts['sin_conflicto_mismo_credito'] += 1
+                        indices_por_clasif['sin_conflicto_mismo_credito'].append(idx)
+                    else:
+                        counts['sin_conflicto_diferente_credito'] += 1
+                        indices_por_clasif['sin_conflicto_diferente_credito'].append(idx)
+                else:
+                    counts['sin_matches'] += 1
+                    indices_por_clasif['sin_matches'].append(idx)
+            except Exception:
+                # Skip individual polygon errors without crashing the batch
+                counts['sin_matches'] += 1
+                indices_por_clasif['sin_matches'].append(idx)
+
+            processed = i + 1
+            _clasif_nuevos_state['processed'] = processed
+            _clasif_nuevos_state['progress'] = int(processed / total * 100) if total > 0 else 100
+
+        _clasif_nuevos_state['result'] = counts
+        _clasif_nuevos_state['indices_por_clasif'] = indices_por_clasif
+        _clasif_nuevos_state['status'] = 'done'
+        _clasif_nuevos_state['progress'] = 100
+    except Exception as e:
+        _clasif_nuevos_state['status'] = 'error'
+        _clasif_nuevos_state['error'] = str(e)
+
+
+@app.route('/api/analizador/clasificacion-nuevos/iniciar', methods=['POST'])
+@login_required
+def api_clasificacion_nuevos_iniciar():
+    global _clasif_nuevos_state
+    if shp_cache.validacion is None or shp_cache.mega is None:
+        return jsonify({'error': 'Shapefiles no cargados'}), 500
+
+    if _clasif_nuevos_state['status'] == 'running':
+        return jsonify({'error': 'Cálculo en progreso'}), 409
+
+    if _clasif_nuevos_state['status'] == 'done':
+        return jsonify({
+            'status': 'done',
+            'progress': 100,
+            'processed': _clasif_nuevos_state['processed'],
+            'total': _clasif_nuevos_state['total'],
+            'result': _clasif_nuevos_state['result'],
+        }), 200
+
+    # Reset state and start background thread
+    _clasif_nuevos_state['status'] = 'running'
+    _clasif_nuevos_state['progress'] = 0
+    _clasif_nuevos_state['processed'] = 0
+    _clasif_nuevos_state['result'] = None
+    _clasif_nuevos_state['indices_por_clasif'] = None
+    _clasif_nuevos_state['error'] = None
+
+    # Determine total upfront for the response (use cache if available)
+    if _indices_filtrados_cache is not None:
+        total = len(_indices_filtrados_cache['nuevos'])
+    else:
+        mega_ids = set(shp_cache.mega['ID_POLIGON'].astype(str).str.strip())
+        mask_nuevos = ~shp_cache.validacion['ID_POLIGON'].astype(str).str.strip().isin(mega_ids)
+        total = int(mask_nuevos.sum())
+    _clasif_nuevos_state['total'] = total
+
+    threading.Thread(target=_run_clasificacion_nuevos, daemon=True).start()
+    return jsonify({'message': 'Cálculo iniciado', 'total': total}), 202
+
+
+@app.route('/api/analizador/clasificacion-nuevos/estado')
+@login_required
+def api_clasificacion_nuevos_estado():
+    state = _clasif_nuevos_state
+    response = {
+        'status': state['status'],
+        'progress': state['progress'],
+        'processed': state['processed'],
+        'total': state['total'],
+    }
+    if state['status'] == 'done':
+        response['result'] = state['result']
+    if state['status'] == 'error':
+        response['error'] = state['error']
+    return jsonify(response)
+
+
+@app.route('/api/analizador/clasificacion-nuevos/indices')
+@login_required
+def api_clasificacion_nuevos_indices():
+    clasif = request.args.get('clasif')
+    subfiltro = request.args.get('subfiltro')
+    valid_clasifs = ['duplicado', 'traslape_interno', 'traslape_relevante', 'sin_conflicto', 'sin_matches']
+    if clasif not in valid_clasifs:
+        return jsonify({'error': 'Clasificación inválida. Use: ' + ', '.join(valid_clasifs)}), 400
+    if _clasif_nuevos_state['status'] != 'done' or _clasif_nuevos_state['indices_por_clasif'] is None:
+        return jsonify({'error': 'Clasificación no completada aún'}), 409
+
+    indices_key = clasif
+    # subfiltro applies to all categories that have mismo/diferente breakdown
+    categories_with_subfiltro = ['duplicado', 'traslape_interno', 'traslape_relevante', 'sin_conflicto']
+    if clasif in categories_with_subfiltro:
+        valid_subfiltros = [None, '', 'mismo_credito', 'diferente_credito']
+        if subfiltro not in valid_subfiltros:
+            return jsonify({'error': f'Subfiltro inválido para {clasif}. Use: mismo_credito o diferente_credito'}), 400
+        if subfiltro == 'mismo_credito':
+            indices_key = clasif + '_mismo_credito'
+        elif subfiltro == 'diferente_credito':
+            indices_key = clasif + '_diferente_credito'
+    elif subfiltro not in (None, ''):
+        return jsonify({'error': 'El parámetro subfiltro no aplica para esta clasificación'}), 400
+
+    indices = _clasif_nuevos_state['indices_por_clasif'].get(indices_key, [])
+    response = {'clasif': clasif, 'indices': indices, 'total': len(indices)}
+    if subfiltro not in (None, ''):
+        response['subfiltro'] = subfiltro
+    return jsonify(response)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Validación 15K — API endpoints
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.route('/api/validacion-15k/guardar', methods=['POST'])
+@login_required
+def api_validacion_15k_guardar():
+    """Save or update the validation status for a single 15K polygon (upsert)."""
+    if shp_cache.validacion is None:
+        return jsonify({'error': 'Shapefiles no cargados'}), 500
+
+    data = request.get_json(force=True, silent=True) or {}
+
+    # Validate idx
+    idx = data.get('idx')
+    if idx is None:
+        return jsonify({'error': 'idx es requerido'}), 400
+    try:
+        idx = int(idx)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'idx debe ser un entero'}), 400
+    if idx < 0 or idx >= len(shp_cache.validacion):
+        return jsonify({'error': f'idx fuera de rango (0-{len(shp_cache.validacion)-1})'}), 400
+
+    # Validate estatus
+    estatus = data.get('estatus')
+    if estatus not in ('nuevo', 'encima'):
+        return jsonify({'error': "estatus debe ser 'nuevo' o 'encima'"}), 400
+
+    # Validate encima requirements
+    id_poligon_historico = data.get('id_poligon_historico')
+    mega_idx = data.get('mega_idx')
+    overlap_pct = data.get('overlap_pct')
+
+    if estatus == 'encima':
+        if not id_poligon_historico:
+            return jsonify({'error': "id_poligon_historico es requerido cuando estatus es 'encima'"}), 400
+        if mega_idx is None:
+            return jsonify({'error': "mega_idx es requerido cuando estatus es 'encima'"}), 400
+    else:
+        # estatus == 'nuevo': nullify linked fields
+        id_poligon_historico = None
+        mega_idx = None
+        overlap_pct = None
+
+    # Auto-populate from shp_cache.validacion
+    vrow = shp_cache.validacion.iloc[idx]
+    id_poligon_validacion = str(vrow.get('ID_POLIGON', '') or '')
+    id_credito_validacion = str(vrow.get('ID_CREDITO', '') or '')
+    nombre_zip = str(vrow.get('NOMBRE_ZIP', '') or '')
+
+    from datetime import datetime, timezone
+    fecha_validacion = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S')
+
+    conn = get_db_connection()
+    try:
+        cursor = conn.execute(
+            '''INSERT OR REPLACE INTO validacion_15k
+               (idx, id_poligon_validacion, id_credito_validacion, nombre_zip,
+                estatus, id_poligon_historico, mega_idx, overlap_pct,
+                fecha_validacion, validado_por)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'usuario')''',
+            (idx, id_poligon_validacion, id_credito_validacion, nombre_zip,
+             estatus, id_poligon_historico, mega_idx, overlap_pct,
+             fecha_validacion)
+        )
+        conn.commit()
+        val_id = cursor.lastrowid
+    finally:
+        conn.close()
+
+    return jsonify({'success': True, 'val_id': val_id, 'estatus': estatus})
+
+
+@app.route('/api/validacion-15k/progreso')
+@login_required
+def api_validacion_15k_progreso():
+    """Return overall validation progress stats."""
+    if shp_cache.validacion is None:
+        return jsonify({'error': 'Shapefiles no cargados'}), 500
+
+    total = len(shp_cache.validacion)
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            "SELECT estatus, COUNT(*) as cnt FROM validacion_15k GROUP BY estatus"
+        ).fetchall()
+    finally:
+        conn.close()
+
+    counts = {row['estatus']: row['cnt'] for row in rows}
+    nuevos = counts.get('nuevo', 0)
+    encima = counts.get('encima', 0)
+    validados = nuevos + encima
+    pendientes = total - validados
+    porcentaje = round((validados / total * 100), 1) if total > 0 else 0.0
+
+    return jsonify({
+        'total': total,
+        'pendientes': pendientes,
+        'nuevos': nuevos,
+        'encima': encima,
+        'porcentaje': porcentaje
+    })
+
+
+@app.route('/api/validacion-15k/estado/<int:idx>')
+@login_required
+def api_validacion_15k_estado(idx):
+    """Return the saved validation status for a specific polygon index."""
+    if shp_cache.validacion is None:
+        return jsonify({'error': 'Shapefiles no cargados'}), 500
+    if idx < 0 or idx >= len(shp_cache.validacion):
+        return jsonify({'error': f'idx fuera de rango (0-{len(shp_cache.validacion)-1})'}), 400
+
+    guardado = obtener_guardado_validacion_15k(idx)
+    return jsonify({'idx': idx, **guardado})
+
+
+@app.route('/api/validacion-15k/poligono/<int:idx>')
+@login_required
+def api_validacion_15k_poligono(idx):
+    """Return enhanced polygon detail with overlap analysis, saved status, and auto-suggestion."""
+    try:
+        data = calcular_traslapes(idx)
+    except RuntimeError as e:
+        return jsonify({'error': str(e)}), 500
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
+    validacion = obtener_guardado_validacion_15k(idx)
+
+    # Auto-suggestion based on overlap analysis
+    matches = data['matches']
+    best = matches[0] if matches else None  # already sorted by overlap_pct desc
+    if best and best['overlap_pct'] >= 50:
+        sugerencia = {
+            'estatus': 'encima',
+            'id_poligon_historico': best['id_poligon'],
+            'mega_idx': best['mega_index'],
+            'overlap_pct': best['overlap_pct'],
+            'razon': f"Traslape >= 50% con polígono histórico {best['id_poligon']}"
+        }
+    else:
+        sugerencia = {
+            'estatus': 'nuevo',
+            'id_poligon_historico': None,
+            'mega_idx': None,
+            'overlap_pct': None,
+            'razon': 'Ningún traslape >= 50% con polígonos históricos'
+        }
+
+    try:
+        propuesta_chapingo = generar_propuesta_chapingo_nuevo(idx, analisis_mega=data)
+    except Exception as e:
+        propuesta_chapingo = {
+            'estatus_chapingo_propuesto': None,
+            'id_poligono_unico_propuesto': None,
+            'superficie_chapingo_propuesta': None,
+            'comentario_chapingo_propuesto': f'No fue posible generar propuesta automatica: {str(e)}',
+        }
+
+    return jsonify({
+        'index': idx,
+        'total': len(shp_cache.validacion),
+        'poligono': data['poligono'],
+        'matches': data['matches'],
+        'match_features': data['match_features'],
+        'resumen': data['resumen'],
+        'validacion': validacion,
+        'sugerencia': sugerencia,
+        'propuesta_chapingo': propuesta_chapingo
+    })
+
+
+@app.route('/api/validacion-15k/siguiente-pendiente')
+@login_required
+def api_validacion_15k_siguiente_pendiente():
+    """Return the next unvalidated polygon index, optionally starting from ?desde=<idx>."""
+    if shp_cache.validacion is None:
+        return jsonify({'error': 'Shapefiles no cargados'}), 500
+
+    try:
+        desde = int(request.args.get('desde', 0))
+    except (TypeError, ValueError):
+        desde = 0
+    desde = max(0, desde)
+
+    total = len(shp_cache.validacion)
+
+    # Fetch all validated indices (estatus != 'pendiente')
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            "SELECT idx FROM validacion_15k WHERE estatus != 'pendiente'"
+        ).fetchall()
+    finally:
+        conn.close()
+
+    validados = {row['idx'] for row in rows}
+    total_pendientes = total - len(validados)
+
+    # Search from `desde` to end, then wrap around 0 to `desde`
+    for i in list(range(desde, total)) + list(range(0, desde)):
+        if i not in validados:
+            return jsonify({'idx': i, 'total_pendientes': total_pendientes})
+
+    return jsonify({'idx': None, 'total_pendientes': 0, 'mensaje': 'Todos los polígonos han sido validados'})
+
+
+@app.route('/api/validacion-15k/buscar')
+@login_required
+def api_validacion_15k_buscar():
+    """Search shp_cache.validacion by ID_POLIGON or ID_CREDITO, including saved estatus."""
+    if shp_cache.validacion is None:
+        return jsonify({'error': 'Shapefiles no cargados'}), 500
+
+    q = request.args.get('q', '').strip()
+    if not q:
+        return jsonify({'resultados': [], 'total': 0})
+
+    # Fetch all saved statuses in one query
+    conn = get_db_connection()
+    try:
+        rows = conn.execute('SELECT idx, estatus FROM validacion_15k').fetchall()
+    finally:
+        conn.close()
+    estatus_map = {row['idx']: row['estatus'] for row in rows}
+
+    resultados = []
+    q_lower = q.lower()
+    for i, row in shp_cache.validacion.iterrows():
+        if (q_lower in str(row.get('ID_CREDITO', '')).lower() or
+                q_lower in str(row.get('ID_POLIGON', '')).lower()):
+            resultados.append({
+                'index': int(i),
+                'id_poligon': str(row.get('ID_POLIGON', '')),
+                'id_credito': str(row.get('ID_CREDITO', '')),
+                'estatus': estatus_map.get(int(i), 'pendiente')
+            })
+        if len(resultados) >= 50:
+            break
+
+    return jsonify({'resultados': resultados, 'total': len(resultados)})
+
+
+@app.route('/api/validacion-15k/exportar')
+@login_required
+def api_validacion_15k_exportar():
+    """Generate and download an Excel file with all 15K validation results."""
+    if shp_cache.validacion is None or shp_cache.mega is None:
+        return jsonify({'error': 'Shapefiles no cargados'}), 500
+
+    # Fetch all saved validation rows from DB
+    conn = get_db_connection()
+    try:
+        db_rows = conn.execute('SELECT * FROM validacion_15k').fetchall()
+    finally:
+        conn.close()
+
+    # Build a lookup dict: idx -> db row
+    db_map = {row['idx']: row for row in db_rows}
+
+    # Determine HIST_ columns from shp_cache.mega (all non-geometry columns)
+    mega_data_cols = [c for c in shp_cache.mega.columns if c != 'geometry']
+
+    # Build one record per polygon in shp_cache.validacion
+    records = []
+    for i in range(len(shp_cache.validacion)):
+        vrow = shp_cache.validacion.iloc[i]
+        db_row = db_map.get(i)
+
+        if db_row is not None:
+            estatus = db_row['estatus']
+            id_poligon_validacion = db_row['id_poligon_validacion']
+            id_credito_validacion = db_row['id_credito_validacion']
+            nombre_zip = db_row['nombre_zip']
+            id_poligon_historico = db_row['id_poligon_historico']
+            overlap_pct = db_row['overlap_pct']
+            fecha_validacion = db_row['fecha_validacion']
+            mega_idx = db_row['mega_idx']
+            superficie_calculada = db_row['superficie_calculada']
+        else:
+            # pendiente — populate from validacion_gdf
+            estatus = 'pendiente'
+            id_poligon_validacion = str(vrow.get('ID_POLIGON', '') or '')
+            id_credito_validacion = str(vrow.get('ID_CREDITO', '') or '')
+            nombre_zip = str(vrow.get('NOMBRE_ZIP', '') or '')
+            id_poligon_historico = None
+            overlap_pct = None
+            fecha_validacion = None
+            mega_idx = None
+            superficie_calculada = None
+
+        record = {
+            'IDX': i,
+            'ID_POLIGON_VALIDACION': id_poligon_validacion,
+            'ID_CREDITO_VALIDACION': id_credito_validacion,
+            'NOMBRE_ZIP': nombre_zip,
+            'ESTATUS': estatus,
+            'ID_POLIGON_HISTORICO': id_poligon_historico,
+            'OVERLAP_PCT': overlap_pct,
+            'FECHA_VALIDACION': fecha_validacion,
+            'SUPERFICIE_CALCULADA': superficie_calculada,
+        }
+
+        # Add HIST_ columns from shp_cache.mega when estatus='encima'
+        if estatus == 'encima' and mega_idx is not None:
+            try:
+                mrow = shp_cache.mega.iloc[int(mega_idx)]
+                for col in mega_data_cols:
+                    record[f'HIST_{col}'] = mrow.get(col, None)
+            except (IndexError, TypeError):
+                for col in mega_data_cols:
+                    record[f'HIST_{col}'] = None
+        else:
+            for col in mega_data_cols:
+                record[f'HIST_{col}'] = None
+
+        records.append(record)
+
+    # Sort by IDX ascending (already in order, but be explicit)
+    records.sort(key=lambda r: r['IDX'])
+
+    df = pd.DataFrame(records)
+
+    # Generate Excel in memory
+    excel_file = io.BytesIO()
+    with pd.ExcelWriter(excel_file, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Validacion_15K')
+
+        workbook = writer.book
+        worksheet = writer.sheets['Validacion_15K']
+
+        from openpyxl.styles import Font, PatternFill, Alignment
+        header_font = Font(bold=True, color='FFFFFF')
+        header_fill = PatternFill(start_color='366092', end_color='366092', fill_type='solid')
+        header_alignment = Alignment(horizontal='center', vertical='center')
+
+        for cell in worksheet[1]:
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = header_alignment
+
+        for column in worksheet.columns:
+            max_length = 0
+            column_letter = column[0].column_letter
+            for cell in column:
+                try:
+                    if len(str(cell.value)) > max_length:
+                        max_length = len(str(cell.value))
+                except Exception:
+                    pass
+            worksheet.column_dimensions[column_letter].width = min(max_length + 2, 50)
+
+    excel_file.seek(0)
+    filename = f'validacion_15k_resultados_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx'
+    return send_file(
+        excel_file,
+        as_attachment=True,
+        download_name=filename,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+
+
+@app.route('/analizador')
+@login_required
+def analizador():
+    return render_template('analizador.html')
+
 
 shp_cache.preload_all()  # Preload in production for gunicorn preload_app
 

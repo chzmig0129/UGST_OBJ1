@@ -1,0 +1,1874 @@
+{% extends 'base.html' %}
+
+{% block head %}
+<style>
+    /* ── Layout ─────────────────────────────────────────────────────────────── */
+    #analizador-container {
+        display: flex;
+        height: 100%;
+        overflow: hidden;
+    }
+
+    /* ── Panel lateral ──────────────────────────────────────────────────────── */
+    #panel-lateral {
+        width: 380px;
+        min-width: 380px;
+        overflow-y: auto;
+        padding: 15px;
+        background: #f8f9fa;
+        border-right: 1px solid #dee2e6;
+        box-shadow: 2px 0 6px rgba(0,0,0,0.07);
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    /* ── Secciones del panel ────────────────────────────────────────────────── */
+    .panel-section {
+        background: #fff;
+        border-radius: 8px;
+        border: 1px solid #dee2e6;
+        padding: 12px;
+    }
+
+    .panel-section-title {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #6c757d;
+        margin-bottom: 10px;
+    }
+
+    /* ── Búsqueda ───────────────────────────────────────────────────────────── */
+    #search-dropdown {
+        position: absolute;
+        z-index: 9999;
+        background: #fff;
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        max-height: 260px;
+        overflow-y: auto;
+        width: 100%;
+        left: 0;
+        top: 100%;
+        display: none;
+    }
+
+    #search-wrapper {
+        position: relative;
+    }
+
+    .search-result-item {
+        padding: 8px 12px;
+        cursor: pointer;
+        border-bottom: 1px solid #f0f0f0;
+        font-size: 13px;
+        transition: background 0.15s;
+    }
+
+    .search-result-item:last-child {
+        border-bottom: none;
+    }
+
+    .search-result-item:hover {
+        background: #e9f0ff;
+    }
+
+    /* ── Navegación ─────────────────────────────────────────────────────────── */
+    #nav-counter {
+        font-size: 13px;
+        font-weight: 600;
+        color: #495057;
+        text-align: center;
+        flex: 1;
+    }
+
+    /* ── Info polígono ──────────────────────────────────────────────────────── */
+    .info-label {
+        font-size: 11px;
+        color: #6c757d;
+        margin-bottom: 1px;
+    }
+
+    .info-value {
+        font-size: 13px;
+        font-weight: 600;
+        color: #212529;
+        margin-bottom: 8px;
+        word-break: break-all;
+    }
+
+    #info-id-poligon {
+        font-size: 16px;
+        font-weight: 700;
+        color: #0d6efd;
+    }
+
+    /* ── Lista de matches ───────────────────────────────────────────────────── */
+    #matches-list {
+        max-height: 400px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .match-card {
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
+        padding: 10px 12px;
+        cursor: pointer;
+        transition: background 0.15s, box-shadow 0.15s;
+        border-left-width: 4px;
+        background: #fff;
+        font-size: 12px;
+    }
+
+    .match-card:hover {
+        background: #f0f4ff;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    }
+
+    .match-card .match-id {
+        font-weight: 700;
+        font-size: 13px;
+        color: #212529;
+        margin-bottom: 2px;
+    }
+
+    .match-card .match-meta {
+        color: #6c757d;
+        margin-bottom: 4px;
+    }
+
+    .match-card .match-badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 12px;
+        font-size: 11px;
+        font-weight: 600;
+        color: #fff;
+        margin-top: 4px;
+    }
+
+    /* ── Spinner ────────────────────────────────────────────────────────────── */
+    #panel-spinner {
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    #panel-spinner.active {
+        display: flex;
+    }
+
+    /* ── Mapa ───────────────────────────────────────────────────────────────── */
+    #map-container {
+        flex: 1;
+        position: relative;
+        overflow: hidden;
+    }
+
+    #map {
+        width: 100%;
+        height: 100%;
+    }
+
+    /* ── Tooltip del mapa ───────────────────────────────────────────────────── */
+    .analizador-tooltip {
+        background: rgba(0,0,0,0.82) !important;
+        color: #fff !important;
+        border: none !important;
+        border-radius: 5px !important;
+        padding: 6px 10px !important;
+        font-size: 12px !important;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.35) !important;
+        line-height: 1.5 !important;
+    }
+
+    .analizador-tooltip::before {
+        border-color: transparent !important;
+    }
+
+    /* ── Ir a # ─────────────────────────────────────────────────────────────── */
+    #goto-input {
+        width: 70px;
+    }
+
+    /* ── Empty state ────────────────────────────────────────────────────────── */
+    .empty-state {
+        text-align: center;
+        color: #adb5bd;
+        padding: 16px 0;
+        font-size: 13px;
+    }
+
+    /* ── Dashboard de Estatus ──────────────────────────────────────────────── */
+    .dashboard-stats {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 8px;
+        margin-bottom: 10px;
+    }
+
+    .stat-card {
+        text-align: center;
+        padding: 10px 6px;
+        border-radius: 8px;
+        border: 1px solid #dee2e6;
+    }
+
+    .stat-card .stat-number {
+        font-size: 22px;
+        font-weight: 800;
+        line-height: 1.1;
+    }
+
+    .stat-card .stat-label {
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        color: #6c757d;
+        margin-top: 2px;
+    }
+
+    .stat-card .stat-pct {
+        font-size: 11px;
+        font-weight: 600;
+        margin-top: 2px;
+    }
+
+    .stat-total {
+        background: #e8f4fd;
+        border-color: #b6d4fe !important;
+    }
+
+    .stat-total .stat-number {
+        color: #0d6efd;
+    }
+
+    .stat-nuevos {
+        background: #d1f5d9;
+        border-color: #a3cfbb !important;
+    }
+
+    .stat-nuevos .stat-number {
+        color: #198754;
+    }
+
+    .stat-nuevos .stat-pct {
+        color: #198754;
+    }
+
+    .stat-existentes {
+        background: #e9ecef;
+        border-color: #ced4da !important;
+    }
+
+    .stat-existentes .stat-number {
+        color: #495057;
+    }
+
+    .stat-existentes .stat-pct {
+        color: #495057;
+    }
+
+    .dashboard-progress {
+        margin-top: 4px;
+    }
+
+    .dashboard-progress .progress {
+        border-radius: 4px;
+    }
+
+    .progress-legend {
+        display: flex;
+        justify-content: center;
+        gap: 16px;
+        margin-top: 6px;
+        font-size: 10px;
+        color: #6c757d;
+    }
+
+    .legend-dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        margin-right: 4px;
+        vertical-align: middle;
+    }
+
+    /* ── Tooltip capas de fondo ─────────────────────────────────────────────── */
+    .custom-tooltip-15k {
+        background: rgba(0,0,0,0.8);
+        color: white;
+        border-radius: 4px;
+        padding: 4px 8px;
+        font-size: 11px;
+        border: none;
+    }
+
+    /* ── Tabs del Analizador ───────────────────────────────────────────────── */
+    #analizador-tabs .nav-link {
+        font-size: 13px;
+        font-weight: 600;
+        color: #495057;
+        border: none;
+        padding: 10px 20px;
+    }
+
+    #analizador-tabs .nav-link.active {
+        color: #0d6efd;
+        border-bottom: 2px solid #0d6efd;
+        background: transparent;
+    }
+
+    #analizador-tabs .nav-link:hover:not(.active) {
+        color: #0d6efd;
+        border-bottom: 2px solid transparent;
+    }
+
+    /* ── Stat cards clickeables ────────────────────────────────────────────── */
+    .stat-card-clickable {
+        cursor: pointer;
+        transition: transform 0.15s, box-shadow 0.15s;
+    }
+
+    .stat-card-clickable:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+
+    .stat-action {
+        font-size: 10px;
+        color: #6c757d;
+        margin-top: 6px;
+        font-weight: 600;
+    }
+
+    .stat-card-clickable:hover .stat-action {
+        color: #0d6efd;
+    }
+
+    /* ── Filas clickeables de clasificación ────────────────────────────────── */
+    .clasif-row:hover {
+        background-color: #e9f0ff !important;
+    }
+
+    .clasif-row td:last-child::after {
+        content: ' →';
+        color: #0d6efd;
+        font-weight: 600;
+    }
+
+    .subfilter-link, .dup-subfilter-link {
+        color: #0d6efd;
+        text-decoration: none;
+        font-weight: 500;
+        cursor: pointer;
+    }
+
+    .subfilter-link:hover, .dup-subfilter-link:hover {
+        text-decoration: underline;
+    }
+
+    .subfilter-link.is-disabled, .dup-subfilter-link.is-disabled {
+        color: #adb5bd;
+        cursor: default;
+        pointer-events: none;
+    }
+
+    .dup-subfilter-sep {
+        margin: 0 6px;
+        color: #adb5bd;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="analizador-wrapper" style="height: calc(100vh - 60px); display: flex; flex-direction: column; overflow: hidden;">
+
+    <!-- Tab navigation -->
+    <ul class="nav nav-tabs px-3 pt-2" id="analizador-tabs" role="tablist" style="flex-shrink: 0; background: #f8f9fa; border-bottom: 2px solid #dee2e6;">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="tab-dashboard" data-bs-toggle="tab" data-bs-target="#pane-dashboard" type="button" role="tab" aria-controls="pane-dashboard" aria-selected="true">
+                <i class="bi bi-speedometer2 me-1"></i>Dashboard
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tab-analizador" data-bs-toggle="tab" data-bs-target="#pane-analizador" type="button" role="tab" aria-controls="pane-analizador" aria-selected="false">
+                <i class="bi bi-map me-1"></i>Analizador
+            </button>
+        </li>
+    </ul>
+
+    <!-- Tab content -->
+    <div class="tab-content" id="analizador-tab-content" style="flex: 1; overflow: hidden;">
+
+        <!-- ══════════════════════════════════════════════════════════════════ -->
+        <!-- PANE 1: Dashboard                                                  -->
+        <!-- ══════════════════════════════════════════════════════════════════ -->
+        <div class="tab-pane fade show active" id="pane-dashboard" role="tabpanel" aria-labelledby="tab-dashboard" style="height: 100%; overflow-y: auto; padding: 20px;">
+            <div style="max-width: 900px; margin: 0 auto;">
+                <h4 class="mb-3" style="color: #212529; font-weight: 700;">
+                    <i class="bi bi-speedometer2 me-2 text-primary"></i>Dashboard de Estatus
+                </h4>
+                <p class="text-muted mb-4">Resumen de polígonos del archivo de validación 15K comparados contra la Mega Capa histórica por ID Polígono.</p>
+
+                <div class="dashboard-stats" style="grid-template-columns: repeat(3, 1fr); max-width: 700px;">
+                    <!-- Card: Total 15K -->
+                    <div class="stat-card stat-total" style="padding: 20px 12px;">
+                        <div class="stat-number" id="dash-total" style="font-size: 32px;">—</div>
+                        <div class="stat-label" style="font-size: 12px;">Total 15K</div>
+                    </div>
+
+                    <!-- Card: Nuevos -->
+                    <div class="stat-card stat-nuevos stat-card-clickable" id="card-nuevos" style="padding: 20px 12px;">
+                        <div class="stat-number" id="dash-nuevos" style="font-size: 32px;">—</div>
+                        <div class="stat-label" style="font-size: 12px;">Nuevos</div>
+                        <div class="stat-pct" id="dash-nuevos-pct" style="font-size: 14px;"></div>
+                        <div class="stat-action"><i class="bi bi-funnel me-1"></i>Analizar nuevos</div>
+                    </div>
+
+                    <!-- Card: Existentes -->
+                    <div class="stat-card stat-existentes stat-card-clickable" id="card-existentes" style="padding: 20px 12px;">
+                        <div class="stat-number" id="dash-existentes" style="font-size: 32px;">—</div>
+                        <div class="stat-label" style="font-size: 12px;">Existentes en MEGA</div>
+                        <div class="stat-pct" id="dash-existentes-pct" style="font-size: 14px;"></div>
+                        <div class="stat-action"><i class="bi bi-funnel me-1"></i>Analizar existentes</div>
+                    </div>
+                </div>
+
+                <!-- Progress bar (wider) -->
+                <div class="dashboard-progress" style="max-width: 700px; margin-top: 16px;">
+                    <div class="progress" style="height: 12px;">
+                        <div class="progress-bar bg-success" id="dash-bar-nuevos" role="progressbar" style="width:0%"></div>
+                        <div class="progress-bar bg-secondary" id="dash-bar-existentes" role="progressbar" style="width:0%"></div>
+                    </div>
+                    <div class="progress-legend" style="font-size: 12px; margin-top: 8px;">
+                        <span><span class="legend-dot" style="background:#28a745;"></span> Nuevos</span>
+                        <span><span class="legend-dot" style="background:#6c757d;"></span> Existentes</span>
+                    </div>
+                </div>
+
+                <!-- Clasificación de traslapes para Nuevos -->
+                <div id="clasif-section" style="margin-top: 24px;">
+                    <h5 class="mb-3" style="color: #212529; font-weight: 700;">
+                        <i class="bi bi-table me-2 text-success"></i>Clasificación de Traslapes — Polígonos Nuevos
+                    </h5>
+                    <p class="text-muted mb-3" style="font-size: 13px;">Análisis geométrico de cada polígono nuevo contra la Mega Capa histórica.</p>
+                    
+                    <!-- Estado: botón para iniciar -->
+                    <div id="clasif-idle">
+                        <button class="btn btn-success" id="btn-iniciar-clasif">
+                            <i class="bi bi-play-fill me-1"></i>Iniciar Análisis de Clasificación
+                        </button>
+                        <span class="text-muted ms-2" style="font-size: 12px;">Este proceso puede tardar varios minutos.</span>
+                    </div>
+                    
+                    <!-- Estado: en progreso -->
+                    <div id="clasif-running" style="display:none;">
+                        <div class="d-flex align-items-center gap-3 mb-2">
+                            <div class="spinner-border spinner-border-sm text-success" role="status"></div>
+                            <span class="small fw-bold">Analizando polígonos...</span>
+                            <span class="small text-muted" id="clasif-progress-text">0 / 0 (0%)</span>
+                        </div>
+                        <div class="progress" style="height: 10px; max-width: 700px;">
+                            <div class="progress-bar bg-success progress-bar-striped progress-bar-animated" id="clasif-progress-bar" role="progressbar" style="width:0%"></div>
+                        </div>
+                    </div>
+                    
+                    <!-- Estado: completado (tabla) -->
+                    <div id="clasif-done" style="display:none;">
+                        <table class="table table-bordered" style="max-width: 700px;">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width:40px;"></th>
+                                    <th>Clasificación</th>
+                                    <th style="width:100px; text-align:right;">Cantidad</th>
+                                    <th style="width:80px; text-align:right;">%</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr class="clasif-row" data-clasif="duplicado" style="cursor:pointer;" title="Click para ver en Analizador">
+                                    <td><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:#dc3545;"></span></td>
+                                     <td>
+                                        <strong>Duplicado</strong> → <strong style="color:#0d6efd;">VINCULAR</strong><br>
+                                        <small class="text-muted">Mismo/diferente crédito, superficie ≥85% y traslape ≥85%</small><br>
+                                        <small class="text-muted">
+                                            <a href="#" class="subfilter-link is-disabled" data-clasif="duplicado" data-subfiltro="mismo_credito" data-count="0" aria-disabled="true">Mismo crédito: <span id="clasif-duplicado-mismo">0</span></a>
+                                            <span class="dup-subfilter-sep">|</span>
+                                            <a href="#" class="subfilter-link is-disabled" data-clasif="duplicado" data-subfiltro="diferente_credito" data-count="0" aria-disabled="true">Diferente crédito: <span id="clasif-duplicado-diferente">0</span></a>
+                                        </small>
+                                    </td>
+                                    <td style="text-align:right; font-weight:700;" id="clasif-duplicado">—</td>
+                                    <td style="text-align:right;" id="clasif-duplicado-pct">—</td>
+                                </tr>
+                                <tr class="clasif-row" data-clasif="traslape_interno" style="cursor:pointer;" title="Click para ver en Analizador">
+                                    <td><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:#ffc107;"></span></td>
+                                    <td>
+                                        <strong>Traslape Interno</strong> → <strong style="color:#dc3545;">ELIMINAR</strong><br>
+                                        <small class="text-muted">Mismo crédito, traslape 10%-85%</small><br>
+                                        <small class="text-muted">
+                                            <a href="#" class="subfilter-link is-disabled" data-clasif="traslape_interno" data-subfiltro="mismo_credito" data-count="0" aria-disabled="true">Mismo crédito: <span id="clasif-ti-mismo">0</span></a>
+                                            <span class="dup-subfilter-sep">|</span>
+                                            <a href="#" class="subfilter-link is-disabled" data-clasif="traslape_interno" data-subfiltro="diferente_credito" data-count="0" aria-disabled="true">Diferente crédito: <span id="clasif-ti-diferente">0</span></a>
+                                        </small>
+                                    </td>
+                                    <td style="text-align:right; font-weight:700;" id="clasif-traslape-int">—</td>
+                                    <td style="text-align:right;" id="clasif-traslape-int-pct">—</td>
+                                </tr>
+                                <tr class="clasif-row" data-clasif="traslape_relevante" style="cursor:pointer;" title="Click para ver en Analizador">
+                                    <td><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:#fd7e14;"></span></td>
+                                    <td>
+                                        <strong>Traslape Relevante</strong> → <strong style="color:#fd7e14;">REVISAR</strong><br>
+                                        <small class="text-muted">Diferente crédito, traslape 30%-80%</small><br>
+                                        <small class="text-muted">
+                                            <a href="#" class="subfilter-link is-disabled" data-clasif="traslape_relevante" data-subfiltro="mismo_credito" data-count="0" aria-disabled="true">Mismo crédito: <span id="clasif-tr-mismo">0</span></a>
+                                            <span class="dup-subfilter-sep">|</span>
+                                            <a href="#" class="subfilter-link is-disabled" data-clasif="traslape_relevante" data-subfiltro="diferente_credito" data-count="0" aria-disabled="true">Diferente crédito: <span id="clasif-tr-diferente">0</span></a>
+                                        </small>
+                                    </td>
+                                    <td style="text-align:right; font-weight:700;" id="clasif-traslape-rel">—</td>
+                                    <td style="text-align:right;" id="clasif-traslape-rel-pct">—</td>
+                                </tr>
+                                <tr class="clasif-row" data-clasif="sin_conflicto" style="cursor:pointer;" title="Click para ver en Analizador">
+                                    <td><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:#28a745;"></span></td>
+                                    <td>
+                                        <strong>Sin Conflicto</strong> → <strong style="color:#28a745;">NUEVO</strong><br>
+                                        <small class="text-muted">Traslape menor, sin riesgo</small><br>
+                                        <small class="text-muted">
+                                            <a href="#" class="subfilter-link is-disabled" data-clasif="sin_conflicto" data-subfiltro="mismo_credito" data-count="0" aria-disabled="true">Mismo crédito: <span id="clasif-sc-mismo">0</span></a>
+                                            <span class="dup-subfilter-sep">|</span>
+                                            <a href="#" class="subfilter-link is-disabled" data-clasif="sin_conflicto" data-subfiltro="diferente_credito" data-count="0" aria-disabled="true">Diferente crédito: <span id="clasif-sc-diferente">0</span></a>
+                                        </small>
+                                    </td>
+                                    <td style="text-align:right; font-weight:700;" id="clasif-sin-conf">—</td>
+                                    <td style="text-align:right;" id="clasif-sin-conf-pct">—</td>
+                                </tr>
+                                <tr class="clasif-row" data-clasif="sin_matches" style="cursor:pointer;" title="Click para ver en Analizador">
+                                    <td><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:#6c757d;"></span></td>
+                                    <td><strong>Sin Matches</strong> → <strong style="color:#198754;">NUEVO</strong><br><small class="text-muted">No se encontró solapamiento geométrico con la mega capa</small></td>
+                                    <td style="text-align:right; font-weight:700;" id="clasif-sin-matches">—</td>
+                                    <td style="text-align:right;" id="clasif-sin-matches-pct">—</td>
+                                </tr>
+                            </tbody>
+                            <tfoot class="table-light">
+                                <tr>
+                                    <td></td>
+                                    <td><strong>Total Nuevos Analizados</strong></td>
+                                    <td style="text-align:right; font-weight:700;" id="clasif-total">—</td>
+                                    <td style="text-align:right; font-weight:700;">100%</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ══════════════════════════════════════════════════════════════════ -->
+        <!-- PANE 2: Analizador (map)                                           -->
+        <!-- ══════════════════════════════════════════════════════════════════ -->
+        <div class="tab-pane fade" id="pane-analizador" role="tabpanel" aria-labelledby="tab-analizador" style="height: 100%; overflow: hidden;">
+            <div id="analizador-container">
+
+                <!-- ══════════════════════════════════════════════════════════ -->
+                <!-- PANEL LATERAL                                               -->
+                <!-- ══════════════════════════════════════════════════════════ -->
+                <div id="panel-lateral">
+
+                    <!-- ── Filtro activo ─────────────────────────────────────── -->
+                    <div id="filtro-activo" class="panel-section" style="display:none; background:#e8f4fd; border-color:#b6d4fe;">
+                        <div class="d-flex align-items-center justify-content-between">
+                            <div>
+                                <i class="bi bi-funnel-fill text-primary me-1"></i>
+                                <strong class="small" id="filtro-label">Filtrando: Nuevos</strong>
+                                <span class="badge bg-primary ms-1" id="filtro-count">0</span>
+                            </div>
+                            <button class="btn btn-sm btn-outline-secondary" id="btn-limpiar-filtro" title="Quitar filtro">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- ── Sección 1: Búsqueda y Navegación ─────────────────── -->
+                    <div class="panel-section">
+                        <div class="panel-section-title"><i class="bi bi-search me-1"></i>Búsqueda y Navegación</div>
+
+                        <!-- Barra de búsqueda -->
+                        <div id="search-wrapper" class="mb-2">
+                            <div class="input-group input-group-sm">
+                                <input type="text" id="search-input" class="form-control"
+                                       placeholder="Buscar por ID crédito o polígono...">
+                                <button class="btn btn-primary" id="btn-buscar" type="button">
+                                    <i class="bi bi-search"></i>
+                                </button>
+                            </div>
+                            <div id="search-dropdown"></div>
+                        </div>
+
+                        <!-- Navegador ← → -->
+                        <div class="d-flex align-items-center gap-2 mb-2">
+                            <button class="btn btn-sm btn-outline-secondary" id="btn-prev" title="Anterior (←)">
+                                <i class="bi bi-chevron-left"></i>
+                            </button>
+                            <div id="nav-counter">— de —</div>
+                            <button class="btn btn-sm btn-outline-secondary" id="btn-next" title="Siguiente (→)">
+                                <i class="bi bi-chevron-right"></i>
+                            </button>
+                        </div>
+
+                        <!-- Ir a índice -->
+                        <div class="d-flex align-items-center gap-2">
+                            <label class="form-label mb-0 small text-muted" style="white-space:nowrap;">Ir a #</label>
+                            <input type="number" id="goto-input" class="form-control form-control-sm"
+                                   min="0" placeholder="0">
+                            <button class="btn btn-sm btn-outline-primary" id="btn-goto">Ir</button>
+                        </div>
+                    </div>
+
+                    <!-- ── Spinner ───────────────────────────────────────────── -->
+                    <div id="panel-spinner">
+                        <div class="spinner-border text-primary" role="status" style="width:2rem;height:2rem;">
+                            <span class="visually-hidden">Cargando...</span>
+                        </div>
+                        <div class="small text-muted">Analizando polígono...</div>
+                    </div>
+
+                    <!-- ── Sección 2: Info del polígono actual ───────────────── -->
+                    <div class="panel-section" id="section-info">
+                        <div class="panel-section-title" style="display:flex; align-items:center; justify-content:space-between;">
+                            <span><i class="bi bi-geo-alt me-1"></i>Polígono Actual</span>
+                            <div class="form-check form-switch" style="margin:0; padding-left:2.5em;">
+                                <input class="form-check-input" type="checkbox" id="toggle-poligono-actual" checked style="cursor:pointer;" title="Mostrar/ocultar en mapa">
+                            </div>
+                        </div>
+
+                        <div class="info-label">ID Polígono</div>
+                        <div class="info-value" id="info-id-poligon">—</div>
+
+                        <div class="info-label">ID Crédito</div>
+                        <div class="info-value" id="info-id-credito">—</div>
+
+                        <div class="info-label">Archivo (ZIP)</div>
+                        <div class="info-value" id="info-nombre-zip">—</div>
+
+                        <div class="info-label">Área</div>
+                        <div class="info-value" id="info-area">—</div>
+
+                        <!-- Propuesta automática -->
+                        <div style="border-top: 1px solid #dee2e6; margin-top: 10px; padding-top: 10px;">
+                            <div class="info-label">Estatus Propuesto</div>
+                            <div class="info-value">
+                                <span class="badge" id="info-estatus-propuesto" style="font-size: 13px;">—</span>
+                            </div>
+
+                            <div class="info-label">ID Polígono Único</div>
+                            <div class="info-value" id="info-id-unico-propuesto">—</div>
+
+                            <div class="info-label">Superficie Calculada</div>
+                            <div class="info-value" id="info-superficie-calculada">—</div>
+                        </div>
+                    </div>
+
+                    <!-- ── Sección 4: Decisión Chapingo (nuevos) ─────────────── -->
+                    <div class="panel-section" id="section-chapingo">
+                        <div class="panel-section-title"><i class="bi bi-pencil-square me-1"></i>Decisión Chapingo</div>
+
+                        <div id="chapingo-loading" class="small text-muted mb-2" style="display:none;">
+                            <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                            Cargando...
+                        </div>
+
+                        <div id="chapingo-no-aplica" class="alert alert-info py-2 px-2 mb-2" style="display:none; font-size:12px;"></div>
+
+                        <form id="chapingo-form" style="display:none;">
+                            <div class="mb-2">
+                                <label for="chapingo-estatus" class="form-label small text-muted mb-1">Estatus Chapingo</label>
+                                <select id="chapingo-estatus" class="form-select form-select-sm">
+                                    <option value="">Seleccionar...</option>
+                                    <option value="NUEVO">NUEVO</option>
+                                    <option value="VINCULAR">VINCULAR</option>
+                                    <option value="ELIMINAR">ELIMINAR</option>
+                                </select>
+                            </div>
+
+                            <div class="mb-2">
+                                <label for="chapingo-id-unico" class="form-label small text-muted mb-1">ID polígono único</label>
+                                <input id="chapingo-id-unico" type="text" class="form-control form-control-sm" placeholder="Ej. 28-5910-00030626-1">
+                            </div>
+
+                            <div class="mb-2">
+                                <label for="chapingo-superficie" class="form-label small text-muted mb-1">Superficie Calculada (ha)</label>
+                                <input id="chapingo-superficie" type="number" step="0.0001" min="0" class="form-control form-control-sm" placeholder="0.0000" readonly style="background:#f8f9fa;">
+                            </div>
+
+                            <div id="chapingo-form-error" class="alert alert-danger py-2 px-2 mb-2" style="display:none; font-size:12px;"></div>
+                            <div id="chapingo-form-success" class="alert alert-success py-2 px-2 mb-2" style="display:none; font-size:12px;"></div>
+
+                            <button id="chapingo-btn-guardar" type="submit" class="btn btn-sm btn-primary w-100">
+                                <span class="spinner-border spinner-border-sm me-1" id="chapingo-save-spinner" role="status" aria-hidden="true" style="display:none;"></span>
+                                <i class="bi bi-check-lg me-1"></i>Guardar decisión
+                            </button>
+                        </form>
+                    </div>
+
+                    <!-- ── Sección 5: Polígonos Traslapados ─────────────────── -->
+                    <div class="panel-section" id="section-matches">
+                        <div class="panel-section-title"><i class="bi bi-layers me-1"></i>Polígonos Traslapados (Mega Capa)</div>
+                        <div id="matches-list">
+                            <div class="empty-state" style="padding:8px 0; font-size:12px;">Cargando...</div>
+                        </div>
+                    </div>
+
+                </div><!-- /#panel-lateral -->
+
+                <!-- ══════════════════════════════════════════════════════════ -->
+                <!-- MAPA                                                        -->
+                <!-- ══════════════════════════════════════════════════════════ -->
+                <div id="map-container">
+                    <div id="map"></div>
+
+                    <!-- ── Panel de toggles de capas de fondo ──────────────── -->
+                    <div id="capas-toggle-panel" style="position:absolute; bottom:20px; right:20px; z-index:1000; background:white; border-radius:8px; padding:12px 16px; box-shadow:0 2px 8px rgba(0,0,0,0.2); min-width:220px;">
+                        <div style="font-weight:bold; font-size:13px; margin-bottom:8px; border-bottom:1px solid #dee2e6; padding-bottom:6px;">
+                            <i class="bi bi-layers"></i> Capas de fondo
+                        </div>
+                        <div class="form-check form-switch mb-2">
+                            <input class="form-check-input" type="checkbox" id="toggle-validacion-bg">
+                            <label class="form-check-label" for="toggle-validacion-bg" style="font-size:12px;">
+                                <span style="display:inline-block;width:12px;height:12px;background:#4CE600;border:1px solid #00734C;border-radius:2px;margin-right:4px;"></span>
+                                Validación 15K
+                            </label>
+                        </div>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="toggle-historico-bg">
+                            <label class="form-check-label" for="toggle-historico-bg" style="font-size:12px;">
+                                <span style="display:inline-block;width:12px;height:12px;background:#ff8c00;border:1px solid #cc7000;border-radius:2px;margin-right:4px;"></span>
+                                Histórico MEGA
+                            </label>
+                        </div>
+                        <div id="capas-loading" style="display:none; font-size:11px; color:#6c757d; margin-top:6px;">
+                            <div class="spinner-border spinner-border-sm" role="status"></div> Cargando capa...
+                        </div>
+                    </div>
+                </div>
+
+            </div><!-- /#analizador-container -->
+        </div><!-- /#pane-analizador -->
+
+    </div><!-- /.tab-content -->
+
+</div><!-- /#analizador-wrapper -->
+
+<script>
+(function () {
+    'use strict';
+
+    // ── Variables globales ────────────────────────────────────────────────────
+    var currentIndex    = 0;
+    var totalPoligonos  = 0;
+    var map, poligonoLayer, matchesLayer;
+    var matchLayerMap   = [];   // array of {layer, originalStyle} for click-zoom
+    var mapInitialized  = false;
+
+    var filteredIndices = null;  // null = no filter (show all), array = filtered indices
+    var filteredPos     = 0;     // current position within filteredIndices
+    var activeFilter    = null;  // 'nuevos' | 'existentes' | null
+    var chapingoRequestToken = 0;
+    var chapingoPanelLoadedIdx = null;
+    var chapingoFormDirty = false;
+    var chapingoSaveInFlight = false;
+
+    // ── Variables para capas de fondo ─────────────────────────────────────────
+    let validacionBgLayer  = null;
+    let historicoBgLayer   = null;
+    let validacionBgLoaded = false;
+    let historicoBgLoaded  = false;
+
+    // ── Inicializar mapa (lazy) ───────────────────────────────────────────────
+    function initMap() {
+        if (mapInitialized) return;
+        map = L.map('map', {
+            center: [24.0, -102.0],
+            zoom: 6,
+            preferCanvas: true   // CRITICAL for performance
+        });
+
+        // Capa base: Esri World Imagery
+        L.tileLayer(
+            'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+            { attribution: 'Tiles &copy; Esri', maxZoom: 18 }
+        ).addTo(map);
+
+        mapInitialized = true;
+    }
+
+    // ── Escuchar evento de tab Analizador ─────────────────────────────────────
+    document.getElementById('tab-analizador').addEventListener('shown.bs.tab', function() {
+        initMap();
+        map.invalidateSize();
+        if (filteredIndices !== null) {
+            // Filtered mode: load the first filtered polygon
+            if (filteredIndices.length > 0) {
+                filteredPos = 0;
+                currentIndex = filteredIndices[0];
+                updateNavCounter();
+                cargarPoligono(currentIndex);
+            }
+        } else if (!totalPoligonos) {
+            // Normal mode: first time opening tab
+            fetch('/api/analizador/total')
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    totalPoligonos = data.total || 0;
+                    updateNavCounter();
+                    cargarPoligono(0);
+                });
+        }
+    });
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+    function safeVal(v) {
+        return (v !== null && v !== undefined && v !== '') ? v : '—';
+    }
+
+    function fmt(n, decimals) {
+        return (typeof n === 'number') ? n.toFixed(decimals) : '—';
+    }
+
+    function valorEditable(v) {
+        return (v === null || v === undefined) ? '' : String(v);
+    }
+
+    function hasValor(v) {
+        return !(v === null || v === undefined || v === '');
+    }
+
+    function formatSuperficie(v) {
+        if (typeof v === 'number') return v.toFixed(4) + ' ha';
+        if (v === null || v === undefined || v === '') return '—';
+        var n = Number(v);
+        return isNaN(n) ? safeVal(v) : n.toFixed(4) + ' ha';
+    }
+
+    function limpiarMensajesChapingo() {
+        var errorEl = document.getElementById('chapingo-form-error');
+        var successEl = document.getElementById('chapingo-form-success');
+        errorEl.style.display = 'none';
+        successEl.style.display = 'none';
+        errorEl.textContent = '';
+        successEl.textContent = '';
+    }
+
+    function setEstadoGuardadoChapingo(isSaving) {
+        chapingoSaveInFlight = isSaving;
+        var btn = document.getElementById('chapingo-btn-guardar');
+        var spinner = document.getElementById('chapingo-save-spinner');
+        btn.disabled = isSaving;
+        spinner.style.display = isSaving ? 'inline-block' : 'none';
+    }
+
+    function actualizarPanelChapingo(idx) {
+        var token = ++chapingoRequestToken;
+        var loadingEl = document.getElementById('chapingo-loading');
+        var noAplicaEl = document.getElementById('chapingo-no-aplica');
+        var formEl = document.getElementById('chapingo-form');
+        var preserveUserDraft = chapingoPanelLoadedIdx === idx && chapingoFormDirty;
+
+        limpiarMensajesChapingo();
+        setEstadoGuardadoChapingo(false);
+        loadingEl.style.display = 'block';
+        noAplicaEl.style.display = 'none';
+        noAplicaEl.textContent = '';
+        noAplicaEl.className = 'alert alert-info py-2 px-2 mb-2';
+        if (!preserveUserDraft) {
+            formEl.style.display = 'none';
+        }
+
+        fetch('/api/analizador/propuesta-editable/' + idx)
+            .then(function(r) {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.json();
+            })
+            .then(function(payload) {
+                if (token !== chapingoRequestToken) return;
+
+                var propuesta = payload.propuesta || {};
+                var guardado = payload.guardado || {};
+                var esNuevo = Boolean(payload.es_nuevo) && Boolean(propuesta.aplica);
+
+                // ── Populate info section with proposed values ────────────
+                var estatusPropuesto = propuesta.estatus_chapingo_propuesto;
+                var badgeEl = document.getElementById('info-estatus-propuesto');
+                badgeEl.textContent = safeVal(estatusPropuesto);
+                if (estatusPropuesto === 'NUEVO') {
+                    badgeEl.style.background = '#198754';
+                    badgeEl.style.color = '#fff';
+                } else if (estatusPropuesto === 'VINCULAR') {
+                    badgeEl.style.background = '#0d6efd';
+                    badgeEl.style.color = '#fff';
+                } else if (estatusPropuesto === 'ELIMINAR') {
+                    badgeEl.style.background = '#dc3545';
+                    badgeEl.style.color = '#fff';
+                } else {
+                    badgeEl.style.background = '#6c757d';
+                    badgeEl.style.color = '#fff';
+                }
+                document.getElementById('info-id-unico-propuesto').textContent = safeVal(propuesta.id_poligono_unico_propuesto);
+                document.getElementById('info-superficie-calculada').textContent = formatSuperficie(propuesta.superficie_chapingo_propuesta);
+
+                if (!esNuevo) {
+                    noAplicaEl.textContent = propuesta.comentario_chapingo_propuesto || 'Este índice no pertenece al subconjunto de nuevos. El formulario editable de decisión Chapingo no aplica para este polígono.';
+                    noAplicaEl.style.display = 'block';
+                    chapingoPanelLoadedIdx = idx;
+                    chapingoFormDirty = false;
+                    return;
+                }
+
+                formEl.style.display = 'block';
+
+                // Pre-fill form with proposed values (guardado takes priority if exists)
+                var usarGuardado = hasValor(guardado.estatus_chapingo) ||
+                    hasValor(guardado.id_poligono_unico) ||
+                    hasValor(guardado.superficie_chapingo);
+
+                document.getElementById('chapingo-estatus').value = valorEditable(
+                    usarGuardado ? guardado.estatus_chapingo : propuesta.estatus_chapingo_propuesto
+                );
+                document.getElementById('chapingo-id-unico').value = valorEditable(
+                    usarGuardado ? guardado.id_poligono_unico : propuesta.id_poligono_unico_propuesto
+                );
+                document.getElementById('chapingo-superficie').value = valorEditable(
+                    propuesta.superficie_chapingo_propuesta
+                );
+
+                chapingoPanelLoadedIdx = idx;
+                chapingoFormDirty = false;
+            })
+            .catch(function(err) {
+                if (token !== chapingoRequestToken) return;
+
+                noAplicaEl.textContent = 'No fue posible cargar la propuesta editable de Chapingo: ' + err.message;
+                if (preserveUserDraft) {
+                    noAplicaEl.textContent += ' Se mantienen tus cambios actuales en el formulario.';
+                    formEl.style.display = 'block';
+                }
+                noAplicaEl.className = 'alert alert-warning py-2 px-2 mb-2';
+                noAplicaEl.style.display = 'block';
+            })
+            .finally(function() {
+                if (token === chapingoRequestToken) {
+                    loadingEl.style.display = 'none';
+                }
+            });
+    }
+
+    function showSpinner() {
+        document.getElementById('panel-spinner').classList.add('active');
+    }
+
+    function hideSpinner() {
+        document.getElementById('panel-spinner').classList.remove('active');
+    }
+
+    function updateNavCounter() {
+        if (filteredIndices !== null) {
+            var total = filteredIndices.length;
+            var cur = total > 0 ? (filteredPos + 1) : 0;
+            document.getElementById('nav-counter').textContent =
+                'Polígono ' + cur.toLocaleString('es-MX') + ' de ' + total.toLocaleString('es-MX');
+        } else {
+            var total = totalPoligonos > 0
+                ? totalPoligonos.toLocaleString('es-MX')
+                : '—';
+            var cur = totalPoligonos > 0
+                ? (currentIndex + 1).toLocaleString('es-MX')
+                : '—';
+            document.getElementById('nav-counter').textContent =
+                'Polígono ' + cur + ' de ' + total;
+        }
+    }
+
+    // ── Dashboard de Estatus ──────────────────────────────────────────────────
+    function cargarDashboard() {
+        fetch('/api/analizador/dashboard-estatus')
+            .then(function(r) {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.json();
+            })
+            .then(function(data) {
+                var total = data.total_15k || 0;
+                var nuevos = data.nuevos || 0;
+                var existentes = data.existentes || 0;
+                
+                document.getElementById('dash-total').textContent = total.toLocaleString('es-MX');
+                document.getElementById('dash-nuevos').textContent = nuevos.toLocaleString('es-MX');
+                document.getElementById('dash-existentes').textContent = existentes.toLocaleString('es-MX');
+                
+                var pctNuevos = total > 0 ? (nuevos / total * 100).toFixed(1) : '0.0';
+                var pctExistentes = total > 0 ? (existentes / total * 100).toFixed(1) : '0.0';
+                
+                document.getElementById('dash-nuevos-pct').textContent = pctNuevos + '%';
+                document.getElementById('dash-existentes-pct').textContent = pctExistentes + '%';
+                
+                document.getElementById('dash-bar-nuevos').style.width = pctNuevos + '%';
+                document.getElementById('dash-bar-existentes').style.width = pctExistentes + '%';
+            })
+            .catch(function(err) {
+                console.error('Error cargando dashboard:', err);
+            });
+    }
+
+    // ── Filtros desde Dashboard ───────────────────────────────────────────────
+    function aplicarFiltro(tipo) {
+        // Fetch filtered indices from API
+        fetch('/api/analizador/indices-filtrados?filtro=' + tipo)
+            .then(function(r) {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.json();
+            })
+            .then(function(data) {
+                filteredIndices = data.indices;
+                filteredPos = 0;
+                activeFilter = tipo;
+                totalPoligonos = data.total;
+
+                // Update filter badge
+                var label = tipo === 'nuevos' ? 'Nuevos' : 'Existentes en MEGA';
+                document.getElementById('filtro-label').textContent = 'Filtrando: ' + label;
+                document.getElementById('filtro-count').textContent = data.total;
+                document.getElementById('filtro-activo').style.display = 'block';
+
+                // Switch to Analizador tab
+                var tabEl = document.getElementById('tab-analizador');
+                var tab = new bootstrap.Tab(tabEl);
+                tab.show();
+
+                // After tab is shown, init map and load first filtered polygon
+                // The shown.bs.tab handler will call initMap + invalidateSize
+                // But we need to load the first filtered polygon, not index 0
+                // So we set a flag to prevent the default load in shown.bs.tab
+            })
+            .catch(function(err) {
+                console.error('Error cargando filtro:', err);
+            });
+    }
+
+    function limpiarFiltro() {
+        filteredIndices = null;
+        filteredPos = 0;
+        activeFilter = null;
+        document.getElementById('filtro-activo').style.display = 'none';
+
+        // Restore total count
+        fetch('/api/analizador/total')
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                totalPoligonos = data.total || 0;
+                currentIndex = 0;
+                updateNavCounter();
+                cargarPoligono(0);
+            });
+    }
+
+    // ── Clasificación de Nuevos ───────────────────────────────────────────────
+    var clasifPollingTimer = null;
+
+    function iniciarClasificacion() {
+        fetch('/api/analizador/clasificacion-nuevos/iniciar', { method: 'POST' })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.status === 'done' && data.result) {
+                    // Already computed — show results directly
+                    mostrarResultadosClasif(data.result, data.processed || data.total);
+                } else {
+                    // Started or already running — show progress and poll
+                    document.getElementById('clasif-idle').style.display = 'none';
+                    document.getElementById('clasif-running').style.display = 'block';
+                    document.getElementById('clasif-done').style.display = 'none';
+                    iniciarPolling();
+                }
+            })
+            .catch(function(err) {
+                console.error('Error iniciando clasificación:', err);
+            });
+    }
+
+    function iniciarPolling() {
+        if (clasifPollingTimer) clearInterval(clasifPollingTimer);
+        clasifPollingTimer = setInterval(function() {
+            fetch('/api/analizador/clasificacion-nuevos/estado')
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    document.getElementById('clasif-progress-text').textContent =
+                        data.processed.toLocaleString('es-MX') + ' / ' + data.total.toLocaleString('es-MX') +
+                        ' (' + data.progress + '%)';
+                    document.getElementById('clasif-progress-bar').style.width = data.progress + '%';
+                    
+                    if (data.status === 'done') {
+                        clearInterval(clasifPollingTimer);
+                        clasifPollingTimer = null;
+                        mostrarResultadosClasif(data.result, data.processed);
+                    } else if (data.status === 'error') {
+                        clearInterval(clasifPollingTimer);
+                        clasifPollingTimer = null;
+                        document.getElementById('clasif-running').style.display = 'none';
+                        document.getElementById('clasif-idle').style.display = 'block';
+                        alert('Error en el análisis: ' + (data.error || 'desconocido'));
+                    }
+                });
+        }, 2000);  // Poll every 2 seconds
+    }
+
+    function mostrarResultadosClasif(result, total) {
+        document.getElementById('clasif-idle').style.display = 'none';
+        document.getElementById('clasif-running').style.display = 'none';
+        document.getElementById('clasif-done').style.display = 'block';
+        
+        var t = total || 0;
+        function pct(n) { return t > 0 ? (n / t * 100).toFixed(1) + '%' : '—'; }
+        
+        var dup = result.duplicado || 0;
+        var dupMismo = Number(result.duplicados_mismo_credito || result.duplicado_mismo_credito || 0);
+        var dupDiferente = Number(result.duplicados_diferente_credito || result.duplicado_diferente_credito || 0);
+        var ti = result.traslape_interno || 0;
+        var tr = result.traslape_relevante || 0;
+        var sc = result.sin_conflicto || 0;
+        var sm = result.sin_matches || 0;
+        
+        document.getElementById('clasif-duplicado').textContent = dup.toLocaleString('es-MX');
+        document.getElementById('clasif-duplicado-pct').textContent = pct(dup);
+        document.getElementById('clasif-duplicado-mismo').textContent = dupMismo.toLocaleString('es-MX');
+        document.getElementById('clasif-duplicado-diferente').textContent = dupDiferente.toLocaleString('es-MX');
+        actualizarEstadoSubfiltro('duplicado', 'mismo_credito', 'clasif-duplicado-mismo', dupMismo);
+        actualizarEstadoSubfiltro('duplicado', 'diferente_credito', 'clasif-duplicado-diferente', dupDiferente);
+
+        // Traslape Interno mismo/diferente
+        var tiMismo = Number(result.traslape_interno_mismo_credito || 0);
+        var tiDiferente = Number(result.traslape_interno_diferente_credito || 0);
+        document.getElementById('clasif-ti-mismo').textContent = tiMismo.toLocaleString('es-MX');
+        document.getElementById('clasif-ti-diferente').textContent = tiDiferente.toLocaleString('es-MX');
+        actualizarEstadoSubfiltro('traslape_interno', 'mismo_credito', 'clasif-ti-mismo', tiMismo);
+        actualizarEstadoSubfiltro('traslape_interno', 'diferente_credito', 'clasif-ti-diferente', tiDiferente);
+
+        // Traslape Relevante mismo/diferente
+        var trMismo = Number(result.traslape_relevante_mismo_credito || 0);
+        var trDiferente = Number(result.traslape_relevante_diferente_credito || 0);
+        document.getElementById('clasif-tr-mismo').textContent = trMismo.toLocaleString('es-MX');
+        document.getElementById('clasif-tr-diferente').textContent = trDiferente.toLocaleString('es-MX');
+        actualizarEstadoSubfiltro('traslape_relevante', 'mismo_credito', 'clasif-tr-mismo', trMismo);
+        actualizarEstadoSubfiltro('traslape_relevante', 'diferente_credito', 'clasif-tr-diferente', trDiferente);
+
+        // Sin Conflicto mismo/diferente
+        var scMismo = Number(result.sin_conflicto_mismo_credito || 0);
+        var scDiferente = Number(result.sin_conflicto_diferente_credito || 0);
+        document.getElementById('clasif-sc-mismo').textContent = scMismo.toLocaleString('es-MX');
+        document.getElementById('clasif-sc-diferente').textContent = scDiferente.toLocaleString('es-MX');
+        actualizarEstadoSubfiltro('sin_conflicto', 'mismo_credito', 'clasif-sc-mismo', scMismo);
+        actualizarEstadoSubfiltro('sin_conflicto', 'diferente_credito', 'clasif-sc-diferente', scDiferente);
+        document.getElementById('clasif-traslape-int').textContent = ti.toLocaleString('es-MX');
+        document.getElementById('clasif-traslape-int-pct').textContent = pct(ti);
+        document.getElementById('clasif-traslape-rel').textContent = tr.toLocaleString('es-MX');
+        document.getElementById('clasif-traslape-rel-pct').textContent = pct(tr);
+        document.getElementById('clasif-sin-conf').textContent = sc.toLocaleString('es-MX');
+        document.getElementById('clasif-sin-conf-pct').textContent = pct(sc);
+        document.getElementById('clasif-sin-matches').textContent = sm.toLocaleString('es-MX');
+        document.getElementById('clasif-sin-matches-pct').textContent = pct(sm);
+        document.getElementById('clasif-total').textContent = t.toLocaleString('es-MX');
+
+        // Add click hint to rows with count > 0
+        document.querySelectorAll('.clasif-row').forEach(function(row) {
+            var clasif = row.getAttribute('data-clasif');
+            var count = result[clasif] || 0;
+            if (count === 0) {
+                row.style.opacity = '0.5';
+                row.style.cursor = 'default';
+            } else {
+                row.style.opacity = '1';
+                row.style.cursor = 'pointer';
+            }
+        });
+    }
+
+    function actualizarEstadoSubfiltro(clasif, subfiltro, spanId, count) {
+        // Find the link by data attributes
+        var link = document.querySelector('.subfilter-link[data-clasif="' + clasif + '"][data-subfiltro="' + subfiltro + '"]');
+        if (!link) {
+            // Fallback: try the old dup-subfilter-link class
+            link = document.querySelector('.dup-subfilter-link[data-clasif="' + clasif + '"][data-subfiltro="' + subfiltro + '"]');
+        }
+        if (!link) return;
+
+        var n = Number(count) || 0;
+        link.setAttribute('data-count', String(n));
+
+        if (n > 0) {
+            link.classList.remove('is-disabled');
+            link.removeAttribute('aria-disabled');
+        } else {
+            link.classList.add('is-disabled');
+            link.setAttribute('aria-disabled', 'true');
+        }
+    }
+
+    function filtrarPorClasificacion(clasif, subfiltro) {
+        var url = '/api/analizador/clasificacion-nuevos/indices?clasif=' + encodeURIComponent(clasif);
+        if (subfiltro) {
+            url += '&subfiltro=' + encodeURIComponent(subfiltro);
+        }
+
+        fetch(url)
+            .then(function(r) {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.json();
+            })
+            .then(function(data) {
+                if (!data.indices || data.indices.length === 0) {
+                    alert('No hay polígonos en esta clasificación.');
+                    return;
+                }
+                filteredIndices = data.indices;
+                filteredPos = 0;
+                activeFilter = clasif + (subfiltro ? ':' + subfiltro : '');
+                totalPoligonos = data.total;
+
+                // Map clasif keys to display labels
+                var labels = {
+                    'duplicado': 'Duplicados',
+                    'traslape_interno': 'Traslape Interno',
+                    'traslape_relevante': 'Traslape Relevante',
+                    'sin_conflicto': 'Sin Conflicto',
+                    'sin_matches': 'Sin Matches'
+                };
+
+                var subLabels = {
+                    'mismo_credito': 'mismo crédito',
+                    'diferente_credito': 'diferente crédito'
+                };
+
+                var filterLabel = labels[clasif] || clasif;
+                if (subfiltro && subLabels[subfiltro]) {
+                    filterLabel += ' / ' + subLabels[subfiltro];
+                }
+
+                // Update filter badge
+                document.getElementById('filtro-label').textContent = 'Filtrando: ' + filterLabel;
+                document.getElementById('filtro-count').textContent = data.total;
+                document.getElementById('filtro-activo').style.display = 'block';
+
+                // Switch to Analizador tab
+                var tabEl = document.getElementById('tab-analizador');
+                var tab = new bootstrap.Tab(tabEl);
+                tab.show();
+            })
+            .catch(function(err) {
+                console.error('Error filtrando por clasificación:', err);
+            });
+    }
+
+    // ── Clasificación → color de badge ───────────────────────────────────────
+    var CLASIF_COLORS = {
+        'duplicado':          '#dc3545',
+        'traslape_interno':   '#ffc107',
+        'traslape_relevante': '#fd7e14',
+        'sin_conflicto':      '#28a745'
+    };
+
+    var CLASIF_LABELS = {
+        'duplicado':          'Duplicado',
+        'traslape_interno':   'Traslape interno',
+        'traslape_relevante': 'Traslape relevante',
+        'sin_conflicto':      'Sin conflicto'
+    };
+
+    function clasifColor(c) {
+        return CLASIF_COLORS[c] || '#6c757d';
+    }
+
+    function clasifLabel(c) {
+        return CLASIF_LABELS[c] || c;
+    }
+
+    // ── Cargar polígono ───────────────────────────────────────────────────────
+    function cargarPoligono(idx) {
+        showSpinner();
+
+        fetch('/api/analizador/poligono/' + idx)
+            .then(function (r) {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.json();
+            })
+            .then(function (data) {
+                currentIndex = data.index;
+
+                // ── Actualizar info del polígono ──────────────────────────
+                var props = data.poligono.properties;
+                document.getElementById('info-id-poligon').textContent  = safeVal(props.ID_POLIGON);
+                document.getElementById('info-id-credito').textContent  = safeVal(props.ID_CREDITO);
+                document.getElementById('info-nombre-zip').textContent  = safeVal(props.NOMBRE_ZIP);
+                document.getElementById('info-area').textContent        =
+                    (typeof props.area_ha === 'number')
+                        ? props.area_ha.toFixed(4) + ' ha'
+                        : '—';
+
+                // ── Limpiar capas anteriores ──────────────────────────────
+                if (poligonoLayer) { map.removeLayer(poligonoLayer); poligonoLayer = null; }
+                if (matchesLayer)  { map.removeLayer(matchesLayer);  matchesLayer  = null; }
+                // Remove individual match layers
+                matchLayerMap.forEach(function(ml) { if (ml.layer) map.removeLayer(ml.layer); });
+                matchLayerMap = [];
+
+                // Reset toggle-poligono-actual
+                var toggleActual = document.getElementById('toggle-poligono-actual');
+                if (toggleActual) toggleActual.checked = true;
+
+                // ── Dibujar polígono actual en AZUL ───────────────────────
+                var stylePoligono = {
+                    color:       '#0d6efd',
+                    fillColor:   '#0d6efd',
+                    weight:      3,
+                    fillOpacity: 0.25
+                };
+
+                poligonoLayer = L.geoJSON(data.poligono, {
+                    style: stylePoligono
+                });
+
+                poligonoLayer.eachLayer(function (layer) {
+                    layer.bindTooltip(
+                        '<b>ACTUAL</b><br>' +
+                        '<b>ID:</b> ' + safeVal(props.ID_POLIGON) + '<br>' +
+                        '<b>Crédito:</b> ' + safeVal(props.ID_CREDITO) + '<br>' +
+                        '<b>Área:</b> ' + (typeof props.area_ha === 'number' ? props.area_ha.toFixed(4) + ' ha' : '—'),
+                        { permanent: false, direction: 'auto', opacity: 0.95, className: 'analizador-tooltip' }
+                    );
+                });
+
+                poligonoLayer.addTo(map);
+
+                // ── Dibujar matches de megacapa como capas INDIVIDUALES ───
+                var matchFeatures = (data.match_features && data.match_features.features) || [];
+                matchFeatures.forEach(function(feature, i) {
+                    var mp = feature.properties;
+                    var color = mp.color || '#6c757d';
+                    var style = {
+                        color:       color,
+                        fillColor:   color,
+                        weight:      2,
+                        fillOpacity: 0.25
+                    };
+
+                    var layer = L.geoJSON(feature, { style: function() { return style; } });
+                    layer.eachLayer(function(l) {
+                        l.bindTooltip(
+                            '<b>MEGA</b><br>' +
+                            '<b>ID:</b> ' + safeVal(mp.id_poligon) + '<br>' +
+                            '<b>Crédito:</b> ' + safeVal(mp.id_credito) + '<br>' +
+                            '<b>Overlap:</b> ' + fmt(mp.overlap_pct, 1) + '%<br>' +
+                            '<b>Clasificación:</b> ' + clasifLabel(mp.clasificacion),
+                            { permanent: false, direction: 'auto', opacity: 0.95, className: 'analizador-tooltip' }
+                        );
+                    });
+                    layer.addTo(map);
+
+                    matchLayerMap.push({
+                        mega_index:    mp.mega_index,
+                        layer:         layer,
+                        visible:       true,
+                        originalStyle: style,
+                        id_poligon:    mp.id_poligon,
+                        color:         color
+                    });
+                });
+
+                // ── fitBounds al polígono actual ──────────────────────────
+                try {
+                    map.fitBounds(poligonoLayer.getBounds(), { padding: [50, 50] });
+                } catch (e) { /* ignore */ }
+
+                // ── Actualizar contador de navegación ─────────────────────
+                updateNavCounter();
+
+                // ── Poblar lista de matches ───────────────────────────────
+                poblarListaMatches(data.matches);
+
+                // ── Cargar panel editable Chapingo ────────────────────────
+                actualizarPanelChapingo(data.index);
+
+                hideSpinner();
+            })
+            .catch(function (err) {
+                console.error('Error cargando polígono:', err);
+                hideSpinner();
+                document.getElementById('matches-list').innerHTML =
+                    '<div class="empty-state text-danger">Error al cargar polígono: ' + err.message + '</div>';
+            });
+    }
+
+    // ── Poblar lista de matches ───────────────────────────────────────────────
+    function poblarListaMatches(matches) {
+        var container = document.getElementById('matches-list');
+
+        if (!matches || matches.length === 0) {
+            container.innerHTML = '<div class="empty-state"><i class="bi bi-check-circle text-success me-1"></i>Sin matches en Mega Capa</div>';
+            return;
+        }
+
+        container.innerHTML = '';
+
+        matches.forEach(function (m, i) {
+            var color      = m.color || '#6c757d';
+            var badgeText  = clasifLabel(m.clasificacion);
+            var textColor  = (m.clasificacion === 'traslape_interno') ? '#212529' : '#fff';
+
+            var card = document.createElement('div');
+            card.className = 'match-card';
+            card.style.borderLeftColor = color;
+            card.style.borderLeftWidth = '4px';
+
+            var toggleId = 'toggle-mega-' + i;
+            card.innerHTML =
+                '<div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">' +
+                    '<div class="match-id" style="margin-bottom:0;">' + safeVal(m.id_poligon) + '</div>' +
+                    '<div class="form-check form-switch" style="margin:0; padding-left:2.5em;">' +
+                        '<input class="form-check-input" type="checkbox" id="' + toggleId + '" checked style="cursor:pointer;">' +
+                    '</div>' +
+                '</div>' +
+                '<div class="match-meta">Crédito: ' + safeVal(m.id_credito) + '</div>' +
+                '<div class="match-meta">' +
+                    'Overlap: <strong>' + fmt(m.overlap_pct, 1) + '%</strong> &nbsp;|&nbsp; ' +
+                    'Similitud sup.: <strong>' + fmt(m.area_ratio, 1) + '%</strong>' +
+                '</div>' +
+                '<div class="match-meta">Mismo crédito: <strong>' + (m.same_credit ? 'Sí' : 'No') + '</strong></div>' +
+                '<div style="display:flex; align-items:center; gap:6px; margin-top:4px;">' +
+                    '<span style="display:inline-block;width:14px;height:3px;background:' + color + ';"></span>' +
+                    '<span class="match-badge" style="background:' + color + ';color:' + textColor + ';">' + badgeText + '</span>' +
+                '</div>';
+
+            // Find the corresponding layer in matchLayerMap
+            var matchEntry = null;
+            for (var j = 0; j < matchLayerMap.length; j++) {
+                if (matchLayerMap[j].mega_index === m.mega_index) {
+                    matchEntry = matchLayerMap[j];
+                    break;
+                }
+            }
+
+            // Toggle handler
+            var checkbox = card.querySelector('#' + toggleId);
+            (function(entry, cb) {
+                cb.addEventListener('change', function() {
+                    if (!entry || !entry.layer) return;
+                    if (cb.checked) {
+                        entry.layer.addTo(map);
+                        entry.visible = true;
+                    } else {
+                        map.removeLayer(entry.layer);
+                        entry.visible = false;
+                    }
+                });
+            })(matchEntry, checkbox);
+
+            // Click on card (not toggle) → zoom to match
+            card.addEventListener('click', function(e) {
+                if (e.target.tagName === 'INPUT') return;
+                zoomToMatch(m.mega_index);
+            });
+
+            container.appendChild(card);
+        });
+    }
+
+    // ── Zoom a un match específico ────────────────────────────────────────────
+    function zoomToMatch(megaIndex) {
+        var entry = null;
+        for (var i = 0; i < matchLayerMap.length; i++) {
+            if (matchLayerMap[i].mega_index === megaIndex) {
+                entry = matchLayerMap[i];
+                break;
+            }
+        }
+        if (!entry || !entry.visible) return;
+
+        try {
+            map.fitBounds(entry.layer.getBounds(), { padding: [40, 40] });
+        } catch (e) { /* ignore */ }
+
+        entry.layer.setStyle({ weight: 4, fillOpacity: 0.5 });
+        var orig = entry.originalStyle;
+        setTimeout(function () {
+            entry.layer.setStyle(orig);
+        }, 2000);
+    }
+
+    // ── Navegación ← → ───────────────────────────────────────────────────────
+    document.getElementById('btn-prev').addEventListener('click', function () {
+        if (filteredIndices !== null) {
+            if (filteredPos > 0) {
+                filteredPos--;
+                currentIndex = filteredIndices[filteredPos];
+                cargarPoligono(currentIndex);
+            }
+        } else {
+            if (currentIndex > 0) {
+                cargarPoligono(--currentIndex);
+            }
+        }
+    });
+
+    document.getElementById('btn-next').addEventListener('click', function () {
+        if (filteredIndices !== null) {
+            if (filteredPos < filteredIndices.length - 1) {
+                filteredPos++;
+                currentIndex = filteredIndices[filteredPos];
+                cargarPoligono(currentIndex);
+            }
+        } else {
+            if (currentIndex < totalPoligonos - 1) {
+                cargarPoligono(++currentIndex);
+            }
+        }
+    });
+
+    // ── Ir a índice ───────────────────────────────────────────────────────────
+    document.getElementById('btn-goto').addEventListener('click', function () {
+        var val = parseInt(document.getElementById('goto-input').value, 10);
+        if (filteredIndices !== null) {
+            // In filtered mode, 'goto' means position within filtered list (0-based)
+            if (!isNaN(val) && val >= 0 && val < filteredIndices.length) {
+                filteredPos = val;
+                currentIndex = filteredIndices[filteredPos];
+                cargarPoligono(currentIndex);
+            }
+        } else {
+            if (!isNaN(val) && val >= 0 && val < totalPoligonos) {
+                currentIndex = val;
+                cargarPoligono(currentIndex);
+            }
+        }
+    });
+
+    document.getElementById('goto-input').addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
+            document.getElementById('btn-goto').click();
+        }
+    });
+
+    // ── Teclado ← → ──────────────────────────────────────────────────────────
+    document.addEventListener('keydown', function (e) {
+        // Ignorar si el foco está en un input/textarea
+        var tag = document.activeElement ? document.activeElement.tagName : '';
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+        if (e.key === 'ArrowLeft') {
+            document.getElementById('btn-prev').click();
+        } else if (e.key === 'ArrowRight') {
+            document.getElementById('btn-next').click();
+        }
+    });
+
+    // ── Búsqueda ──────────────────────────────────────────────────────────────
+    var searchDropdown = document.getElementById('search-dropdown');
+
+    function realizarBusqueda() {
+        var q = document.getElementById('search-input').value.trim();
+        if (!q) return;
+
+        fetch('/api/analizador/buscar?q=' + encodeURIComponent(q))
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                searchDropdown.innerHTML = '';
+
+                if (!data.resultados || data.resultados.length === 0) {
+                    searchDropdown.innerHTML =
+                        '<div class="search-result-item text-muted">Sin resultados</div>';
+                    searchDropdown.style.display = 'block';
+                    return;
+                }
+
+                data.resultados.forEach(function (res) {
+                    var item = document.createElement('div');
+                    item.className = 'search-result-item';
+                    item.innerHTML =
+                        '<strong>#' + res.index + '</strong> — ' +
+                        safeVal(res.id_poligon) + '<br>' +
+                        '<small class="text-muted">Crédito: ' + safeVal(res.id_credito) + '</small>';
+
+                    item.addEventListener('click', function () {
+                        searchDropdown.style.display = 'none';
+                        currentIndex = res.index;
+                        cargarPoligono(currentIndex);
+                    });
+
+                    searchDropdown.appendChild(item);
+                });
+
+                searchDropdown.style.display = 'block';
+            })
+            .catch(function (err) {
+                console.error('Error en búsqueda:', err);
+            });
+    }
+
+    document.getElementById('btn-buscar').addEventListener('click', realizarBusqueda);
+
+    document.getElementById('search-input').addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') realizarBusqueda();
+    });
+
+    // Cerrar dropdown al hacer click fuera
+    document.addEventListener('click', function (e) {
+        if (!document.getElementById('search-wrapper').contains(e.target)) {
+            searchDropdown.style.display = 'none';
+        }
+    });
+
+    // Click on classification table rows
+    document.addEventListener('click', function(e) {
+        var subfilterLink = e.target.closest('.subfilter-link');
+        if (subfilterLink) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (subfilterLink.classList.contains('is-disabled')) return;
+            var clasif = subfilterLink.getAttribute('data-clasif');
+            var subfiltro = subfilterLink.getAttribute('data-subfiltro');
+            if (clasif && subfiltro) {
+                filtrarPorClasificacion(clasif, subfiltro);
+            }
+            return;
+        }
+
+        var row = e.target.closest('.clasif-row');
+        if (row) {
+            var clasif = row.getAttribute('data-clasif');
+            if (clasif) {
+                filtrarPorClasificacion(clasif);
+            }
+        }
+    });
+
+    // ── Toggle: Polígono Actual ───────────────────────────────────────────────
+    document.getElementById('toggle-poligono-actual').addEventListener('change', function() {
+        if (!poligonoLayer) return;
+        if (this.checked) {
+            poligonoLayer.addTo(map);
+        } else {
+            map.removeLayer(poligonoLayer);
+        }
+    });
+
+    // ── Toggle: Validación 15K ────────────────────────────────────────────────
+    document.getElementById('toggle-validacion-bg').addEventListener('change', function() {
+        if (this.checked) {
+            if (validacionBgLoaded && validacionBgLayer) {
+                map.addLayer(validacionBgLayer);
+                // Asegurar que las capas de análisis estén encima
+                if (poligonoLayer) poligonoLayer.bringToFront();
+                if (matchesLayer)  matchesLayer.bringToFront();
+            } else {
+                // Cargar por primera vez
+                document.getElementById('capas-loading').style.display = 'block';
+                fetch('/api/mapa-15k/validacion')
+                    .then(function(r) { return r.json(); })
+                    .then(function(data) {
+                        validacionBgLayer = L.geoJSON(data.geojson, {
+                            style: { color: '#00734C', fillColor: '#4CE600', weight: 1, fillOpacity: 0.15, opacity: 0.5 },
+                            onEachFeature: function(feature, layer) {
+                                var p = feature.properties || {};
+                                layer.bindTooltip(
+                                    '<b>' + (p.ID_POLIGON || 'N/A') + '</b><br>Crédito: ' + (p.ID_CREDITO || 'N/A'),
+                                    { permanent: false, direction: 'auto', opacity: 0.85, className: 'custom-tooltip-15k' }
+                                );
+                            }
+                        }).addTo(map);
+                        validacionBgLoaded = true;
+                        document.getElementById('capas-loading').style.display = 'none';
+                        // Asegurar que las capas de análisis estén encima
+                        if (poligonoLayer) poligonoLayer.bringToFront();
+                        if (matchesLayer)  matchesLayer.bringToFront();
+                    })
+                    .catch(function(err) {
+                        console.error('Error cargando capa validación:', err);
+                        document.getElementById('capas-loading').style.display = 'none';
+                        document.getElementById('toggle-validacion-bg').checked = false;
+                        alert('Error al cargar la capa de validación');
+                    });
+            }
+        } else {
+            if (validacionBgLayer) map.removeLayer(validacionBgLayer);
+        }
+    });
+
+    // ── Toggle: Histórico MEGA ────────────────────────────────────────────────
+    document.getElementById('toggle-historico-bg').addEventListener('change', function() {
+        if (this.checked) {
+            if (historicoBgLoaded && historicoBgLayer) {
+                map.addLayer(historicoBgLayer);
+                // Asegurar que las capas de análisis estén encima
+                if (poligonoLayer) poligonoLayer.bringToFront();
+                if (matchesLayer)  matchesLayer.bringToFront();
+            } else {
+                // Cargar por primera vez
+                document.getElementById('capas-loading').style.display = 'block';
+                fetch('/api/mapa-15k/historico')
+                    .then(function(r) { return r.json(); })
+                    .then(function(data) {
+                        historicoBgLayer = L.geoJSON(data.geojson, {
+                            style: { color: '#cc7000', fillColor: '#ff8c00', weight: 1, fillOpacity: 0.1, opacity: 0.4 },
+                            onEachFeature: function(feature, layer) {
+                                var p = feature.properties || {};
+                                layer.bindTooltip(
+                                    '<b>' + (p.ID_POLIGON || 'N/A') + '</b><br>Crédito: ' + (p.ID_CREDITO || 'N/A'),
+                                    { permanent: false, direction: 'auto', opacity: 0.85, className: 'custom-tooltip-15k' }
+                                );
+                            }
+                        }).addTo(map);
+                        historicoBgLoaded = true;
+                        document.getElementById('capas-loading').style.display = 'none';
+                        // Asegurar que las capas de análisis estén encima
+                        if (poligonoLayer) poligonoLayer.bringToFront();
+                        if (matchesLayer)  matchesLayer.bringToFront();
+                    })
+                    .catch(function(err) {
+                        console.error('Error cargando capa histórico:', err);
+                        document.getElementById('capas-loading').style.display = 'none';
+                        document.getElementById('toggle-historico-bg').checked = false;
+                        alert('Error al cargar la capa histórica');
+                    });
+            }
+        } else {
+            if (historicoBgLayer) map.removeLayer(historicoBgLayer);
+        }
+    });
+
+    // ── Click handlers para tarjetas del Dashboard ───────────────────────────
+    document.getElementById('card-nuevos').addEventListener('click', function() {
+        aplicarFiltro('nuevos');
+    });
+
+    document.getElementById('card-existentes').addEventListener('click', function() {
+        aplicarFiltro('existentes');
+    });
+
+    document.getElementById('btn-limpiar-filtro').addEventListener('click', function() {
+        limpiarFiltro();
+    });
+
+    document.getElementById('btn-iniciar-clasif').addEventListener('click', function() {
+        iniciarClasificacion();
+    });
+
+    ['chapingo-estatus', 'chapingo-id-unico', 'chapingo-superficie'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        el.addEventListener('input', function() {
+            chapingoFormDirty = true;
+            limpiarMensajesChapingo();
+        });
+        el.addEventListener('change', function() {
+            chapingoFormDirty = true;
+            limpiarMensajesChapingo();
+        });
+    });
+
+    document.getElementById('chapingo-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        if (chapingoSaveInFlight || chapingoPanelLoadedIdx === null) return;
+
+        limpiarMensajesChapingo();
+        setEstadoGuardadoChapingo(true);
+
+        var superficieRaw = document.getElementById('chapingo-superficie').value;
+        var payload = {
+            estatus_chapingo: document.getElementById('chapingo-estatus').value,
+            id_poligono_unico: document.getElementById('chapingo-id-unico').value,
+            superficie_chapingo: superficieRaw === '' ? null : Number(superficieRaw),
+            comentario_chapingo: null,
+        };
+
+        fetch('/api/analizador/propuesta-editable/' + chapingoPanelLoadedIdx + '/guardar', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        })
+            .then(function(r) {
+                return r.json().catch(function() { return {}; }).then(function(data) {
+                    if (!r.ok) {
+                        var err = new Error(data.error || ('HTTP ' + r.status));
+                        err.status = r.status;
+                        throw err;
+                    }
+                    return data;
+                });
+            })
+            .then(function(data) {
+                var guardado = (data && data.guardado) ? data.guardado : {};
+
+                document.getElementById('chapingo-estatus').value = valorEditable(guardado.estatus_chapingo);
+                document.getElementById('chapingo-id-unico').value = valorEditable(guardado.id_poligono_unico);
+
+                // Update info section badge after save
+                var estatusGuardado = guardado.estatus_chapingo;
+                var badgeEl = document.getElementById('info-estatus-propuesto');
+                if (estatusGuardado) {
+                    badgeEl.textContent = estatusGuardado;
+                    if (estatusGuardado === 'NUEVO') {
+                        badgeEl.style.background = '#198754'; badgeEl.style.color = '#fff';
+                    } else if (estatusGuardado === 'VINCULAR') {
+                        badgeEl.style.background = '#0d6efd'; badgeEl.style.color = '#fff';
+                    } else if (estatusGuardado === 'ELIMINAR') {
+                        badgeEl.style.background = '#dc3545'; badgeEl.style.color = '#fff';
+                    }
+                }
+
+                var successEl = document.getElementById('chapingo-form-success');
+                successEl.textContent = 'Decisión guardada correctamente.';
+                successEl.style.display = 'block';
+                chapingoFormDirty = false;
+            })
+            .catch(function(err) {
+                var errorEl = document.getElementById('chapingo-form-error');
+                if (err.status === 400) {
+                    errorEl.textContent = 'Validación: ' + err.message;
+                } else {
+                    errorEl.textContent = 'No fue posible guardar la decisión: ' + err.message;
+                }
+                errorEl.style.display = 'block';
+            })
+            .finally(function() {
+                setEstadoGuardadoChapingo(false);
+            });
+    });
+
+    // ── Carga inicial ─────────────────────────────────────────────────────────
+    // Only load dashboard on page load. Map + first polygon load lazily when
+    // the Analizador tab is first clicked.
+    cargarDashboard();
+
+    // Check if classification already done (after cargarDashboard call)
+    fetch('/api/analizador/clasificacion-nuevos/estado')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.status === 'done' && data.result) {
+                mostrarResultadosClasif(data.result, data.processed);
+            } else if (data.status === 'running') {
+                document.getElementById('clasif-idle').style.display = 'none';
+                document.getElementById('clasif-running').style.display = 'block';
+                iniciarPolling();
+            }
+        })
+        .catch(function() { /* ignore */ });
+
+}());
+</script>
+{% endblock %}
