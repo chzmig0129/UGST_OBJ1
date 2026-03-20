@@ -46,31 +46,32 @@ def slice_filter(iterable, start, end=None):
 
 
 def obtener_estatus_validacion(row):
-    """Obtiene el estatus de validación priorizando ESTA_CHA sobre ESTATUS."""
-    estatus_esta_cha = row.get('ESTA_CHA')
-    if pd.notna(estatus_esta_cha):
-        estatus_esta_cha_str = str(estatus_esta_cha).strip()
-        if estatus_esta_cha_str:
-            return estatus_esta_cha_str
-
-    estatus_legacy = row.get('ESTATUS')
-    if pd.notna(estatus_legacy):
-        return str(estatus_legacy).strip()
+    """Obtiene el estatus de validación priorizando ESTA_CHA."""
+    for field_name in ('ESTA_CHA', 'ESTATUS', 'Estatus'):
+        estatus = row.get(field_name)
+        if pd.notna(estatus):
+            estatus_str = str(estatus).strip()
+            if estatus_str:
+                return estatus_str
     return ''
 
 
 def normalizar_columna_estatus_validacion(gdf):
-    """Garantiza compatibilidad de estatus 15K usando ESTA_CHA con fallback a ESTATUS."""
+    """Garantiza compatibilidad de estatus 15K usando ESTA_CHA como nombre canonico."""
     if gdf is None:
         return gdf
 
     if 'ESTA_CHA' in gdf.columns:
-        if 'ESTATUS' in gdf.columns:
-            esta_cha_serie = gdf['ESTA_CHA']
-            esta_cha_valida = (~esta_cha_serie.isna()) & (esta_cha_serie.astype(str).str.strip() != '')
-            gdf['ESTATUS'] = esta_cha_serie.where(esta_cha_valida, gdf['ESTATUS'])
-        else:
-            gdf['ESTATUS'] = gdf['ESTA_CHA']
+        estatus_base = gdf['ESTA_CHA']
+    elif 'ESTATUS' in gdf.columns:
+        estatus_base = gdf['ESTATUS']
+    elif 'Estatus' in gdf.columns:
+        estatus_base = gdf['Estatus']
+    else:
+        return gdf
+
+    gdf['ESTA_CHA'] = estatus_base
+    gdf['ESTATUS'] = estatus_base
 
     return gdf
 
@@ -3948,6 +3949,10 @@ def init_validacion_15k_db():
         id_credito_validacion TEXT,
         nombre_zip TEXT,
         estatus TEXT DEFAULT 'pendiente',
+        estatus_chapingo TEXT,
+        id_poligono_unico TEXT,
+        superficie_chapingo REAL,
+        comentario_chapingo TEXT,
         id_poligon_historico TEXT,
         mega_idx INTEGER,
         overlap_pct REAL,
@@ -3955,6 +3960,22 @@ def init_validacion_15k_db():
         validado_por TEXT DEFAULT 'usuario'
     )
     ''')
+
+    existing_columns = {
+        row['name']
+        for row in conn.execute("PRAGMA table_info(validacion_15k)").fetchall()
+    }
+    required_columns = {
+        'estatus_chapingo': 'TEXT',
+        'id_poligono_unico': 'TEXT',
+        'superficie_chapingo': 'REAL',
+        'comentario_chapingo': 'TEXT',
+    }
+    for column_name, column_type in required_columns.items():
+        if column_name not in existing_columns:
+            conn.execute(
+                f'ALTER TABLE validacion_15k ADD COLUMN {column_name} {column_type}'
+            )
 
     conn.commit()
     conn.close()
@@ -4809,11 +4830,22 @@ def api_validacion_15k_estado(idx):
         conn.close()
 
     if row is None:
-        return jsonify({'idx': idx, 'estatus': 'pendiente'})
+        return jsonify({
+            'idx': idx,
+            'estatus': 'pendiente',
+            'estatus_chapingo': None,
+            'id_poligono_unico': None,
+            'superficie_chapingo': None,
+            'comentario_chapingo': None,
+        })
 
     return jsonify({
         'idx': idx,
         'estatus': row['estatus'],
+        'estatus_chapingo': row['estatus_chapingo'],
+        'id_poligono_unico': row['id_poligono_unico'],
+        'superficie_chapingo': row['superficie_chapingo'],
+        'comentario_chapingo': row['comentario_chapingo'],
         'id_poligon_historico': row['id_poligon_historico'],
         'mega_idx': row['mega_idx'],
         'overlap_pct': row['overlap_pct'],
@@ -4843,6 +4875,10 @@ def api_validacion_15k_poligono(idx):
     if row is None:
         validacion = {
             'estatus': 'pendiente',
+            'estatus_chapingo': None,
+            'id_poligono_unico': None,
+            'superficie_chapingo': None,
+            'comentario_chapingo': None,
             'id_poligon_historico': None,
             'mega_idx': None,
             'overlap_pct': None,
@@ -4851,6 +4887,10 @@ def api_validacion_15k_poligono(idx):
     else:
         validacion = {
             'estatus': row['estatus'],
+            'estatus_chapingo': row['estatus_chapingo'],
+            'id_poligono_unico': row['id_poligono_unico'],
+            'superficie_chapingo': row['superficie_chapingo'],
+            'comentario_chapingo': row['comentario_chapingo'],
             'id_poligon_historico': row['id_poligon_historico'],
             'mega_idx': row['mega_idx'],
             'overlap_pct': row['overlap_pct'],
