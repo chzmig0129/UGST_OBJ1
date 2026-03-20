@@ -23,6 +23,7 @@ from shapefile_utils import plot_shapefile_to_png
 from utils.pdf_generator import (generar_ficha_tecnica_desde_plantilla, verificar_instalacion_pymupdf, 
                                 generar_ficha_tecnica_fallback, generar_ficha_tecnica_simple, 
                                 garantizar_pymupdf, import_pymupdf)
+from utils.shapefile_cache import shp_cache
 import shutil
 import math
 
@@ -45,27 +46,14 @@ def slice_filter(iterable, start, end=None):
         return iterable[start:]
     return iterable[start:end]
 
-# Cargar shapefile de municipios de México
-try:
-    municipios_gdf = gpd.read_file("data/mun22gw.shp")
-    # Verificar/convertir CRS a WGS84 (EPSG:4326)
-    if municipios_gdf.crs != "EPSG:4326":
-        municipios_gdf = municipios_gdf.to_crs(epsg=4326)
-    # Filtrar solo columnas necesarias para optimizar
-    municipios_gdf = municipios_gdf[["NOMGEO", "NOM_ENT", "geometry"]]
-    print("Shapefile de municipios cargado correctamente. Columnas:", municipios_gdf.columns.tolist())
-except Exception as e:
-    print(f"Error cargando shapefile: {e}")
-    municipios_gdf = None
-
 # Función para obtener municipio y estado desde coordenadas
 def obtener_ubicacion(lat, lon):
-    if municipios_gdf is None:
+    if shp_cache.municipios is None:
         return None
     try:
         punto = Point(lon, lat)  # Shapely usa (x=lon, y=lat)
-        mask = municipios_gdf.contains(punto)
-        resultados = municipios_gdf[mask]
+        mask = shp_cache.municipios.contains(punto)
+        resultados = shp_cache.municipios[mask]
         if not resultados.empty:
             # Corregir la codificación de caracteres
             municipio = resultados.iloc[0]["NOMGEO"]
@@ -4035,5 +4023,7 @@ def get_poligonos_actuales_traslapes(polygon_id):
         print(f"Error al detectar traslapes entre polígonos actuales: {e}")
         return jsonify({'error': str(e)}), 500
 
+shp_cache.preload_all()  # Preload in production for gunicorn preload_app
+
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, host='0.0.0.0', port=5000)
