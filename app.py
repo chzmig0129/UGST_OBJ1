@@ -4625,18 +4625,25 @@ def calcular_traslapes(idx):
         'geometry': json.loads(shapely.to_geojson(vgeom))
     }
 
-    # Resumen de clasificaciones
+    # Resumen de clasificaciones con desglose mismo/diferente crédito
     duplicados = [m for m in matches if m['clasificacion'] == 'duplicado']
-    duplicados_mismo_credito = sum(1 for m in duplicados if m.get('same_credit'))
-    duplicados_diferente_credito = len(duplicados) - duplicados_mismo_credito
+    traslape_interno_list = [m for m in matches if m['clasificacion'] == 'traslape_interno']
+    traslape_relevante_list = [m for m in matches if m['clasificacion'] == 'traslape_relevante']
+    sin_conflicto_list = [m for m in matches if m['clasificacion'] == 'sin_conflicto']
 
     resumen = {
         'duplicados': len(duplicados),
-        'duplicados_mismo_credito': duplicados_mismo_credito,
-        'duplicados_diferente_credito': duplicados_diferente_credito,
-        'traslape_interno': len([m for m in matches if m['clasificacion'] == 'traslape_interno']),
-        'traslape_relevante': len([m for m in matches if m['clasificacion'] == 'traslape_relevante']),
-        'sin_conflicto': len([m for m in matches if m['clasificacion'] == 'sin_conflicto']),
+        'duplicados_mismo_credito': sum(1 for m in duplicados if m.get('same_credit')),
+        'duplicados_diferente_credito': sum(1 for m in duplicados if not m.get('same_credit')),
+        'traslape_interno': len(traslape_interno_list),
+        'traslape_interno_mismo_credito': sum(1 for m in traslape_interno_list if m.get('same_credit')),
+        'traslape_interno_diferente_credito': sum(1 for m in traslape_interno_list if not m.get('same_credit')),
+        'traslape_relevante': len(traslape_relevante_list),
+        'traslape_relevante_mismo_credito': sum(1 for m in traslape_relevante_list if m.get('same_credit')),
+        'traslape_relevante_diferente_credito': sum(1 for m in traslape_relevante_list if not m.get('same_credit')),
+        'sin_conflicto': len(sin_conflicto_list),
+        'sin_conflicto_mismo_credito': sum(1 for m in sin_conflicto_list if m.get('same_credit')),
+        'sin_conflicto_diferente_credito': sum(1 for m in sin_conflicto_list if not m.get('same_credit')),
         'total_matches': len(matches)
     }
 
@@ -4989,8 +4996,14 @@ def _run_clasificacion_nuevos():
             'duplicados_mismo_credito': 0,
             'duplicados_diferente_credito': 0,
             'traslape_interno': 0,
+            'traslape_interno_mismo_credito': 0,
+            'traslape_interno_diferente_credito': 0,
             'traslape_relevante': 0,
+            'traslape_relevante_mismo_credito': 0,
+            'traslape_relevante_diferente_credito': 0,
             'sin_conflicto': 0,
+            'sin_conflicto_mismo_credito': 0,
+            'sin_conflicto_diferente_credito': 0,
             'sin_matches': 0,
         }
         indices_por_clasif = {
@@ -4998,8 +5011,14 @@ def _run_clasificacion_nuevos():
             'duplicado_mismo_credito': [],
             'duplicado_diferente_credito': [],
             'traslape_interno': [],
+            'traslape_interno_mismo_credito': [],
+            'traslape_interno_diferente_credito': [],
             'traslape_relevante': [],
+            'traslape_relevante_mismo_credito': [],
+            'traslape_relevante_diferente_credito': [],
             'sin_conflicto': [],
+            'sin_conflicto_mismo_credito': [],
+            'sin_conflicto_diferente_credito': [],
             'sin_matches': [],
         }
 
@@ -5009,23 +5028,40 @@ def _run_clasificacion_nuevos():
                 resumen = data['resumen']
                 if resumen['duplicados'] > 0:
                     counts['duplicado'] += 1
-                    # Keep one subtotal per polygon so breakdown matches duplicated count.
+                    indices_por_clasif['duplicado'].append(idx)
                     if resumen.get('duplicados_mismo_credito', 0) > 0:
                         counts['duplicados_mismo_credito'] += 1
                         indices_por_clasif['duplicado_mismo_credito'].append(idx)
                     else:
                         counts['duplicados_diferente_credito'] += 1
                         indices_por_clasif['duplicado_diferente_credito'].append(idx)
-                    indices_por_clasif['duplicado'].append(idx)
                 elif resumen['traslape_interno'] > 0:
                     counts['traslape_interno'] += 1
                     indices_por_clasif['traslape_interno'].append(idx)
+                    if resumen.get('traslape_interno_mismo_credito', 0) > 0:
+                        counts['traslape_interno_mismo_credito'] += 1
+                        indices_por_clasif['traslape_interno_mismo_credito'].append(idx)
+                    else:
+                        counts['traslape_interno_diferente_credito'] += 1
+                        indices_por_clasif['traslape_interno_diferente_credito'].append(idx)
                 elif resumen['traslape_relevante'] > 0:
                     counts['traslape_relevante'] += 1
                     indices_por_clasif['traslape_relevante'].append(idx)
+                    if resumen.get('traslape_relevante_mismo_credito', 0) > 0:
+                        counts['traslape_relevante_mismo_credito'] += 1
+                        indices_por_clasif['traslape_relevante_mismo_credito'].append(idx)
+                    else:
+                        counts['traslape_relevante_diferente_credito'] += 1
+                        indices_por_clasif['traslape_relevante_diferente_credito'].append(idx)
                 elif resumen['sin_conflicto'] > 0:
                     counts['sin_conflicto'] += 1
                     indices_por_clasif['sin_conflicto'].append(idx)
+                    if resumen.get('sin_conflicto_mismo_credito', 0) > 0:
+                        counts['sin_conflicto_mismo_credito'] += 1
+                        indices_por_clasif['sin_conflicto_mismo_credito'].append(idx)
+                    else:
+                        counts['sin_conflicto_diferente_credito'] += 1
+                        indices_por_clasif['sin_conflicto_diferente_credito'].append(idx)
                 else:
                     counts['sin_matches'] += 1
                     indices_por_clasif['sin_matches'].append(idx)
@@ -5113,20 +5149,22 @@ def api_clasificacion_nuevos_indices():
         return jsonify({'error': 'Clasificación no completada aún'}), 409
 
     indices_key = clasif
-    if clasif == 'duplicado':
+    # subfiltro applies to all categories that have mismo/diferente breakdown
+    categories_with_subfiltro = ['duplicado', 'traslape_interno', 'traslape_relevante', 'sin_conflicto']
+    if clasif in categories_with_subfiltro:
         valid_subfiltros = [None, '', 'mismo_credito', 'diferente_credito']
         if subfiltro not in valid_subfiltros:
-            return jsonify({'error': 'Subfiltro inválido para duplicado. Use: mismo_credito o diferente_credito'}), 400
+            return jsonify({'error': f'Subfiltro inválido para {clasif}. Use: mismo_credito o diferente_credito'}), 400
         if subfiltro == 'mismo_credito':
-            indices_key = 'duplicado_mismo_credito'
+            indices_key = clasif + '_mismo_credito'
         elif subfiltro == 'diferente_credito':
-            indices_key = 'duplicado_diferente_credito'
+            indices_key = clasif + '_diferente_credito'
     elif subfiltro not in (None, ''):
-        return jsonify({'error': 'El parámetro subfiltro solo aplica cuando clasif=duplicado'}), 400
+        return jsonify({'error': 'El parámetro subfiltro no aplica para esta clasificación'}), 400
 
-    indices = _clasif_nuevos_state['indices_por_clasif'][indices_key]
+    indices = _clasif_nuevos_state['indices_por_clasif'].get(indices_key, [])
     response = {'clasif': clasif, 'indices': indices, 'total': len(indices)}
-    if clasif == 'duplicado' and subfiltro not in (None, ''):
+    if subfiltro not in (None, ''):
         response['subfiltro'] = subfiltro
     return jsonify(response)
 

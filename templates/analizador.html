@@ -367,22 +367,21 @@
         font-weight: 600;
     }
 
-    .dup-subfilter-link {
+    .subfilter-link, .dup-subfilter-link {
         color: #0d6efd;
-        text-decoration: underline;
-        font-weight: 600;
+        text-decoration: none;
+        font-weight: 500;
         cursor: pointer;
     }
 
-    .dup-subfilter-link:hover {
-        color: #0a58ca;
+    .subfilter-link:hover, .dup-subfilter-link:hover {
+        text-decoration: underline;
     }
 
-    .dup-subfilter-link.is-disabled {
+    .subfilter-link.is-disabled, .dup-subfilter-link.is-disabled {
         color: #adb5bd;
-        text-decoration: none;
-        cursor: not-allowed;
-        font-weight: 500;
+        cursor: default;
+        pointer-events: none;
     }
 
     .dup-subfilter-sep {
@@ -499,13 +498,13 @@
                             <tbody>
                                 <tr class="clasif-row" data-clasif="duplicado" style="cursor:pointer;" title="Click para ver en Analizador">
                                     <td><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:#dc3545;"></span></td>
-                                    <td>
-                                        <strong>Duplicado</strong><br>
+                                     <td>
+                                        <strong>Duplicado</strong> → <strong style="color:#0d6efd;">VINCULAR</strong><br>
                                         <small class="text-muted">Mismo/diferente crédito, superficie ≥85% y traslape ≥85%</small><br>
                                         <small class="text-muted">
-                                            <a href="#" class="dup-subfilter-link is-disabled" id="btn-dup-mismo" data-clasif="duplicado" data-subfiltro="mismo_credito" data-count="0" aria-disabled="true">Mismo crédito: <span id="clasif-duplicado-mismo">0</span></a>
+                                            <a href="#" class="subfilter-link is-disabled" data-clasif="duplicado" data-subfiltro="mismo_credito" data-count="0" aria-disabled="true">Mismo crédito: <span id="clasif-duplicado-mismo">0</span></a>
                                             <span class="dup-subfilter-sep">|</span>
-                                            <a href="#" class="dup-subfilter-link is-disabled" id="btn-dup-diferente" data-clasif="duplicado" data-subfiltro="diferente_credito" data-count="0" aria-disabled="true">Diferente crédito: <span id="clasif-duplicado-diferente">0</span></a>
+                                            <a href="#" class="subfilter-link is-disabled" data-clasif="duplicado" data-subfiltro="diferente_credito" data-count="0" aria-disabled="true">Diferente crédito: <span id="clasif-duplicado-diferente">0</span></a>
                                         </small>
                                     </td>
                                     <td style="text-align:right; font-weight:700;" id="clasif-duplicado">—</td>
@@ -513,25 +512,49 @@
                                 </tr>
                                 <tr class="clasif-row" data-clasif="traslape_interno" style="cursor:pointer;" title="Click para ver en Analizador">
                                     <td><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:#ffc107;"></span></td>
-                                    <td><strong>Traslape Interno</strong><br><small class="text-muted">Mismo crédito, traslape 10%-85%</small></td>
+                                    <td>
+                                        <strong>Traslape Interno</strong> → <strong style="color:#dc3545;">ELIMINAR</strong><br>
+                                        <small class="text-muted">Mismo crédito, traslape 10%-85%</small><br>
+                                        <small class="text-muted">
+                                            <a href="#" class="subfilter-link is-disabled" data-clasif="traslape_interno" data-subfiltro="mismo_credito" data-count="0" aria-disabled="true">Mismo crédito: <span id="clasif-ti-mismo">0</span></a>
+                                            <span class="dup-subfilter-sep">|</span>
+                                            <a href="#" class="subfilter-link is-disabled" data-clasif="traslape_interno" data-subfiltro="diferente_credito" data-count="0" aria-disabled="true">Diferente crédito: <span id="clasif-ti-diferente">0</span></a>
+                                        </small>
+                                    </td>
                                     <td style="text-align:right; font-weight:700;" id="clasif-traslape-int">—</td>
                                     <td style="text-align:right;" id="clasif-traslape-int-pct">—</td>
                                 </tr>
                                 <tr class="clasif-row" data-clasif="traslape_relevante" style="cursor:pointer;" title="Click para ver en Analizador">
                                     <td><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:#fd7e14;"></span></td>
-                                    <td><strong>Traslape Relevante</strong><br><small class="text-muted">Diferente crédito, traslape 30%-80%</small></td>
+                                    <td>
+                                        <strong>Traslape Relevante</strong> → <strong style="color:#fd7e14;">REVISAR</strong><br>
+                                        <small class="text-muted">Diferente crédito, traslape 30%-80%</small><br>
+                                        <small class="text-muted">
+                                            <a href="#" class="subfilter-link is-disabled" data-clasif="traslape_relevante" data-subfiltro="mismo_credito" data-count="0" aria-disabled="true">Mismo crédito: <span id="clasif-tr-mismo">0</span></a>
+                                            <span class="dup-subfilter-sep">|</span>
+                                            <a href="#" class="subfilter-link is-disabled" data-clasif="traslape_relevante" data-subfiltro="diferente_credito" data-count="0" aria-disabled="true">Diferente crédito: <span id="clasif-tr-diferente">0</span></a>
+                                        </small>
+                                    </td>
                                     <td style="text-align:right; font-weight:700;" id="clasif-traslape-rel">—</td>
                                     <td style="text-align:right;" id="clasif-traslape-rel-pct">—</td>
                                 </tr>
                                 <tr class="clasif-row" data-clasif="sin_conflicto" style="cursor:pointer;" title="Click para ver en Analizador">
                                     <td><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:#28a745;"></span></td>
-                                    <td><strong>Sin Conflicto</strong><br><small class="text-muted">Traslape menor, sin riesgo</small></td>
+                                    <td>
+                                        <strong>Sin Conflicto</strong> → <strong style="color:#28a745;">NUEVO</strong><br>
+                                        <small class="text-muted">Traslape menor, sin riesgo</small><br>
+                                        <small class="text-muted">
+                                            <a href="#" class="subfilter-link is-disabled" data-clasif="sin_conflicto" data-subfiltro="mismo_credito" data-count="0" aria-disabled="true">Mismo crédito: <span id="clasif-sc-mismo">0</span></a>
+                                            <span class="dup-subfilter-sep">|</span>
+                                            <a href="#" class="subfilter-link is-disabled" data-clasif="sin_conflicto" data-subfiltro="diferente_credito" data-count="0" aria-disabled="true">Diferente crédito: <span id="clasif-sc-diferente">0</span></a>
+                                        </small>
+                                    </td>
                                     <td style="text-align:right; font-weight:700;" id="clasif-sin-conf">—</td>
                                     <td style="text-align:right;" id="clasif-sin-conf-pct">—</td>
                                 </tr>
                                 <tr class="clasif-row" data-clasif="sin_matches" style="cursor:pointer;" title="Click para ver en Analizador">
                                     <td><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:#6c757d;"></span></td>
-                                    <td><strong>Sin Matches</strong><br><small class="text-muted">No se encontró solapamiento geométrico con la mega capa</small></td>
+                                    <td><strong>Sin Matches</strong> → <strong style="color:#198754;">NUEVO</strong><br><small class="text-muted">No se encontró solapamiento geométrico con la mega capa</small></td>
                                     <td style="text-align:right; font-weight:700;" id="clasif-sin-matches">—</td>
                                     <td style="text-align:right;" id="clasif-sin-matches-pct">—</td>
                                 </tr>
@@ -1125,8 +1148,32 @@
         document.getElementById('clasif-duplicado-pct').textContent = pct(dup);
         document.getElementById('clasif-duplicado-mismo').textContent = dupMismo.toLocaleString('es-MX');
         document.getElementById('clasif-duplicado-diferente').textContent = dupDiferente.toLocaleString('es-MX');
-        actualizarEstadoSubfiltroDuplicado('btn-dup-mismo', dupMismo, 'Ver solo duplicados de mismo crédito');
-        actualizarEstadoSubfiltroDuplicado('btn-dup-diferente', dupDiferente, 'Ver solo duplicados de diferente crédito');
+        actualizarEstadoSubfiltro('duplicado', 'mismo_credito', 'clasif-duplicado-mismo', dupMismo);
+        actualizarEstadoSubfiltro('duplicado', 'diferente_credito', 'clasif-duplicado-diferente', dupDiferente);
+
+        // Traslape Interno mismo/diferente
+        var tiMismo = Number(result.traslape_interno_mismo_credito || 0);
+        var tiDiferente = Number(result.traslape_interno_diferente_credito || 0);
+        document.getElementById('clasif-ti-mismo').textContent = tiMismo.toLocaleString('es-MX');
+        document.getElementById('clasif-ti-diferente').textContent = tiDiferente.toLocaleString('es-MX');
+        actualizarEstadoSubfiltro('traslape_interno', 'mismo_credito', 'clasif-ti-mismo', tiMismo);
+        actualizarEstadoSubfiltro('traslape_interno', 'diferente_credito', 'clasif-ti-diferente', tiDiferente);
+
+        // Traslape Relevante mismo/diferente
+        var trMismo = Number(result.traslape_relevante_mismo_credito || 0);
+        var trDiferente = Number(result.traslape_relevante_diferente_credito || 0);
+        document.getElementById('clasif-tr-mismo').textContent = trMismo.toLocaleString('es-MX');
+        document.getElementById('clasif-tr-diferente').textContent = trDiferente.toLocaleString('es-MX');
+        actualizarEstadoSubfiltro('traslape_relevante', 'mismo_credito', 'clasif-tr-mismo', trMismo);
+        actualizarEstadoSubfiltro('traslape_relevante', 'diferente_credito', 'clasif-tr-diferente', trDiferente);
+
+        // Sin Conflicto mismo/diferente
+        var scMismo = Number(result.sin_conflicto_mismo_credito || 0);
+        var scDiferente = Number(result.sin_conflicto_diferente_credito || 0);
+        document.getElementById('clasif-sc-mismo').textContent = scMismo.toLocaleString('es-MX');
+        document.getElementById('clasif-sc-diferente').textContent = scDiferente.toLocaleString('es-MX');
+        actualizarEstadoSubfiltro('sin_conflicto', 'mismo_credito', 'clasif-sc-mismo', scMismo);
+        actualizarEstadoSubfiltro('sin_conflicto', 'diferente_credito', 'clasif-sc-diferente', scDiferente);
         document.getElementById('clasif-traslape-int').textContent = ti.toLocaleString('es-MX');
         document.getElementById('clasif-traslape-int-pct').textContent = pct(ti);
         document.getElementById('clasif-traslape-rel').textContent = tr.toLocaleString('es-MX');
@@ -1151,8 +1198,13 @@
         });
     }
 
-    function actualizarEstadoSubfiltroDuplicado(linkId, count, enabledTitle) {
-        var link = document.getElementById(linkId);
+    function actualizarEstadoSubfiltro(clasif, subfiltro, spanId, count) {
+        // Find the link by data attributes
+        var link = document.querySelector('.subfilter-link[data-clasif="' + clasif + '"][data-subfiltro="' + subfiltro + '"]');
+        if (!link) {
+            // Fallback: try the old dup-subfilter-link class
+            link = document.querySelector('.dup-subfilter-link[data-clasif="' + clasif + '"][data-subfiltro="' + subfiltro + '"]');
+        }
         if (!link) return;
 
         var n = Number(count) || 0;
@@ -1161,11 +1213,9 @@
         if (n > 0) {
             link.classList.remove('is-disabled');
             link.removeAttribute('aria-disabled');
-            link.setAttribute('title', enabledTitle);
         } else {
             link.classList.add('is-disabled');
             link.setAttribute('aria-disabled', 'true');
-            link.setAttribute('title', 'Sin polígonos en este subtotal');
         }
     }
 
@@ -1205,7 +1255,7 @@
                 };
 
                 var filterLabel = labels[clasif] || clasif;
-                if (clasif === 'duplicado' && subfiltro && subLabels[subfiltro]) {
+                if (subfiltro && subLabels[subfiltro]) {
                     filterLabel += ' / ' + subLabels[subfiltro];
                 }
 
@@ -1583,20 +1633,15 @@
 
     // Click on classification table rows
     document.addEventListener('click', function(e) {
-        var subfilterLink = e.target.closest('.dup-subfilter-link');
+        var subfilterLink = e.target.closest('.subfilter-link');
         if (subfilterLink) {
             e.preventDefault();
             e.stopPropagation();
-
-            var count = Number(subfilterLink.getAttribute('data-count') || 0);
-            if (count <= 0 || subfilterLink.classList.contains('is-disabled')) {
-                return;
-            }
-
-            var subClasif = subfilterLink.getAttribute('data-clasif');
+            if (subfilterLink.classList.contains('is-disabled')) return;
+            var clasif = subfilterLink.getAttribute('data-clasif');
             var subfiltro = subfilterLink.getAttribute('data-subfiltro');
-            if (subClasif && subfiltro) {
-                filtrarPorClasificacion(subClasif, subfiltro);
+            if (clasif && subfiltro) {
+                filtrarPorClasificacion(clasif, subfiltro);
             }
             return;
         }
