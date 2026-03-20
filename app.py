@@ -4594,6 +4594,7 @@ def obtener_candidatos_nuevos_relacionados(idx, overlap_min_pct=0.1):
         raise ValueError(f'Índice fuera de rango (0-{len(validacion_gdf)-1})')
 
     import pyproj
+    import shapely
     from shapely.ops import transform
 
     cache = _build_nuevos_relacionados_cache()
@@ -4664,6 +4665,7 @@ def obtener_candidatos_nuevos_relacionados(idx, overlap_min_pct=0.1):
             'overlap_pct': round(overlap_pct, 1),
             'relacion_credito': 'mismo_credito' if same_credit else 'diferente_credito',
             'same_credit': same_credit,
+            'geometry': json.loads(shapely.to_geojson(cgeom)),
         })
 
     candidatos.sort(key=lambda x: x['overlap_pct'], reverse=True)

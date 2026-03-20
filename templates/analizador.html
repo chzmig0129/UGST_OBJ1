@@ -693,7 +693,12 @@
 
                     <!-- ── Sección 2: Info del polígono actual ───────────────── -->
                     <div class="panel-section" id="section-info">
-                        <div class="panel-section-title"><i class="bi bi-geo-alt me-1"></i>Polígono Actual</div>
+                        <div class="panel-section-title" style="display:flex; align-items:center; justify-content:space-between;">
+                            <span><i class="bi bi-geo-alt me-1"></i>Polígono Actual</span>
+                            <div class="form-check form-switch" style="margin:0; padding-left:2.5em;">
+                                <input class="form-check-input" type="checkbox" id="toggle-poligono-actual" checked style="cursor:pointer;" title="Mostrar/ocultar en mapa">
+                            </div>
+                        </div>
 
                         <div class="info-label">ID Polígono</div>
                         <div class="info-value" id="info-id-poligon">—</div>
@@ -838,6 +843,7 @@
     var totalPoligonos  = 0;
     var map, poligonoLayer, matchesLayer;
     var matchLayerMap   = [];   // array of {layer, originalStyle} for click-zoom
+    var intraLayers     = [];   // array of {idx, layer, visible} for intra-15K polygon layers
     var mapInitialized  = false;
 
     var filteredIndices = null;  // null = no filter (show all), array = filtered indices
@@ -939,25 +945,105 @@
 
     function poblarListaIntra15k(candidatos) {
         var container = document.getElementById('matches-intra-list');
+        // Remove old intra layers from map
+        intraLayers.forEach(function(il) { if (il.layer) map.removeLayer(il.layer); });
+        intraLayers = [];
+
         if (!candidatos || candidatos.length === 0) {
             container.innerHTML = '<div class="empty-state" style="padding:8px 0; font-size:12px;">Sin traslapes intra-15K</div>';
             return;
         }
         container.innerHTML = '';
-        candidatos.forEach(function(c) {
+
+        // Color palette for intra-15K (distinct from megacapa colors)
+        var intraColors = ['#0d6efd', '#6f42c1', '#20c997', '#e83e8c', '#fd7e14', '#6610f2', '#17a2b8'];
+
+        candidatos.forEach(function(c, i) {
+            var layerColor = intraColors[i % intraColors.length];
+            var borderColor = c.same_credit ? '#0d6efd' : '#6f42c1';
+            var relacionLabel = c.same_credit ? 'Mismo crédito' : 'Diferente crédito';
+
+            // Create map layer if geometry is available
+            var mapLayer = null;
+            if (c.geometry) {
+                var geojsonFeature = {
+                    type: 'Feature',
+                    properties: c,
+                    geometry: c.geometry
+                };
+                var style = {
+                    color: layerColor,
+                    fillColor: layerColor,
+                    weight: 2,
+                    fillOpacity: 0.25,
+                    dashArray: '6 4'  // dashed to distinguish from megacapa
+                };
+                mapLayer = L.geoJSON(geojsonFeature, { style: function() { return style; } });
+                mapLayer.eachLayer(function(l) {
+                    l.bindTooltip(
+                        '<b>INTRA-15K</b><br>' +
+                        '<b>ID:</b> ' + safeVal(c.id_poligon) + '<br>' +
+                        '<b>Crédito:</b> ' + safeVal(c.id_credito) + '<br>' +
+                        '<b>Traslape:</b> ' + fmt(c.overlap_pct, 1) + '%<br>' +
+                        '<b>Superficie:</b> ' + fmt(c.superficie_ha, 4) + ' ha',
+                        { permanent: false, direction: 'auto', opacity: 0.95, className: 'analizador-tooltip' }
+                    );
+                });
+                mapLayer.addTo(map);
+            }
+
+            var intraEntry = { idx: c.idx, layer: mapLayer, visible: true, color: layerColor };
+            intraLayers.push(intraEntry);
+
+            // Build card with toggle
             var card = document.createElement('div');
             card.className = 'match-card';
-            var borderColor = c.same_credit ? '#0d6efd' : '#6f42c1';
-            card.style.borderLeftColor = borderColor;
+            card.style.borderLeftColor = layerColor;
+            card.style.borderLeftWidth = '4px';
 
-            var relacionLabel = c.same_credit ? 'Mismo crédito' : 'Diferente crédito';
-            var badgeColor = c.same_credit ? '#0d6efd' : '#6f42c1';
-
+            var toggleId = 'toggle-intra-' + i;
             card.innerHTML =
-                '<div class="match-id">' + safeVal(c.id_poligon) + '</div>' +
+                '<div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">' +
+                    '<div class="match-id" style="margin-bottom:0;">' + safeVal(c.id_poligon) + '</div>' +
+                    '<div class="form-check form-switch" style="margin:0; padding-left:2.5em;">' +
+                        '<input class="form-check-input" type="checkbox" id="' + toggleId + '" checked style="cursor:pointer;">' +
+                    '</div>' +
+                '</div>' +
                 '<div class="match-meta">Crédito: ' + safeVal(c.id_credito) + '</div>' +
                 '<div class="match-meta">Traslape: <strong>' + fmt(c.overlap_pct, 1) + '%</strong> · Superficie: <strong>' + fmt(c.superficie_ha, 4) + ' ha</strong></div>' +
-                '<span class="match-badge" style="background:' + badgeColor + ';">' + relacionLabel + '</span>';
+                '<div style="display:flex; align-items:center; gap:6px; margin-top:4px;">' +
+                    '<span style="display:inline-block;width:14px;height:3px;background:' + layerColor + ';border-top:2px dashed ' + layerColor + ';"></span>' +
+                    '<span class="match-badge" style="background:' + borderColor + '; font-size:10px;">' + relacionLabel + '</span>' +
+                '</div>';
+
+            // Toggle handler
+            var checkbox = card.querySelector('#' + toggleId);
+            (function(entry, cb) {
+                cb.addEventListener('change', function() {
+                    if (!entry.layer) return;
+                    if (cb.checked) {
+                        entry.layer.addTo(map);
+                        entry.visible = true;
+                    } else {
+                        map.removeLayer(entry.layer);
+                        entry.visible = false;
+                    }
+                });
+            })(intraEntry, checkbox);
+
+            // Click on card (not toggle) → zoom to polygon
+            card.addEventListener('click', function(e) {
+                if (e.target.tagName === 'INPUT') return; // don't zoom on toggle click
+                if (intraEntry.layer && intraEntry.visible) {
+                    try {
+                        map.fitBounds(intraEntry.layer.getBounds(), { padding: [40, 40] });
+                        intraEntry.layer.setStyle({ weight: 4, fillOpacity: 0.5 });
+                        setTimeout(function() {
+                            intraEntry.layer.setStyle({ color: intraEntry.color, fillColor: intraEntry.color, weight: 2, fillOpacity: 0.25, dashArray: '6 4' });
+                        }, 2000);
+                    } catch(e) {}
+                }
+            });
 
             container.appendChild(card);
         });
@@ -1528,14 +1614,23 @@
                 // ── Limpiar capas anteriores ──────────────────────────────
                 if (poligonoLayer) { map.removeLayer(poligonoLayer); poligonoLayer = null; }
                 if (matchesLayer)  { map.removeLayer(matchesLayer);  matchesLayer  = null; }
+                // Remove individual intra layers
+                intraLayers.forEach(function(il) { if (il.layer) map.removeLayer(il.layer); });
+                intraLayers = [];
+                // Remove individual match layers
+                matchLayerMap.forEach(function(ml) { if (ml.layer) map.removeLayer(ml.layer); });
                 matchLayerMap = [];
+
+                // Reset toggle-poligono-actual
+                var toggleActual = document.getElementById('toggle-poligono-actual');
+                if (toggleActual) toggleActual.checked = true;
 
                 // ── Dibujar polígono actual en AZUL ───────────────────────
                 var stylePoligono = {
                     color:       '#0d6efd',
                     fillColor:   '#0d6efd',
                     weight:      3,
-                    fillOpacity: 0.3
+                    fillOpacity: 0.25
                 };
 
                 poligonoLayer = L.geoJSON(data.poligono, {
@@ -1544,55 +1639,50 @@
 
                 poligonoLayer.eachLayer(function (layer) {
                     layer.bindTooltip(
-                        '<b>ID Polígono:</b> ' + safeVal(props.ID_POLIGON) + '<br>' +
-                        '<b>ID Crédito:</b> '  + safeVal(props.ID_CREDITO) + '<br>' +
-                        '<b>Área:</b> '         + (typeof props.area_ha === 'number' ? props.area_ha.toFixed(4) + ' ha' : '—'),
+                        '<b>ACTUAL</b><br>' +
+                        '<b>ID:</b> ' + safeVal(props.ID_POLIGON) + '<br>' +
+                        '<b>Crédito:</b> ' + safeVal(props.ID_CREDITO) + '<br>' +
+                        '<b>Área:</b> ' + (typeof props.area_ha === 'number' ? props.area_ha.toFixed(4) + ' ha' : '—'),
                         { permanent: false, direction: 'auto', opacity: 0.95, className: 'analizador-tooltip' }
                     );
                 });
 
                 poligonoLayer.addTo(map);
 
-                // ── Dibujar matches con sus colores ───────────────────────
-                matchesLayer = L.geoJSON(data.match_features, {
-                    style: function (feature) {
-                        var color = feature.properties.color || '#6c757d';
-                        return {
-                            color:       color,
-                            fillColor:   color,
-                            weight:      2,
-                            fillOpacity: 0.3
-                        };
-                    },
-                    onEachFeature: function (feature, layer) {
-                        var mp = feature.properties;
-                        layer.bindTooltip(
-                            '<b>ID:</b> '           + safeVal(mp.id_poligon)   + '<br>' +
-                            '<b>Crédito:</b> '       + safeVal(mp.id_credito)   + '<br>' +
-                            '<b>Overlap:</b> '       + fmt(mp.overlap_pct, 1)   + '%<br>' +
+                // ── Dibujar matches de megacapa como capas INDIVIDUALES ───
+                var matchFeatures = (data.match_features && data.match_features.features) || [];
+                matchFeatures.forEach(function(feature, i) {
+                    var mp = feature.properties;
+                    var color = mp.color || '#6c757d';
+                    var style = {
+                        color:       color,
+                        fillColor:   color,
+                        weight:      2,
+                        fillOpacity: 0.25
+                    };
+
+                    var layer = L.geoJSON(feature, { style: function() { return style; } });
+                    layer.eachLayer(function(l) {
+                        l.bindTooltip(
+                            '<b>MEGA</b><br>' +
+                            '<b>ID:</b> ' + safeVal(mp.id_poligon) + '<br>' +
+                            '<b>Crédito:</b> ' + safeVal(mp.id_credito) + '<br>' +
+                            '<b>Overlap:</b> ' + fmt(mp.overlap_pct, 1) + '%<br>' +
                             '<b>Clasificación:</b> ' + clasifLabel(mp.clasificacion),
                             { permanent: false, direction: 'auto', opacity: 0.95, className: 'analizador-tooltip' }
                         );
+                    });
+                    layer.addTo(map);
 
-                        // Guardar referencia para click desde lista
-                        matchLayerMap.push({
-                            mega_index:    mp.mega_index,
-                            layer:         layer,
-                            originalStyle: {
-                                color:       mp.color || '#6c757d',
-                                fillColor:   mp.color || '#6c757d',
-                                weight:      2,
-                                fillOpacity: 0.3
-                            }
-                        });
-                    }
+                    matchLayerMap.push({
+                        mega_index:    mp.mega_index,
+                        layer:         layer,
+                        visible:       true,
+                        originalStyle: style,
+                        id_poligon:    mp.id_poligon,
+                        color:         color
+                    });
                 });
-
-                matchesLayer.addTo(map);
-
-                // ── Asegurar que las capas de análisis estén encima ───────
-                if (poligonoLayer) poligonoLayer.bringToFront();
-                if (matchesLayer)  matchesLayer.bringToFront();
 
                 // ── fitBounds al polígono actual ──────────────────────────
                 try {
@@ -1623,36 +1713,68 @@
         var container = document.getElementById('matches-list');
 
         if (!matches || matches.length === 0) {
-            container.innerHTML = '<div class="empty-state"><i class="bi bi-check-circle text-success me-1"></i>Sin matches encontrados</div>';
+            container.innerHTML = '<div class="empty-state"><i class="bi bi-check-circle text-success me-1"></i>Sin matches en Mega Capa</div>';
             return;
         }
 
         container.innerHTML = '';
 
-        matches.forEach(function (m) {
+        matches.forEach(function (m, i) {
             var color      = m.color || '#6c757d';
-            var badgeColor = color;
             var badgeText  = clasifLabel(m.clasificacion);
             var textColor  = (m.clasificacion === 'traslape_interno') ? '#212529' : '#fff';
 
             var card = document.createElement('div');
             card.className = 'match-card';
             card.style.borderLeftColor = color;
+            card.style.borderLeftWidth = '4px';
 
+            var toggleId = 'toggle-mega-' + i;
             card.innerHTML =
-                '<div class="match-id">' + safeVal(m.id_poligon) + '</div>' +
+                '<div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">' +
+                    '<div class="match-id" style="margin-bottom:0;">' + safeVal(m.id_poligon) + '</div>' +
+                    '<div class="form-check form-switch" style="margin:0; padding-left:2.5em;">' +
+                        '<input class="form-check-input" type="checkbox" id="' + toggleId + '" checked style="cursor:pointer;">' +
+                    '</div>' +
+                '</div>' +
                 '<div class="match-meta">Crédito: ' + safeVal(m.id_credito) + '</div>' +
                 '<div class="match-meta">' +
                     'Overlap: <strong>' + fmt(m.overlap_pct, 1) + '%</strong> &nbsp;|&nbsp; ' +
                     'Similitud sup.: <strong>' + fmt(m.area_ratio, 1) + '%</strong>' +
                 '</div>' +
                 '<div class="match-meta">Mismo crédito: <strong>' + (m.same_credit ? 'Sí' : 'No') + '</strong></div>' +
-                '<span class="match-badge" style="background:' + badgeColor + ';color:' + textColor + ';">' +
-                    badgeText +
-                '</span>';
+                '<div style="display:flex; align-items:center; gap:6px; margin-top:4px;">' +
+                    '<span style="display:inline-block;width:14px;height:3px;background:' + color + ';"></span>' +
+                    '<span class="match-badge" style="background:' + color + ';color:' + textColor + ';">' + badgeText + '</span>' +
+                '</div>';
 
-            // Click → zoom al match en el mapa
-            card.addEventListener('click', function () {
+            // Find the corresponding layer in matchLayerMap
+            var matchEntry = null;
+            for (var j = 0; j < matchLayerMap.length; j++) {
+                if (matchLayerMap[j].mega_index === m.mega_index) {
+                    matchEntry = matchLayerMap[j];
+                    break;
+                }
+            }
+
+            // Toggle handler
+            var checkbox = card.querySelector('#' + toggleId);
+            (function(entry, cb) {
+                cb.addEventListener('change', function() {
+                    if (!entry || !entry.layer) return;
+                    if (cb.checked) {
+                        entry.layer.addTo(map);
+                        entry.visible = true;
+                    } else {
+                        map.removeLayer(entry.layer);
+                        entry.visible = false;
+                    }
+                });
+            })(matchEntry, checkbox);
+
+            // Click on card (not toggle) → zoom to match
+            card.addEventListener('click', function(e) {
+                if (e.target.tagName === 'INPUT') return;
                 zoomToMatch(m.mega_index);
             });
 
@@ -1669,24 +1791,17 @@
                 break;
             }
         }
+        if (!entry || !entry.visible) return;
 
-        if (!entry) return;
-
-        var layer = entry.layer;
-        var orig  = entry.originalStyle;
-
-        // Zoom al match
         try {
-            map.fitBounds(layer.getBounds(), { padding: [40, 40] });
+            map.fitBounds(entry.layer.getBounds(), { padding: [40, 40] });
         } catch (e) { /* ignore */ }
 
-        // Resaltar
-        layer.setStyle({ weight: 4, fillOpacity: 0.6 });
-
-        // Restaurar después de 3 segundos
+        entry.layer.setStyle({ weight: 4, fillOpacity: 0.5 });
+        var orig = entry.originalStyle;
         setTimeout(function () {
-            layer.setStyle(orig);
-        }, 3000);
+            entry.layer.setStyle(orig);
+        }, 2000);
     }
 
     // ── Navegación ← → ───────────────────────────────────────────────────────
@@ -1837,6 +1952,16 @@
             if (clasif) {
                 filtrarPorClasificacion(clasif);
             }
+        }
+    });
+
+    // ── Toggle: Polígono Actual ───────────────────────────────────────────────
+    document.getElementById('toggle-poligono-actual').addEventListener('change', function() {
+        if (!poligonoLayer) return;
+        if (this.checked) {
+            poligonoLayer.addTo(map);
+        } else {
+            map.removeLayer(poligonoLayer);
         }
     });
 
