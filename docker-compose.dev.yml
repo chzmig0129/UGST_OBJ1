@@ -1,0 +1,23 @@
+# VALGEOUGST — Development docker-compose override
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# This file overrides the production compose for local development:
+#   - Runs Flask dev server instead of gunicorn (auto-reload on code changes)
+#   - Exposes PostgreSQL port 5432 for local DB tools (TablePlus, psql, etc.)
+#   - Removes nginx (access the app directly on port 8000)
+
+version: "3.9"
+
+services:
+  web:
+    command: python -m flask run --host=0.0.0.0 --port=8000 --debug
+    environment:
+      FLASK_ENV: development
+      FLASK_DEBUG: "1"
+    volumes:
+      # Mount source code for live reload during development
+      - .:/app
+
+  db:
+    ports:
+      - "5432:5432"

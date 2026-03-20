@@ -1,0 +1,37 @@
+# VALGEOUGST — Docker build context exclusions
+# These paths are excluded from the Docker build context to keep the image lean
+# and to avoid leaking secrets or unnecessary files into the container.
+
+# Python virtual environment — never copy into image; pip install from requirements.txt
+.venv/
+
+# Git history — not needed in the image
+.git/
+
+# Python bytecode cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environment secrets — injected at runtime via env_file in docker-compose.yml
+.env
+
+# Flask instance folder (contains local SQLite DB and instance config)
+instance/
+
+# User-uploaded files — mounted as a volume at runtime
+uploads/
+
+# Beads issue tracking data — not needed in the image
+.beads/
+
+# Debug artifacts
+debug/
+
+# macOS metadata
+.DS_Store
+
+# Editor/IDE directories
+.vscode/
+.idea/
