@@ -963,6 +963,50 @@
             var borderColor = c.same_credit ? '#0d6efd' : '#6f42c1';
             var relacionLabel = c.same_credit ? 'Mismo crédito' : 'Diferente crédito';
 
+            // Determine estatus display
+            var estatusIntra = c.estatus_intra || '';
+            var estatusBadge = '';
+            if (estatusIntra === 'NUEVO') {
+                estatusBadge = '<span class="badge" style="background:#198754; font-size:10px; margin-left:6px;">NUEVO</span>';
+            } else if (estatusIntra === 'VINCULAR') {
+                estatusBadge = '<span class="badge" style="background:#0d6efd; font-size:10px; margin-left:6px;">VINCULAR</span>';
+            }
+
+            var vinculadoInfo = '';
+            if (estatusIntra === 'VINCULAR' && c.id_poligono_unico_intra) {
+                vinculadoInfo = '<div class="match-meta" style="color:#0d6efd;"><i class="bi bi-link-45deg"></i> → ' + safeVal(c.id_poligono_unico_intra) + '</div>';
+            } else if (estatusIntra === 'NUEVO') {
+                vinculadoInfo = '<div class="match-meta" style="color:#198754;"><i class="bi bi-star-fill"></i> Polígono principal del grupo</div>';
+            }
+
+            // Determine layer style based on estatus
+            var style;
+            if (estatusIntra === 'NUEVO') {
+                style = {
+                    color: '#198754',
+                    fillColor: '#198754',
+                    weight: 3,
+                    fillOpacity: 0.15,
+                    dashArray: null  // solid line for principal
+                };
+            } else if (estatusIntra === 'VINCULAR') {
+                style = {
+                    color: '#0d6efd',
+                    fillColor: '#0d6efd',
+                    weight: 2,
+                    fillOpacity: 0.15,
+                    dashArray: '8 4'  // dashed for linked
+                };
+            } else {
+                style = {
+                    color: layerColor,
+                    fillColor: layerColor,
+                    weight: 2,
+                    fillOpacity: 0.25,
+                    dashArray: '6 4'
+                };
+            }
+
             // Create map layer if geometry is available
             var mapLayer = null;
             if (c.geometry) {
@@ -971,17 +1015,12 @@
                     properties: c,
                     geometry: c.geometry
                 };
-                var style = {
-                    color: layerColor,
-                    fillColor: layerColor,
-                    weight: 2,
-                    fillOpacity: 0.25,
-                    dashArray: '6 4'  // dashed to distinguish from megacapa
-                };
                 mapLayer = L.geoJSON(geojsonFeature, { style: function() { return style; } });
                 mapLayer.eachLayer(function(l) {
+                    var tooltipEstatus = c.estatus_intra ? ('<b>Estatus:</b> ' + c.estatus_intra + '<br>') : '';
                     l.bindTooltip(
                         '<b>INTRA-15K</b><br>' +
+                        tooltipEstatus +
                         '<b>ID:</b> ' + safeVal(c.id_poligon) + '<br>' +
                         '<b>Crédito:</b> ' + safeVal(c.id_credito) + '<br>' +
                         '<b>Traslape:</b> ' + fmt(c.overlap_pct, 1) + '%<br>' +
@@ -992,27 +1031,31 @@
                 mapLayer.addTo(map);
             }
 
-            var intraEntry = { idx: c.idx, layer: mapLayer, visible: true, color: layerColor };
+            var intraEntry = { idx: c.idx, layer: mapLayer, visible: true, color: style.color, style: style };
             intraLayers.push(intraEntry);
 
             // Build card with toggle
             var card = document.createElement('div');
             card.className = 'match-card';
-            card.style.borderLeftColor = layerColor;
+            card.style.borderLeftColor = style.color;
             card.style.borderLeftWidth = '4px';
 
             var toggleId = 'toggle-intra-' + i;
             card.innerHTML =
                 '<div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">' +
-                    '<div class="match-id" style="margin-bottom:0;">' + safeVal(c.id_poligon) + '</div>' +
+                    '<div style="display:flex; align-items:center;">' +
+                        '<div class="match-id" style="margin-bottom:0;">' + safeVal(c.id_poligon) + '</div>' +
+                        estatusBadge +
+                    '</div>' +
                     '<div class="form-check form-switch" style="margin:0; padding-left:2.5em;">' +
                         '<input class="form-check-input" type="checkbox" id="' + toggleId + '" checked style="cursor:pointer;">' +
                     '</div>' +
                 '</div>' +
+                vinculadoInfo +
                 '<div class="match-meta">Crédito: ' + safeVal(c.id_credito) + '</div>' +
                 '<div class="match-meta">Traslape: <strong>' + fmt(c.overlap_pct, 1) + '%</strong> · Superficie: <strong>' + fmt(c.superficie_ha, 4) + ' ha</strong></div>' +
                 '<div style="display:flex; align-items:center; gap:6px; margin-top:4px;">' +
-                    '<span style="display:inline-block;width:14px;height:3px;background:' + layerColor + ';border-top:2px dashed ' + layerColor + ';"></span>' +
+                    '<span style="display:inline-block;width:14px;height:3px;background:' + style.color + ';border-top:2px dashed ' + style.color + ';"></span>' +
                     '<span class="match-badge" style="background:' + borderColor + '; font-size:10px;">' + relacionLabel + '</span>' +
                 '</div>';
 
@@ -1039,7 +1082,7 @@
                         map.fitBounds(intraEntry.layer.getBounds(), { padding: [40, 40] });
                         intraEntry.layer.setStyle({ weight: 4, fillOpacity: 0.5 });
                         setTimeout(function() {
-                            intraEntry.layer.setStyle({ color: intraEntry.color, fillColor: intraEntry.color, weight: 2, fillOpacity: 0.25, dashArray: '6 4' });
+                            intraEntry.layer.setStyle(intraEntry.style);
                         }, 2000);
                     } catch(e) {}
                 }
@@ -1098,6 +1141,34 @@
                 }
                 document.getElementById('info-id-unico-propuesto').textContent = safeVal(propuesta.id_poligono_unico_propuesto);
                 document.getElementById('info-superficie-calculada').textContent = formatSuperficie(propuesta.superficie_chapingo_propuesta);
+
+                // ── Show group context if available ───────────────────────
+                var clasifIntra = payload.clasificacion_intra;
+                var grupoNote = document.getElementById('info-grupo-context');
+                if (!grupoNote) {
+                    // Create it if it doesn't exist yet
+                    grupoNote = document.createElement('div');
+                    grupoNote.id = 'info-grupo-context';
+                    grupoNote.style.cssText = 'font-size:11px; margin-top:4px; padding:4px 8px; border-radius:4px;';
+                    document.getElementById('info-estatus-propuesto').parentNode.appendChild(grupoNote);
+                }
+                if (clasifIntra && clasifIntra.grupo_tipo === 'mismo_credito') {
+                    if (clasifIntra.estatus === 'NUEVO') {
+                        grupoNote.style.display = 'block';
+                        grupoNote.style.background = '#d1e7dd';
+                        grupoNote.style.color = '#0f5132';
+                        grupoNote.innerHTML = '<i class="bi bi-star-fill me-1"></i>Principal del grupo (mayor superficie)';
+                    } else if (clasifIntra.estatus === 'VINCULAR') {
+                        grupoNote.style.display = 'block';
+                        grupoNote.style.background = '#cfe2ff';
+                        grupoNote.style.color = '#084298';
+                        grupoNote.innerHTML = '<i class="bi bi-link-45deg me-1"></i>Vinculado a ' + safeVal(clasifIntra.id_poligono_unico);
+                    } else {
+                        grupoNote.style.display = 'none';
+                    }
+                } else {
+                    grupoNote.style.display = 'none';
+                }
 
                 // ── Populate intra-15K matches list ───────────────────────
                 poblarListaIntra15k(candidatos);

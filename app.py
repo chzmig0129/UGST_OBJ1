@@ -5254,6 +5254,21 @@ def api_analizador_propuesta_editable(idx):
             'reglas_disparadas': ['indice_fuera_subconjunto_nuevos']
         }
 
+    # Enrich candidatos_intra_15k with classification data from cache
+    if _intra_15k_clasif_cache is not None:
+        clasif_map = _intra_15k_clasif_cache.get('clasificacion_por_idx', {})
+        for c in candidatos_intra_15k:
+            c_clasif = clasif_map.get(c['idx'], {})
+            c['estatus_intra'] = c_clasif.get('estatus')  # 'NUEVO' or 'VINCULAR'
+            c['id_poligono_unico_intra'] = c_clasif.get('id_poligono_unico')
+            c['superficie_calculada_intra'] = c_clasif.get('superficie_calculada')
+            c['grupo_tipo'] = c_clasif.get('grupo_tipo')  # 'mismo_credito', 'diferente_credito', 'sin_grupo'
+
+    # Compute current polygon's intra classification
+    clasificacion_actual = None
+    if _intra_15k_clasif_cache is not None:
+        clasificacion_actual = _intra_15k_clasif_cache.get('clasificacion_por_idx', {}).get(idx)
+
     return jsonify({
         'index': idx,
         'total': len(validacion_gdf),
@@ -5267,6 +5282,7 @@ def api_analizador_propuesta_editable(idx):
         'candidatos_intra_15k': candidatos_intra_15k,
         'propuesta': propuesta,
         'guardado': guardado,
+        'clasificacion_intra': clasificacion_actual,  # {estatus, id_poligono_unico, superficie_calculada, grupo_tipo} or None
     })
 
 
