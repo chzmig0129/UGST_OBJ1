@@ -27,12 +27,14 @@ import shutil
 import math
 
 app = Flask(__name__)
-app.config['UPLOAD_FOLDER'] = 'uploads'
-app.secret_key = 'tu_clave_secreta_aqui'  # Cambia esto en producción
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB límite
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///poligonos.db'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['JSON_AS_ASCII'] = False  # Permitir caracteres UTF-8 en respuestas JSON
+
+# Load configuration from the appropriate config class.
+# Set FLASK_ENV or FLASK_CONFIG to 'production' / 'testing' to switch.
+from config import get_config  # noqa: E402
+app.config.from_object(get_config())
+
+# SECRET_KEY must be set on app.secret_key as well for Flask session signing.
+app.secret_key = app.config['SECRET_KEY']
 
 # Añadir filtro personalizado para slice
 @app.template_filter('slice')
