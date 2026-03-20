@@ -268,6 +268,21 @@
         color: #495057;
     }
 
+    #chapingo-candidatos-list {
+        margin: 0;
+        padding-left: 18px;
+    }
+
+    #chapingo-candidatos-list li {
+        margin-bottom: 4px;
+        color: #495057;
+    }
+
+    .chapingo-note {
+        font-size: 11px;
+        color: #6c757d;
+    }
+
     /* ── Dashboard de Estatus ──────────────────────────────────────────────── */
     .dashboard-stats {
         display: grid;
@@ -757,6 +772,9 @@
                             </div>
 
                             <div class="chapingo-readonly mt-2">
+                                <div class="small text-muted mb-1">Estado de captura</div>
+                                <div class="chapingo-note mb-2" id="chapingo-input-source">Inicializando...</div>
+
                                 <div class="small text-muted mb-1">Propuesta automática</div>
                                 <div class="chapingo-kv">
                                     <div class="k">Estatus</div>
@@ -769,6 +787,23 @@
                                 <div class="small text-muted mb-1">Reglas disparadas</div>
                                 <ul id="chapingo-reglas-list">
                                     <li>Sin reglas disponibles</li>
+                                </ul>
+
+                                <div class="small text-muted mt-2 mb-1">Último guardado</div>
+                                <div class="chapingo-kv">
+                                    <div class="k">Estatus</div>
+                                    <div class="v" id="chapingo-guardado-estatus">—</div>
+                                    <div class="k">ID único</div>
+                                    <div class="v" id="chapingo-guardado-id">—</div>
+                                    <div class="k">Superficie</div>
+                                    <div class="v" id="chapingo-guardado-superficie">—</div>
+                                    <div class="k">Comentario</div>
+                                    <div class="v" id="chapingo-guardado-comentario">—</div>
+                                </div>
+
+                                <div class="small text-muted mb-1">Candidatos intra-15K</div>
+                                <ul id="chapingo-candidatos-list">
+                                    <li>Sin candidatos relacionados</li>
                                 </ul>
                             </div>
                         </form>
@@ -837,6 +872,8 @@
     var filteredPos     = 0;     // current position within filteredIndices
     var activeFilter    = null;  // 'nuevos' | 'existentes' | null
     var chapingoRequestToken = 0;
+    var chapingoPanelLoadedIdx = null;
+    var chapingoFormDirty = false;
 
     // ── Variables para capas de fondo ─────────────────────────────────────────
     let validacionBgLayer  = null;
@@ -899,6 +936,44 @@
         return (v === null || v === undefined) ? '' : String(v);
     }
 
+    function hasValor(v) {
+        return !(v === null || v === undefined || v === '');
+    }
+
+    function formatSuperficie(v) {
+        if (typeof v === 'number') return v.toFixed(4) + ' ha';
+        if (v === null || v === undefined || v === '') return '—';
+        var n = Number(v);
+        return isNaN(n) ? safeVal(v) : n.toFixed(4) + ' ha';
+    }
+
+    function hayGuardadoChapingo(guardado) {
+        return hasValor(guardado.estatus_chapingo) ||
+            hasValor(guardado.id_poligono_unico) ||
+            hasValor(guardado.superficie_chapingo) ||
+            hasValor(guardado.comentario_chapingo);
+    }
+
+    function setCandidatosIntra15k(candidatos) {
+        var list = document.getElementById('chapingo-candidatos-list');
+        list.innerHTML = '';
+
+        if (!Array.isArray(candidatos) || candidatos.length === 0) {
+            list.innerHTML = '<li>Sin candidatos relacionados</li>';
+            return;
+        }
+
+        candidatos.forEach(function(c) {
+            var li = document.createElement('li');
+            var creditoLabel = c.same_credit ? 'mismo crédito' : 'diferente crédito';
+            li.textContent =
+                '#' + safeVal(c.idx) + ' | ' + safeVal(c.id_poligon) +
+                ' | overlap ' + safeVal(c.overlap_pct) + '% | ' +
+                creditoLabel + ' | ' + formatSuperficie(c.superficie_ha);
+            list.appendChild(li);
+        });
+    }
+
     function setPropuestaReglas(reglas) {
         var list = document.getElementById('chapingo-reglas-list');
         list.innerHTML = '';
@@ -920,12 +995,15 @@
         var loadingEl = document.getElementById('chapingo-loading');
         var noAplicaEl = document.getElementById('chapingo-no-aplica');
         var formEl = document.getElementById('chapingo-form');
+        var preserveUserDraft = chapingoPanelLoadedIdx === idx && chapingoFormDirty;
 
         loadingEl.style.display = 'block';
         noAplicaEl.style.display = 'none';
         noAplicaEl.textContent = '';
         noAplicaEl.className = 'alert alert-info py-2 px-2 mb-2';
-        formEl.style.display = 'none';
+        if (!preserveUserDraft) {
+            formEl.style.display = 'none';
+        }
 
         fetch('/api/analizador/propuesta-editable/' + idx)
             .then(function(r) {
@@ -936,34 +1014,62 @@
                 if (token !== chapingoRequestToken) return;
 
                 var propuesta = payload.propuesta || {};
+                var guardado = payload.guardado || {};
+                var candidatos = payload.candidatos_intra_15k || [];
                 var esNuevo = Boolean(payload.es_nuevo) && Boolean(propuesta.aplica);
 
                 if (!esNuevo) {
                     noAplicaEl.textContent = propuesta.comentario_chapingo_propuesto || 'Este índice no pertenece al subconjunto de nuevos. El formulario editable de decisión Chapingo no aplica para este polígono.';
                     noAplicaEl.style.display = 'block';
+                    chapingoPanelLoadedIdx = idx;
+                    chapingoFormDirty = false;
                     return;
                 }
 
                 formEl.style.display = 'block';
 
-                document.getElementById('chapingo-estatus').value = valorEditable(propuesta.estatus_chapingo_propuesto);
-                document.getElementById('chapingo-id-unico').value = valorEditable(propuesta.id_poligono_unico_propuesto);
-                document.getElementById('chapingo-superficie').value = valorEditable(propuesta.superficie_chapingo_propuesta);
-                document.getElementById('chapingo-comentario').value = valorEditable(propuesta.comentario_chapingo_propuesto);
+                var usarGuardado = hayGuardadoChapingo(guardado);
+
+                document.getElementById('chapingo-estatus').value = valorEditable(
+                    usarGuardado ? guardado.estatus_chapingo : propuesta.estatus_chapingo_propuesto
+                );
+                document.getElementById('chapingo-id-unico').value = valorEditable(
+                    usarGuardado ? guardado.id_poligono_unico : propuesta.id_poligono_unico_propuesto
+                );
+                document.getElementById('chapingo-superficie').value = valorEditable(
+                    usarGuardado ? guardado.superficie_chapingo : propuesta.superficie_chapingo_propuesta
+                );
+                document.getElementById('chapingo-comentario').value = valorEditable(
+                    usarGuardado ? guardado.comentario_chapingo : propuesta.comentario_chapingo_propuesto
+                );
+
+                document.getElementById('chapingo-input-source').textContent = usarGuardado
+                    ? 'Inputs inicializados desde el guardado previo; la propuesta automática se mantiene como referencia.'
+                    : 'Sin guardado previo; inputs inicializados desde la propuesta automática.';
 
                 document.getElementById('chapingo-propuesta-estatus').textContent = safeVal(propuesta.estatus_chapingo_propuesto);
                 document.getElementById('chapingo-propuesta-id').textContent = safeVal(propuesta.id_poligono_unico_propuesto);
-                document.getElementById('chapingo-propuesta-superficie').textContent =
-                    (typeof propuesta.superficie_chapingo_propuesta === 'number')
-                        ? propuesta.superficie_chapingo_propuesta.toFixed(4) + ' ha'
-                        : safeVal(propuesta.superficie_chapingo_propuesta);
+                document.getElementById('chapingo-propuesta-superficie').textContent = formatSuperficie(propuesta.superficie_chapingo_propuesta);
+
+                document.getElementById('chapingo-guardado-estatus').textContent = safeVal(guardado.estatus_chapingo);
+                document.getElementById('chapingo-guardado-id').textContent = safeVal(guardado.id_poligono_unico);
+                document.getElementById('chapingo-guardado-superficie').textContent = formatSuperficie(guardado.superficie_chapingo);
+                document.getElementById('chapingo-guardado-comentario').textContent = safeVal(guardado.comentario_chapingo);
 
                 setPropuestaReglas(propuesta.reglas_disparadas);
+                setCandidatosIntra15k(candidatos);
+
+                chapingoPanelLoadedIdx = idx;
+                chapingoFormDirty = false;
             })
             .catch(function(err) {
                 if (token !== chapingoRequestToken) return;
 
                 noAplicaEl.textContent = 'No fue posible cargar la propuesta editable de Chapingo: ' + err.message;
+                if (preserveUserDraft) {
+                    noAplicaEl.textContent += ' Se mantienen tus cambios actuales en el formulario.';
+                    formEl.style.display = 'block';
+                }
                 noAplicaEl.className = 'alert alert-warning py-2 px-2 mb-2';
                 noAplicaEl.style.display = 'block';
             })
@@ -1717,6 +1823,17 @@
 
     document.getElementById('btn-iniciar-clasif').addEventListener('click', function() {
         iniciarClasificacion();
+    });
+
+    ['chapingo-estatus', 'chapingo-id-unico', 'chapingo-superficie', 'chapingo-comentario'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        el.addEventListener('input', function() {
+            chapingoFormDirty = true;
+        });
+        el.addEventListener('change', function() {
+            chapingoFormDirty = true;
+        });
     });
 
     // ── Carga inicial ─────────────────────────────────────────────────────────
