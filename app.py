@@ -4702,6 +4702,48 @@ def calcular_traslapes(idx):
     }
 
 
+def obtener_guardado_validacion_15k(idx):
+    """Return persisted 15K validation row mapped to stable keys."""
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            'SELECT * FROM validacion_15k WHERE idx = ?', (idx,)
+        ).fetchone()
+    finally:
+        conn.close()
+
+    if row is None:
+        return {
+            'estatus': 'pendiente',
+            'estatus_chapingo': None,
+            'id_poligono_unico': None,
+            'superficie_chapingo': None,
+            'comentario_chapingo': None,
+            'id_poligon_historico': None,
+            'mega_idx': None,
+            'overlap_pct': None,
+            'fecha_validacion': None
+        }
+
+    return {
+        'estatus': row['estatus'],
+        'estatus_chapingo': row['estatus_chapingo'],
+        'id_poligono_unico': row['id_poligono_unico'],
+        'superficie_chapingo': row['superficie_chapingo'],
+        'comentario_chapingo': row['comentario_chapingo'],
+        'id_poligon_historico': row['id_poligon_historico'],
+        'mega_idx': row['mega_idx'],
+        'overlap_pct': row['overlap_pct'],
+        'fecha_validacion': row['fecha_validacion']
+    }
+
+
+def indice_pertenece_a_nuevos(idx):
+    """Return True when idx belongs to the computed subset 'nuevos'."""
+    cache = _build_nuevos_relacionados_cache()
+    return int(idx) in cache['nuevos_indices_set']
+
+
 @app.route('/api/analizador/poligono/<int:idx>')
 def api_analizador_poligono(idx):
     try:
@@ -4718,6 +4760,66 @@ def api_analizador_poligono(idx):
         'matches': data['matches'],
         'match_features': data['match_features'],
         'resumen': data['resumen']
+    })
+
+
+@app.route('/api/analizador/propuesta-editable/<int:idx>')
+def api_analizador_propuesta_editable(idx):
+    """Return complete editable payload for Analizador proposal panel."""
+    try:
+        analisis_mega = calcular_traslapes(idx)
+        es_nuevo = indice_pertenece_a_nuevos(idx)
+    except RuntimeError as e:
+        return jsonify({'error': str(e)}), 500
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
+    guardado = obtener_guardado_validacion_15k(idx)
+
+    if es_nuevo:
+        try:
+            candidatos_intra_15k = obtener_candidatos_nuevos_relacionados(idx)
+        except Exception as e:
+            candidatos_intra_15k = []
+            propuesta = {
+                'aplica': True,
+                'estatus_chapingo_propuesto': None,
+                'id_poligono_unico_propuesto': None,
+                'superficie_chapingo_propuesta': None,
+                'comentario_chapingo_propuesto': f'No fue posible generar propuesta automatica: {str(e)}',
+                'reglas_disparadas': ['error_generando_propuesta']
+            }
+        else:
+            propuesta = generar_propuesta_chapingo_nuevo(
+                idx,
+                analisis_mega=analisis_mega,
+                candidatos_intra_15k=candidatos_intra_15k
+            )
+            propuesta['aplica'] = True
+    else:
+        candidatos_intra_15k = []
+        propuesta = {
+            'aplica': False,
+            'estatus_chapingo_propuesto': None,
+            'id_poligono_unico_propuesto': None,
+            'superficie_chapingo_propuesta': None,
+            'comentario_chapingo_propuesto': 'El indice no pertenece al subconjunto nuevos; propuesta automatica no aplica.',
+            'reglas_disparadas': ['indice_fuera_subconjunto_nuevos']
+        }
+
+    return jsonify({
+        'index': idx,
+        'total': len(validacion_gdf),
+        'es_nuevo': es_nuevo,
+        'poligono': analisis_mega['poligono'],
+        'analisis_mega': {
+            'matches': analisis_mega['matches'],
+            'match_features': analisis_mega['match_features'],
+            'resumen': analisis_mega['resumen'],
+        },
+        'candidatos_intra_15k': candidatos_intra_15k,
+        'propuesta': propuesta,
+        'guardado': guardado,
     })
 
 
@@ -5059,36 +5161,8 @@ def api_validacion_15k_estado(idx):
     if idx < 0 or idx >= len(validacion_gdf):
         return jsonify({'error': f'idx fuera de rango (0-{len(validacion_gdf)-1})'}), 400
 
-    conn = get_db_connection()
-    try:
-        row = conn.execute(
-            'SELECT * FROM validacion_15k WHERE idx = ?', (idx,)
-        ).fetchone()
-    finally:
-        conn.close()
-
-    if row is None:
-        return jsonify({
-            'idx': idx,
-            'estatus': 'pendiente',
-            'estatus_chapingo': None,
-            'id_poligono_unico': None,
-            'superficie_chapingo': None,
-            'comentario_chapingo': None,
-        })
-
-    return jsonify({
-        'idx': idx,
-        'estatus': row['estatus'],
-        'estatus_chapingo': row['estatus_chapingo'],
-        'id_poligono_unico': row['id_poligono_unico'],
-        'superficie_chapingo': row['superficie_chapingo'],
-        'comentario_chapingo': row['comentario_chapingo'],
-        'id_poligon_historico': row['id_poligon_historico'],
-        'mega_idx': row['mega_idx'],
-        'overlap_pct': row['overlap_pct'],
-        'fecha_validacion': row['fecha_validacion']
-    })
+    guardado = obtener_guardado_validacion_15k(idx)
+    return jsonify({'idx': idx, **guardado})
 
 
 @app.route('/api/validacion-15k/poligono/<int:idx>')
@@ -5101,39 +5175,7 @@ def api_validacion_15k_poligono(idx):
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
 
-    # Fetch saved validation status
-    conn = get_db_connection()
-    try:
-        row = conn.execute(
-            'SELECT * FROM validacion_15k WHERE idx = ?', (idx,)
-        ).fetchone()
-    finally:
-        conn.close()
-
-    if row is None:
-        validacion = {
-            'estatus': 'pendiente',
-            'estatus_chapingo': None,
-            'id_poligono_unico': None,
-            'superficie_chapingo': None,
-            'comentario_chapingo': None,
-            'id_poligon_historico': None,
-            'mega_idx': None,
-            'overlap_pct': None,
-            'fecha_validacion': None
-        }
-    else:
-        validacion = {
-            'estatus': row['estatus'],
-            'estatus_chapingo': row['estatus_chapingo'],
-            'id_poligono_unico': row['id_poligono_unico'],
-            'superficie_chapingo': row['superficie_chapingo'],
-            'comentario_chapingo': row['comentario_chapingo'],
-            'id_poligon_historico': row['id_poligon_historico'],
-            'mega_idx': row['mega_idx'],
-            'overlap_pct': row['overlap_pct'],
-            'fecha_validacion': row['fecha_validacion']
-        }
+    validacion = obtener_guardado_validacion_15k(idx)
 
     # Auto-suggestion based on overlap analysis
     matches = data['matches']
