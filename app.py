@@ -117,6 +117,7 @@ except Exception as e:
 _dashboard_cache = None
 _indices_filtrados_cache = None
 _clasif_nuevos_state = {'status': 'idle', 'progress': 0, 'processed': 0, 'total': 0, 'result': None, 'indices_por_clasif': None, 'error': None}
+_nuevos_relacionados_cache = None
 
 # Función para obtener municipio y estado desde coordenadas
 def obtener_ubicacion(lat, lon):
@@ -4333,6 +4334,127 @@ def clasificar_traslape(overlap_pct, area_ratio, same_credit):
             return 'traslape_relevante', '#fd7e14', 'Traslape relevante - revisar'
         else:
             return 'sin_conflicto', '#28a745', 'Sin conflicto'
+
+
+def _build_nuevos_relacionados_cache():
+    """Build/cache spatial structures for validacion polygons marked as nuevos."""
+    global _nuevos_relacionados_cache, _indices_filtrados_cache
+
+    if validacion_gdf is None or mega_gdf is None:
+        raise RuntimeError('Shapefiles no cargados')
+
+    if _nuevos_relacionados_cache is not None:
+        return _nuevos_relacionados_cache
+
+    if _indices_filtrados_cache is not None and 'nuevos' in _indices_filtrados_cache:
+        nuevos_indices = [int(i) for i in _indices_filtrados_cache['nuevos']]
+    else:
+        mega_ids = set(mega_gdf['ID_POLIGON'].astype(str).str.strip())
+        mask_nuevos = ~validacion_gdf['ID_POLIGON'].astype(str).str.strip().isin(mega_ids)
+        nuevos_indices = [int(i) for i in validacion_gdf.index[mask_nuevos]]
+
+    nuevos_gdf = validacion_gdf.iloc[nuevos_indices].copy()
+    nuevos_gdf['__src_idx__'] = nuevos_indices
+
+    try:
+        nuevos_sindex = nuevos_gdf.sindex
+    except Exception:
+        nuevos_sindex = None
+
+    _nuevos_relacionados_cache = {
+        'nuevos_indices_set': set(nuevos_indices),
+        'nuevos_gdf': nuevos_gdf,
+        'nuevos_sindex': nuevos_sindex,
+    }
+    return _nuevos_relacionados_cache
+
+
+def obtener_candidatos_nuevos_relacionados(idx, overlap_min_pct=0.1):
+    """Return intra-15K related candidates for a new polygon index.
+
+    The result excludes the same idx and only includes polygons from the
+    `nuevos` subset of validacion_gdf.
+    """
+    if validacion_gdf is None or mega_gdf is None:
+        raise RuntimeError('Shapefiles no cargados')
+    if idx < 0 or idx >= len(validacion_gdf):
+        raise ValueError(f'Índice fuera de rango (0-{len(validacion_gdf)-1})')
+
+    import pyproj
+    from shapely.ops import transform
+
+    cache = _build_nuevos_relacionados_cache()
+    if idx not in cache['nuevos_indices_set']:
+        return []
+
+    vrow = validacion_gdf.iloc[idx]
+    vgeom = vrow.geometry
+    if vgeom is None or vgeom.is_empty:
+        return []
+
+    centroid = vgeom.centroid
+    utm_zone = int((centroid.x + 180) / 6) + 1
+    transformer = pyproj.Transformer.from_crs('EPSG:4326', f'EPSG:326{utm_zone:02d}', always_xy=True)
+    vgeom_utm = transform(transformer.transform, vgeom)
+    area_v = vgeom_utm.area
+    if area_v <= 0:
+        return []
+
+    nuevos_gdf = cache['nuevos_gdf']
+    nuevos_sindex = cache['nuevos_sindex']
+
+    if nuevos_sindex is not None:
+        subset_positions = list(nuevos_sindex.intersection(vgeom.bounds))
+        if not subset_positions:
+            return []
+        subset = nuevos_gdf.iloc[subset_positions]
+    else:
+        subset = nuevos_gdf
+
+    candidatos = []
+    id_credito_base = str(vrow.get('ID_CREDITO', '') or '').strip()
+
+    for _, crow in subset.iterrows():
+        cidx = int(crow.get('__src_idx__', -1))
+        if cidx == idx:
+            continue
+
+        cgeom = crow.geometry
+        if cgeom is None or cgeom.is_empty:
+            continue
+        if not vgeom.intersects(cgeom):
+            continue
+
+        intersection = vgeom.intersection(cgeom)
+        if intersection.is_empty:
+            continue
+
+        cgeom_utm = transform(transformer.transform, cgeom)
+        intersection_utm = transform(transformer.transform, intersection)
+        area_c = cgeom_utm.area
+        area_inter = intersection_utm.area
+        if area_c <= 0 or area_inter <= 0:
+            continue
+
+        overlap_pct = (area_inter / area_v * 100) if area_v > 0 else 0.0
+        if overlap_pct < overlap_min_pct:
+            continue
+
+        id_credito_candidato = str(crow.get('ID_CREDITO', '') or '').strip()
+        same_credit = id_credito_base == id_credito_candidato
+
+        candidatos.append({
+            'idx': cidx,
+            'id_poligon': str(crow.get('ID_POLIGON', '') or ''),
+            'id_credito': id_credito_candidato,
+            'superficie_ha': round(area_c / 10000, 4),
+            'overlap_pct': round(overlap_pct, 1),
+            'relacion_credito': 'mismo_credito' if same_credit else 'diferente_credito',
+            'same_credit': same_credit,
+        })
+
+    candidatos.sort(key=lambda x: x['overlap_pct'], reverse=True)
+    return candidatos
 
 
 @app.route('/api/analizador/total')
