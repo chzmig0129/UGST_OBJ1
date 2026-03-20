@@ -4573,6 +4573,112 @@ def generar_propuesta_chapingo_nuevo(idx, analisis_mega=None, candidatos_intra_1
     return propuesta
 
 
+def construir_evidencia_flujo_chapingo():
+    """Build reproducible evidence for key Chapingo flow scenarios."""
+    if validacion_gdf is None or mega_gdf is None:
+        raise RuntimeError('Shapefiles no cargados')
+
+    cache = _build_nuevos_relacionados_cache()
+    nuevos_set = cache['nuevos_indices_set']
+
+    escenarios = {
+        'nuevo_sin_conflictos': None,
+        'nuevo_conflicto_mismo_credito': None,
+        'nuevo_conflicto_diferente_credito': None,
+        'indice_no_nuevo_panel_no_aplica': None,
+    }
+
+    for idx in range(len(validacion_gdf)):
+        if all(v is not None for v in escenarios.values()):
+            break
+
+        es_nuevo = idx in nuevos_set
+
+        if not es_nuevo and escenarios['indice_no_nuevo_panel_no_aplica'] is None:
+            escenarios['indice_no_nuevo_panel_no_aplica'] = {
+                'idx': int(idx),
+                'es_nuevo': False,
+                'aplica_panel_editable': False,
+                'justificacion': 'El indice no pertenece al subconjunto nuevos; propuesta automatica no aplica.'
+            }
+            continue
+
+        if not es_nuevo:
+            continue
+
+        analisis_mega = calcular_traslapes(idx)
+        if analisis_mega.get('matches'):
+            continue
+
+        candidatos = obtener_candidatos_nuevos_relacionados(idx)
+        propuesta = generar_propuesta_chapingo_nuevo(
+            idx,
+            analisis_mega=analisis_mega,
+            candidatos_intra_15k=candidatos,
+        )
+        reglas = propuesta.get('reglas_disparadas') or []
+
+        mismos_credito = [c for c in candidatos if c.get('same_credit')]
+        diferentes_credito = [c for c in candidatos if not c.get('same_credit')]
+
+        if escenarios['nuevo_sin_conflictos'] is None and not candidatos:
+            escenarios['nuevo_sin_conflictos'] = {
+                'idx': int(idx),
+                'es_nuevo': True,
+                'estatus_propuesto': propuesta.get('estatus_chapingo_propuesto'),
+                'id_poligono_unico_propuesto': propuesta.get('id_poligono_unico_propuesto'),
+                'reglas_disparadas': reglas,
+                'cumple': (
+                    propuesta.get('estatus_chapingo_propuesto') == 'NUEVO'
+                    and 'sin_conflicto_intra_15k' in reglas
+                )
+            }
+
+        if escenarios['nuevo_conflicto_mismo_credito'] is None and mismos_credito:
+            superficie_base = (analisis_mega.get('poligono') or {}).get('properties', {}).get('area_ha')
+            ranking = [{'idx': int(idx), 'id_poligon': str(validacion_gdf.iloc[idx].get('ID_POLIGON', '') or ''), 'superficie_ha': superficie_base}]
+            ranking.extend({
+                'idx': int(c.get('idx')),
+                'id_poligon': str(c.get('id_poligon', '') or ''),
+                'superficie_ha': c.get('superficie_ha')
+            } for c in mismos_credito)
+            ranking_valid = [r for r in ranking if r.get('superficie_ha') is not None]
+            ganador = max(ranking_valid, key=lambda r: r['superficie_ha']) if ranking_valid else None
+
+            if ganador is not None and int(ganador['idx']) != int(idx):
+                escenarios['nuevo_conflicto_mismo_credito'] = {
+                    'idx': int(idx),
+                    'es_nuevo': True,
+                    'estatus_propuesto': propuesta.get('estatus_chapingo_propuesto'),
+                    'id_poligono_unico_propuesto': propuesta.get('id_poligono_unico_propuesto'),
+                    'ganador_esperado': ganador.get('id_poligon'),
+                    'reglas_disparadas': reglas,
+                    'cumple': (
+                        propuesta.get('estatus_chapingo_propuesto') == 'VINCULAR'
+                        and propuesta.get('id_poligono_unico_propuesto') == ganador.get('id_poligon')
+                    )
+                }
+
+        if (
+            escenarios['nuevo_conflicto_diferente_credito'] is None
+            and diferentes_credito
+            and not mismos_credito
+        ):
+            escenarios['nuevo_conflicto_diferente_credito'] = {
+                'idx': int(idx),
+                'es_nuevo': True,
+                'estatus_propuesto': propuesta.get('estatus_chapingo_propuesto'),
+                'id_poligono_unico_propuesto': propuesta.get('id_poligono_unico_propuesto'),
+                'reglas_disparadas': reglas,
+                'cumple': (
+                    propuesta.get('estatus_chapingo_propuesto') == 'NUEVO'
+                    and 'diferente_credito_no_fuerza_vinculacion' in reglas
+                )
+            }
+
+    return escenarios
+
+
 @app.route('/api/analizador/total')
 def api_analizador_total():
     if validacion_gdf is None:
@@ -4859,6 +4965,30 @@ def api_analizador_propuesta_editable(idx):
         'candidatos_intra_15k': candidatos_intra_15k,
         'propuesta': propuesta,
         'guardado': guardado,
+    })
+
+
+@app.route('/api/analizador/chapingo-evidencia')
+def api_analizador_chapingo_evidencia():
+    """Expose reproducible evidence for critical Chapingo flow scenarios."""
+    try:
+        escenarios = construir_evidencia_flujo_chapingo()
+    except RuntimeError as e:
+        return jsonify({'error': str(e)}), 500
+    except Exception as e:
+        return jsonify({'error': f'No fue posible generar evidencia Chapingo: {str(e)}'}), 500
+
+    faltantes = [k for k, v in escenarios.items() if v is None]
+    escenarios_fallidos = [
+        k for k, v in escenarios.items()
+        if isinstance(v, dict) and v.get('cumple') is False
+    ]
+
+    return jsonify({
+        'ok': not faltantes and not escenarios_fallidos,
+        'escenarios': escenarios,
+        'faltantes': faltantes,
+        'fallidos': escenarios_fallidos,
     })
 
 

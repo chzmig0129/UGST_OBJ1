@@ -836,6 +836,17 @@
                                 <ul id="chapingo-candidatos-list">
                                     <li>Sin candidatos intra-15K relacionados para este polígono.</li>
                                 </ul>
+
+                                <div class="small text-muted mt-2 mb-1">Evidencia rápida (4 escenarios)</div>
+                                <div class="d-flex align-items-center gap-2 mb-1">
+                                    <button id="chapingo-btn-verificar-evidencia" type="button" class="btn btn-sm btn-outline-secondary">
+                                        Verificar flujo Chapingo
+                                    </button>
+                                    <small id="chapingo-evidencia-estado" class="text-muted">Sin ejecutar</small>
+                                </div>
+                                <ul id="chapingo-evidencia-list">
+                                    <li class="text-muted">Ejecuta la verificación para obtener evidencia reproducible.</li>
+                                </ul>
                             </div>
                         </form>
                     </div>
@@ -906,6 +917,7 @@
     var chapingoPanelLoadedIdx = null;
     var chapingoFormDirty = false;
     var chapingoSaveInFlight = false;
+    var chapingoEvidenciaInFlight = false;
 
     // ── Variables para capas de fondo ─────────────────────────────────────────
     let validacionBgLayer  = null;
@@ -1058,6 +1070,97 @@
             li.textContent = regla;
             list.appendChild(li);
         });
+    }
+
+    function setEstadoEvidenciaChapingo(isRunning, text) {
+        chapingoEvidenciaInFlight = isRunning;
+        var btn = document.getElementById('chapingo-btn-verificar-evidencia');
+        var estado = document.getElementById('chapingo-evidencia-estado');
+        btn.disabled = isRunning;
+        estado.textContent = text || (isRunning ? 'Ejecutando...' : 'Sin ejecutar');
+        estado.className = isRunning ? 'text-muted' : estado.className;
+    }
+
+    function renderEvidenciaChapingo(payload) {
+        var list = document.getElementById('chapingo-evidencia-list');
+        var estado = document.getElementById('chapingo-evidencia-estado');
+        list.innerHTML = '';
+
+        var escenarios = (payload && payload.escenarios) ? payload.escenarios : {};
+        var etiquetas = {
+            nuevo_sin_conflictos: 'Nuevo sin conflictos',
+            nuevo_conflicto_mismo_credito: 'Nuevo con conflicto mismo crédito',
+            nuevo_conflicto_diferente_credito: 'Nuevo con conflicto diferente crédito',
+            indice_no_nuevo_panel_no_aplica: 'Índice no nuevo (panel no aplica)'
+        };
+
+        Object.keys(etiquetas).forEach(function(key) {
+            var ev = escenarios[key];
+            var li = document.createElement('li');
+
+            if (!ev) {
+                li.innerHTML = '<strong>' + etiquetas[key] + ':</strong> no encontrado';
+                list.appendChild(li);
+                return;
+            }
+
+            var idxLabel = hasValor(ev.idx) ? ('idx #' + ev.idx) : 'sin idx';
+            var cumple = (ev.cumple !== false);
+            var estadoCaso = cumple ? 'OK' : 'REVISAR';
+            var detalle = '';
+
+            if (key === 'indice_no_nuevo_panel_no_aplica') {
+                detalle = 'aplica_panel_editable=' + String(Boolean(ev.aplica_panel_editable));
+            } else if (key === 'nuevo_conflicto_mismo_credito') {
+                detalle = 'estatus=' + safeVal(ev.estatus_propuesto) + ' | propuesto=' + safeVal(ev.id_poligono_unico_propuesto) + ' | ganador=' + safeVal(ev.ganador_esperado);
+            } else {
+                detalle = 'estatus=' + safeVal(ev.estatus_propuesto) + ' | id=' + safeVal(ev.id_poligono_unico_propuesto);
+            }
+
+            li.innerHTML = '<strong>' + etiquetas[key] + ':</strong> ' + estadoCaso + ' (' + idxLabel + ') · ' + detalle;
+            list.appendChild(li);
+        });
+
+        if (payload && payload.ok) {
+            estado.textContent = '4/4 escenarios validados';
+            estado.className = 'text-success';
+        } else {
+            var faltantes = Array.isArray(payload && payload.faltantes) ? payload.faltantes.length : 0;
+            var fallidos = Array.isArray(payload && payload.fallidos) ? payload.fallidos.length : 0;
+            estado.textContent = 'Pendientes: ' + (faltantes + fallidos);
+            estado.className = 'text-warning';
+        }
+    }
+
+    function verificarEvidenciaChapingo() {
+        if (chapingoEvidenciaInFlight) return;
+        setEstadoEvidenciaChapingo(true, 'Ejecutando evidencia...');
+
+        fetch('/api/analizador/chapingo-evidencia')
+            .then(function(r) {
+                return r.json().catch(function() { return {}; }).then(function(data) {
+                    if (!r.ok) {
+                        var err = new Error(data.error || ('HTTP ' + r.status));
+                        throw err;
+                    }
+                    return data;
+                });
+            })
+            .then(function(data) {
+                renderEvidenciaChapingo(data);
+            })
+            .catch(function(err) {
+                var estado = document.getElementById('chapingo-evidencia-estado');
+                var list = document.getElementById('chapingo-evidencia-list');
+                estado.textContent = 'Error al verificar';
+                estado.className = 'text-danger';
+                list.innerHTML = '<li class="text-danger">No fue posible generar evidencia: ' + err.message + '</li>';
+            })
+            .finally(function() {
+                if (!chapingoEvidenciaInFlight) return;
+                chapingoEvidenciaInFlight = false;
+                document.getElementById('chapingo-btn-verificar-evidencia').disabled = false;
+            });
     }
 
     function actualizarPanelChapingo(idx) {
@@ -1968,6 +2071,10 @@
             .finally(function() {
                 setEstadoGuardadoChapingo(false);
             });
+    });
+
+    document.getElementById('chapingo-btn-verificar-evidencia').addEventListener('click', function() {
+        verificarEvidenciaChapingo();
     });
 
     // ── Carga inicial ─────────────────────────────────────────────────────────
