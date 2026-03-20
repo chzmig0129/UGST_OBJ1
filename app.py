@@ -114,51 +114,13 @@ excel_data = {
 if not os.path.exists(app.config['UPLOAD_FOLDER']):
     os.makedirs(app.config['UPLOAD_FOLDER'])
 
-# Eliminar la base de datos existente para forzar recreación
-db_path = 'poligonos.db'
-if os.path.exists(db_path):
-    try:
-        os.remove(db_path)
-        print(f"Base de datos eliminada: {db_path}")
-    except Exception as e:
-        print(f"No se pudo eliminar la base de datos: {e}")
-
-# Crear todas las tablas de la base de datos
+# Crear tablas que no existan todavía — nunca elimina datos existentes.
 with app.app_context():
     try:
-        inspector = db.inspect(db.engine)
-        columns = inspector.get_columns('poligono')
-        column_names = [col['name'] for col in columns]
-        print(f"Columnas existentes en la tabla 'poligono': {column_names}")
-        
-        # Verificar que existan las columnas esperadas (NUEVA ESTRUCTURA)
-        required_db_columns = {
-            'id', 'id_poligono', 'if_val', 'id_credito', 'id_persona',
-            'superficie', 'estado', 'municipio', 'coordenadas',
-            'coordenadas_corregidas', 'area_digitalizada', 'estatus',
-            'comentarios', 'descripcion', 'orden', 'se_modifico', 'fecha_creacion', 'fecha_modificacion'
-        }
-        current_db_columns = set(column_names)
-        
-        if current_db_columns != required_db_columns:
-            print("Estructura de tabla desactualizada o incorrecta. Recreando tablas...")
-            db.drop_all()
-            db.create_all()
-            print("Tablas recreadas correctamente con la nueva estructura.")
-        else:
-            print("Estructura de tabla correcta.")
-            
+        db.create_all()
+        print("Base de datos inicializada (db.create_all completado).")
     except Exception as e:
-        print(f"Error al verificar/crear estructura de la base de datos: {e}")
-        print("Intentando crear las tablas de todos modos...")
-        # Si hay error (p.ej., la tabla no existe), intentamos crearla
-        try:
-            db.create_all()
-            print("db.create_all() ejecutado.")
-        except Exception as create_e:
-            print(f"Error fatal al intentar crear las tablas: {create_e}")
-
-    print("Base de datos inicializada.")
+        print(f"Error al inicializar la base de datos: {e}")
 
 # ==============================================
 # Funciones para procesamiento de coordenadas
