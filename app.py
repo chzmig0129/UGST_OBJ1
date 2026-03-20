@@ -4744,6 +4744,45 @@ def indice_pertenece_a_nuevos(idx):
     return int(idx) in cache['nuevos_indices_set']
 
 
+def _normalizar_texto_chapingo(value, field_name):
+    """Normalize optional Chapingo text values and validate payload types."""
+    if value is None:
+        return None
+    if isinstance(value, (dict, list, tuple, set)):
+        raise ValueError(f'{field_name} debe ser texto')
+    text = str(value).strip()
+    return text or None
+
+
+def _normalizar_superficie_chapingo(value):
+    """Validate and normalize optional Chapingo area value."""
+    if value in (None, ''):
+        return None
+
+    try:
+        superficie = float(value)
+    except (TypeError, ValueError):
+        raise ValueError('superficie_chapingo debe ser numerica positiva')
+
+    if math.isnan(superficie) or math.isinf(superficie) or superficie <= 0:
+        raise ValueError('superficie_chapingo debe ser numerica positiva')
+
+    return round(superficie, 4)
+
+
+def _requiere_vinculacion_chapingo(idx, estatus_chapingo):
+    """Determine if an index requires linked polygon id for Chapingo decision."""
+    if estatus_chapingo == 'VINCULAR':
+        return True
+
+    try:
+        propuesta = generar_propuesta_chapingo_nuevo(idx)
+    except Exception:
+        return False
+
+    return propuesta.get('estatus_chapingo_propuesto') == 'VINCULAR'
+
+
 @app.route('/api/analizador/poligono/<int:idx>')
 def api_analizador_poligono(idx):
     try:
@@ -4820,6 +4859,80 @@ def api_analizador_propuesta_editable(idx):
         'candidatos_intra_15k': candidatos_intra_15k,
         'propuesta': propuesta,
         'guardado': guardado,
+    })
+
+
+@app.route('/api/analizador/propuesta-editable/<int:idx>/guardar', methods=['POST'])
+def api_analizador_guardar_propuesta_editable(idx):
+    """Save editable Chapingo decision values for a single index."""
+    if validacion_gdf is None:
+        return jsonify({'error': 'Shapefiles no cargados'}), 500
+    if idx < 0 or idx >= len(validacion_gdf):
+        return jsonify({'error': f'idx fuera de rango (0-{len(validacion_gdf)-1})'}), 400
+
+    data = request.get_json(force=True, silent=True) or {}
+
+    estatus_raw = data.get('estatus_chapingo')
+    if estatus_raw is None:
+        return jsonify({'error': 'estatus_chapingo es requerido'}), 400
+
+    estatus_chapingo = str(estatus_raw).strip().upper()
+    if not estatus_chapingo:
+        return jsonify({'error': 'estatus_chapingo no puede estar vacio'}), 400
+
+    try:
+        id_poligono_unico = _normalizar_texto_chapingo(
+            data.get('id_poligono_unico'),
+            'id_poligono_unico'
+        )
+        comentario_chapingo = _normalizar_texto_chapingo(
+            data.get('comentario_chapingo'),
+            'comentario_chapingo'
+        )
+        superficie_chapingo = _normalizar_superficie_chapingo(
+            data.get('superficie_chapingo')
+        )
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
+    if _requiere_vinculacion_chapingo(idx, estatus_chapingo) and not id_poligono_unico:
+        return jsonify({
+            'error': 'id_poligono_unico es requerido cuando la propuesta requiere vinculacion'
+        }), 400
+
+    conn = get_db_connection()
+    try:
+        conn.execute(
+            '''INSERT INTO validacion_15k
+               (idx, estatus_chapingo, id_poligono_unico, superficie_chapingo, comentario_chapingo)
+               VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT(idx) DO UPDATE SET
+                   estatus_chapingo = excluded.estatus_chapingo,
+                   id_poligono_unico = excluded.id_poligono_unico,
+                   superficie_chapingo = excluded.superficie_chapingo,
+                   comentario_chapingo = excluded.comentario_chapingo''',
+            (
+                idx,
+                estatus_chapingo,
+                id_poligono_unico,
+                superficie_chapingo,
+                comentario_chapingo,
+            )
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    guardado = obtener_guardado_validacion_15k(idx)
+    return jsonify({
+        'success': True,
+        'idx': idx,
+        'guardado': {
+            'estatus_chapingo': guardado['estatus_chapingo'],
+            'id_poligono_unico': guardado['id_poligono_unico'],
+            'superficie_chapingo': guardado['superficie_chapingo'],
+            'comentario_chapingo': guardado['comentario_chapingo'],
+        }
     })
 
 
