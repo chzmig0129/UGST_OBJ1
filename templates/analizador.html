@@ -771,6 +771,17 @@
                                 <textarea id="chapingo-comentario" rows="3" class="form-control form-control-sm" placeholder="Observaciones de validación..."></textarea>
                             </div>
 
+                            <div id="chapingo-form-error" class="alert alert-danger py-2 px-2 mb-2" style="display:none; font-size:12px;"></div>
+                            <div id="chapingo-form-success" class="alert alert-success py-2 px-2 mb-2" style="display:none; font-size:12px;"></div>
+
+                            <div class="d-flex align-items-center gap-2 mb-2">
+                                <button id="chapingo-btn-guardar" type="submit" class="btn btn-sm btn-primary">
+                                    <span class="spinner-border spinner-border-sm me-1" id="chapingo-save-spinner" role="status" aria-hidden="true" style="display:none;"></span>
+                                    Guardar decisión
+                                </button>
+                                <small class="text-muted" id="chapingo-save-hint">Los valores guardados se mantienen en este índice.</small>
+                            </div>
+
                             <div class="chapingo-readonly mt-2">
                                 <div class="small text-muted mb-1">Estado de captura</div>
                                 <div class="chapingo-note mb-2" id="chapingo-input-source">Inicializando...</div>
@@ -874,6 +885,7 @@
     var chapingoRequestToken = 0;
     var chapingoPanelLoadedIdx = null;
     var chapingoFormDirty = false;
+    var chapingoSaveInFlight = false;
 
     // ── Variables para capas de fondo ─────────────────────────────────────────
     let validacionBgLayer  = null;
@@ -954,6 +966,35 @@
             hasValor(guardado.comentario_chapingo);
     }
 
+    function actualizarGuardadoChapingo(guardado) {
+        var data = guardado || {};
+        document.getElementById('chapingo-guardado-estatus').textContent = safeVal(data.estatus_chapingo);
+        document.getElementById('chapingo-guardado-id').textContent = safeVal(data.id_poligono_unico);
+        document.getElementById('chapingo-guardado-superficie').textContent = formatSuperficie(data.superficie_chapingo);
+        document.getElementById('chapingo-guardado-comentario').textContent = safeVal(data.comentario_chapingo);
+    }
+
+    function limpiarMensajesChapingo() {
+        var errorEl = document.getElementById('chapingo-form-error');
+        var successEl = document.getElementById('chapingo-form-success');
+        errorEl.style.display = 'none';
+        successEl.style.display = 'none';
+        errorEl.textContent = '';
+        successEl.textContent = '';
+    }
+
+    function setEstadoGuardadoChapingo(isSaving) {
+        chapingoSaveInFlight = isSaving;
+        var btn = document.getElementById('chapingo-btn-guardar');
+        var spinner = document.getElementById('chapingo-save-spinner');
+        var hint = document.getElementById('chapingo-save-hint');
+        btn.disabled = isSaving;
+        spinner.style.display = isSaving ? 'inline-block' : 'none';
+        hint.textContent = isSaving
+            ? 'Guardando decisión...'
+            : 'Los valores guardados se mantienen en este índice.';
+    }
+
     function setCandidatosIntra15k(candidatos) {
         var list = document.getElementById('chapingo-candidatos-list');
         list.innerHTML = '';
@@ -997,6 +1038,8 @@
         var formEl = document.getElementById('chapingo-form');
         var preserveUserDraft = chapingoPanelLoadedIdx === idx && chapingoFormDirty;
 
+        limpiarMensajesChapingo();
+        setEstadoGuardadoChapingo(false);
         loadingEl.style.display = 'block';
         noAplicaEl.style.display = 'none';
         noAplicaEl.textContent = '';
@@ -1051,10 +1094,7 @@
                 document.getElementById('chapingo-propuesta-id').textContent = safeVal(propuesta.id_poligono_unico_propuesto);
                 document.getElementById('chapingo-propuesta-superficie').textContent = formatSuperficie(propuesta.superficie_chapingo_propuesta);
 
-                document.getElementById('chapingo-guardado-estatus').textContent = safeVal(guardado.estatus_chapingo);
-                document.getElementById('chapingo-guardado-id').textContent = safeVal(guardado.id_poligono_unico);
-                document.getElementById('chapingo-guardado-superficie').textContent = formatSuperficie(guardado.superficie_chapingo);
-                document.getElementById('chapingo-guardado-comentario').textContent = safeVal(guardado.comentario_chapingo);
+                actualizarGuardadoChapingo(guardado);
 
                 setPropuestaReglas(propuesta.reglas_disparadas);
                 setCandidatosIntra15k(candidatos);
@@ -1830,10 +1870,75 @@
         if (!el) return;
         el.addEventListener('input', function() {
             chapingoFormDirty = true;
+            limpiarMensajesChapingo();
         });
         el.addEventListener('change', function() {
             chapingoFormDirty = true;
+            limpiarMensajesChapingo();
         });
+    });
+
+    document.getElementById('chapingo-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        if (chapingoSaveInFlight || chapingoPanelLoadedIdx === null) return;
+
+        limpiarMensajesChapingo();
+        setEstadoGuardadoChapingo(true);
+
+        var superficieRaw = document.getElementById('chapingo-superficie').value;
+        var payload = {
+            estatus_chapingo: document.getElementById('chapingo-estatus').value,
+            id_poligono_unico: document.getElementById('chapingo-id-unico').value,
+            superficie_chapingo: superficieRaw === '' ? null : Number(superficieRaw),
+            comentario_chapingo: document.getElementById('chapingo-comentario').value,
+        };
+
+        fetch('/api/analizador/propuesta-editable/' + chapingoPanelLoadedIdx + '/guardar', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        })
+            .then(function(r) {
+                return r.json().catch(function() { return {}; }).then(function(data) {
+                    if (!r.ok) {
+                        var err = new Error(data.error || ('HTTP ' + r.status));
+                        err.status = r.status;
+                        throw err;
+                    }
+                    return data;
+                });
+            })
+            .then(function(data) {
+                var guardado = (data && data.guardado) ? data.guardado : {};
+
+                document.getElementById('chapingo-estatus').value = valorEditable(guardado.estatus_chapingo);
+                document.getElementById('chapingo-id-unico').value = valorEditable(guardado.id_poligono_unico);
+                document.getElementById('chapingo-superficie').value = valorEditable(guardado.superficie_chapingo);
+                document.getElementById('chapingo-comentario').value = valorEditable(guardado.comentario_chapingo);
+                actualizarGuardadoChapingo(guardado);
+
+                document.getElementById('chapingo-input-source').textContent =
+                    'Inputs actualizados desde el guardado normalizado del backend.';
+
+                var successEl = document.getElementById('chapingo-form-success');
+                successEl.textContent = 'Decisión guardada correctamente.';
+                successEl.style.display = 'block';
+                chapingoFormDirty = false;
+            })
+            .catch(function(err) {
+                var errorEl = document.getElementById('chapingo-form-error');
+                if (err.status === 400) {
+                    errorEl.textContent = 'Validación: ' + err.message;
+                } else {
+                    errorEl.textContent = 'No fue posible guardar la decisión: ' + err.message;
+                }
+                errorEl.style.display = 'block';
+            })
+            .finally(function() {
+                setEstadoGuardadoChapingo(false);
+            });
     });
 
     // ── Carga inicial ─────────────────────────────────────────────────────────
