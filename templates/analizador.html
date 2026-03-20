@@ -458,78 +458,6 @@
                     </div>
                 </div>
 
-                <!-- Clasificación Intra-15K -->
-                <div id="intra-15k-section" style="margin-top: 24px;">
-                    <h5 class="mb-3" style="color: #212529; font-weight: 700;">
-                        <i class="bi bi-diagram-3 me-2 text-primary"></i>Clasificación Intra-15K — Polígonos Nuevos
-                    </h5>
-                    <p class="text-muted mb-3" style="font-size: 13px;">
-                        Análisis de traslapes entre los polígonos nuevos por ID Crédito.
-                    </p>
-
-                    <!-- Button to start -->
-                    <div id="intra-idle">
-                        <button class="btn btn-primary" id="btn-iniciar-intra">
-                            <i class="bi bi-play-fill me-1"></i>Iniciar Análisis Intra-15K
-                        </button>
-                        <span class="text-muted ms-2" style="font-size: 12px;">Agrupa polígonos nuevos por crédito y traslape.</span>
-                    </div>
-
-                    <!-- Progress -->
-                    <div id="intra-running" style="display:none;">
-                        <div class="d-flex align-items-center gap-3 mb-2">
-                            <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
-                            <span class="small fw-bold">Agrupando polígonos...</span>
-                            <span class="small text-muted" id="intra-progress-text">0%</span>
-                        </div>
-                        <div class="progress" style="height: 10px; max-width: 700px;">
-                            <div class="progress-bar bg-primary progress-bar-striped progress-bar-animated" id="intra-progress-bar" role="progressbar" style="width:0%"></div>
-                        </div>
-                    </div>
-
-                    <!-- Results table -->
-                    <div id="intra-done" style="display:none;">
-                        <table class="table table-bordered" style="max-width: 700px;">
-                            <thead class="table-light">
-                                <tr>
-                                    <th style="width:40px;"></th>
-                                    <th>Clasificación</th>
-                                    <th style="width:100px; text-align:right;">Polígonos</th>
-                                    <th style="width:80px; text-align:right;">Grupos</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr class="intra-row" data-tipo="mismo_credito" style="cursor:pointer;">
-                                    <td><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:#0d6efd;"></span></td>
-                                    <td><strong>Mismo Crédito</strong><br><small class="text-muted">Polígonos con mismo ID_CREDITO traslapados. El de mayor superficie = NUEVO, resto = VINCULAR</small></td>
-                                    <td style="text-align:right; font-weight:700;" id="intra-mismo-poligonos">—</td>
-                                    <td style="text-align:right;" id="intra-mismo-grupos">—</td>
-                                </tr>
-                                <tr class="intra-row" data-tipo="diferente_credito" style="cursor:pointer;">
-                                    <td><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:#6f42c1;"></span></td>
-                                    <td><strong>Diferente Crédito</strong><br><small class="text-muted">Polígonos con diferente ID_CREDITO traslapados. Todos se mantienen como NUEVO</small></td>
-                                    <td style="text-align:right; font-weight:700;" id="intra-diferente-poligonos">—</td>
-                                    <td style="text-align:right;" id="intra-diferente-grupos">—</td>
-                                </tr>
-                                <tr class="intra-row" data-tipo="sin_grupo" style="cursor:pointer;">
-                                    <td><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:#28a745;"></span></td>
-                                    <td><strong>Sin Traslape Intra-15K</strong><br><small class="text-muted">Polígonos sin traslape con otros nuevos</small></td>
-                                    <td style="text-align:right; font-weight:700;" id="intra-sin-grupo">—</td>
-                                    <td style="text-align:right;">—</td>
-                                </tr>
-                            </tbody>
-                            <tfoot class="table-light">
-                                <tr>
-                                    <td></td>
-                                    <td><strong>Resumen</strong></td>
-                                    <td style="text-align:right;">NUEVO: <strong id="intra-total-nuevo">—</strong> | VINCULAR: <strong id="intra-total-vincular">—</strong></td>
-                                    <td></td>
-                                </tr>
-                            </tfoot>
-                        </table>
-                    </div>
-                </div>
-
                 <!-- Clasificación de traslapes para Nuevos -->
                 <div id="clasif-section" style="margin-top: 24px;">
                     <h5 class="mb-3" style="color: #212529; font-weight: 700;">
@@ -771,26 +699,9 @@
 
                     <!-- ── Sección 5: Polígonos Traslapados ─────────────────── -->
                     <div class="panel-section" id="section-matches">
-                        <div class="panel-section-title"><i class="bi bi-layers me-1"></i>Polígonos Traslapados</div>
-
-                        <!-- Intra-15K subsection -->
-                        <div id="matches-intra-15k" class="mb-2">
-                            <div class="small text-muted fw-bold mb-1" style="font-size:10px; text-transform:uppercase; letter-spacing:0.05em;">
-                                <i class="bi bi-diagram-3 me-1"></i>Intra-15K (mismos nuevos)
-                            </div>
-                            <div id="matches-intra-list">
-                                <div class="empty-state" style="padding:8px 0; font-size:12px;">Sin traslapes intra-15K</div>
-                            </div>
-                        </div>
-
-                        <!-- Megacapa subsection -->
-                        <div id="matches-mega">
-                            <div class="small text-muted fw-bold mb-1" style="font-size:10px; text-transform:uppercase; letter-spacing:0.05em;">
-                                <i class="bi bi-archive me-1"></i>Mega Capa (histórico)
-                            </div>
-                            <div id="matches-list">
-                                <div class="empty-state" style="padding:8px 0; font-size:12px;">Sin matches en Mega Capa</div>
-                            </div>
+                        <div class="panel-section-title"><i class="bi bi-layers me-1"></i>Polígonos Traslapados (Mega Capa)</div>
+                        <div id="matches-list">
+                            <div class="empty-state" style="padding:8px 0; font-size:12px;">Cargando...</div>
                         </div>
                     </div>
 
@@ -843,7 +754,6 @@
     var totalPoligonos  = 0;
     var map, poligonoLayer, matchesLayer;
     var matchLayerMap   = [];   // array of {layer, originalStyle} for click-zoom
-    var intraLayers     = [];   // array of {idx, layer, visible} for intra-15K polygon layers
     var mapInitialized  = false;
 
     var filteredIndices = null;  // null = no filter (show all), array = filtered indices
@@ -943,155 +853,6 @@
         spinner.style.display = isSaving ? 'inline-block' : 'none';
     }
 
-    function poblarListaIntra15k(candidatos) {
-        var container = document.getElementById('matches-intra-list');
-        // Remove old intra layers from map
-        intraLayers.forEach(function(il) { if (il.layer) map.removeLayer(il.layer); });
-        intraLayers = [];
-
-        if (!candidatos || candidatos.length === 0) {
-            container.innerHTML = '<div class="empty-state" style="padding:8px 0; font-size:12px;">Sin traslapes intra-15K</div>';
-            return;
-        }
-        container.innerHTML = '';
-
-        // Color palette for intra-15K (distinct from megacapa colors)
-        var intraColors = ['#0d6efd', '#6f42c1', '#20c997', '#e83e8c', '#fd7e14', '#6610f2', '#17a2b8'];
-
-        candidatos.forEach(function(c, i) {
-            var layerColor = intraColors[i % intraColors.length];
-            var borderColor = c.same_credit ? '#0d6efd' : '#6f42c1';
-            var relacionLabel = c.same_credit ? 'Mismo crédito' : 'Diferente crédito';
-
-            // Determine estatus display
-            var estatusIntra = c.estatus_intra || '';
-            var estatusBadge = '';
-            if (estatusIntra === 'NUEVO') {
-                estatusBadge = '<span class="badge" style="background:#198754; font-size:10px; margin-left:6px;">NUEVO</span>';
-            } else if (estatusIntra === 'VINCULAR') {
-                estatusBadge = '<span class="badge" style="background:#0d6efd; font-size:10px; margin-left:6px;">VINCULAR</span>';
-            }
-
-            var vinculadoInfo = '';
-            if (estatusIntra === 'VINCULAR' && c.id_poligono_unico_intra) {
-                vinculadoInfo = '<div class="match-meta" style="color:#0d6efd;"><i class="bi bi-link-45deg"></i> → ' + safeVal(c.id_poligono_unico_intra) + '</div>';
-            } else if (estatusIntra === 'NUEVO') {
-                vinculadoInfo = '<div class="match-meta" style="color:#198754;"><i class="bi bi-star-fill"></i> Polígono principal del grupo</div>';
-            }
-
-            // Determine layer style based on estatus
-            var style;
-            if (estatusIntra === 'NUEVO') {
-                style = {
-                    color: '#198754',
-                    fillColor: '#198754',
-                    weight: 3,
-                    fillOpacity: 0.15,
-                    dashArray: null  // solid line for principal
-                };
-            } else if (estatusIntra === 'VINCULAR') {
-                style = {
-                    color: '#0d6efd',
-                    fillColor: '#0d6efd',
-                    weight: 2,
-                    fillOpacity: 0.15,
-                    dashArray: '8 4'  // dashed for linked
-                };
-            } else {
-                style = {
-                    color: layerColor,
-                    fillColor: layerColor,
-                    weight: 2,
-                    fillOpacity: 0.25,
-                    dashArray: '6 4'
-                };
-            }
-
-            // Create map layer if geometry is available
-            var mapLayer = null;
-            if (c.geometry) {
-                var geojsonFeature = {
-                    type: 'Feature',
-                    properties: c,
-                    geometry: c.geometry
-                };
-                mapLayer = L.geoJSON(geojsonFeature, { style: function() { return style; } });
-                mapLayer.eachLayer(function(l) {
-                    var tooltipEstatus = c.estatus_intra ? ('<b>Estatus:</b> ' + c.estatus_intra + '<br>') : '';
-                    l.bindTooltip(
-                        '<b>INTRA-15K</b><br>' +
-                        tooltipEstatus +
-                        '<b>ID:</b> ' + safeVal(c.id_poligon) + '<br>' +
-                        '<b>Crédito:</b> ' + safeVal(c.id_credito) + '<br>' +
-                        '<b>Traslape:</b> ' + fmt(c.overlap_pct, 1) + '%<br>' +
-                        '<b>Superficie:</b> ' + fmt(c.superficie_ha, 4) + ' ha',
-                        { permanent: false, direction: 'auto', opacity: 0.95, className: 'analizador-tooltip' }
-                    );
-                });
-                mapLayer.addTo(map);
-            }
-
-            var intraEntry = { idx: c.idx, layer: mapLayer, visible: true, color: style.color, style: style };
-            intraLayers.push(intraEntry);
-
-            // Build card with toggle
-            var card = document.createElement('div');
-            card.className = 'match-card';
-            card.style.borderLeftColor = style.color;
-            card.style.borderLeftWidth = '4px';
-
-            var toggleId = 'toggle-intra-' + i;
-            card.innerHTML =
-                '<div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">' +
-                    '<div style="display:flex; align-items:center;">' +
-                        '<div class="match-id" style="margin-bottom:0;">' + safeVal(c.id_poligon) + '</div>' +
-                        estatusBadge +
-                    '</div>' +
-                    '<div class="form-check form-switch" style="margin:0; padding-left:2.5em;">' +
-                        '<input class="form-check-input" type="checkbox" id="' + toggleId + '" checked style="cursor:pointer;">' +
-                    '</div>' +
-                '</div>' +
-                vinculadoInfo +
-                '<div class="match-meta">Crédito: ' + safeVal(c.id_credito) + '</div>' +
-                '<div class="match-meta">Traslape: <strong>' + fmt(c.overlap_pct, 1) + '%</strong> · Superficie: <strong>' + fmt(c.superficie_ha, 4) + ' ha</strong></div>' +
-                '<div style="display:flex; align-items:center; gap:6px; margin-top:4px;">' +
-                    '<span style="display:inline-block;width:14px;height:3px;background:' + style.color + ';border-top:2px dashed ' + style.color + ';"></span>' +
-                    '<span class="match-badge" style="background:' + borderColor + '; font-size:10px;">' + relacionLabel + '</span>' +
-                '</div>';
-
-            // Toggle handler
-            var checkbox = card.querySelector('#' + toggleId);
-            (function(entry, cb) {
-                cb.addEventListener('change', function() {
-                    if (!entry.layer) return;
-                    if (cb.checked) {
-                        entry.layer.addTo(map);
-                        entry.visible = true;
-                    } else {
-                        map.removeLayer(entry.layer);
-                        entry.visible = false;
-                    }
-                });
-            })(intraEntry, checkbox);
-
-            // Click on card (not toggle) → zoom to polygon
-            card.addEventListener('click', function(e) {
-                if (e.target.tagName === 'INPUT') return; // don't zoom on toggle click
-                if (intraEntry.layer && intraEntry.visible) {
-                    try {
-                        map.fitBounds(intraEntry.layer.getBounds(), { padding: [40, 40] });
-                        intraEntry.layer.setStyle({ weight: 4, fillOpacity: 0.5 });
-                        setTimeout(function() {
-                            intraEntry.layer.setStyle(intraEntry.style);
-                        }, 2000);
-                    } catch(e) {}
-                }
-            });
-
-            container.appendChild(card);
-        });
-    }
-
     function actualizarPanelChapingo(idx) {
         var token = ++chapingoRequestToken;
         var loadingEl = document.getElementById('chapingo-loading');
@@ -1119,7 +880,6 @@
 
                 var propuesta = payload.propuesta || {};
                 var guardado = payload.guardado || {};
-                var candidatos = payload.candidatos_intra_15k || [];
                 var esNuevo = Boolean(payload.es_nuevo) && Boolean(propuesta.aplica);
 
                 // ── Populate info section with proposed values ────────────
@@ -1141,37 +901,6 @@
                 }
                 document.getElementById('info-id-unico-propuesto').textContent = safeVal(propuesta.id_poligono_unico_propuesto);
                 document.getElementById('info-superficie-calculada').textContent = formatSuperficie(propuesta.superficie_chapingo_propuesta);
-
-                // ── Show group context if available ───────────────────────
-                var clasifIntra = payload.clasificacion_intra;
-                var grupoNote = document.getElementById('info-grupo-context');
-                if (!grupoNote) {
-                    // Create it if it doesn't exist yet
-                    grupoNote = document.createElement('div');
-                    grupoNote.id = 'info-grupo-context';
-                    grupoNote.style.cssText = 'font-size:11px; margin-top:4px; padding:4px 8px; border-radius:4px;';
-                    document.getElementById('info-estatus-propuesto').parentNode.appendChild(grupoNote);
-                }
-                if (clasifIntra && clasifIntra.grupo_tipo === 'mismo_credito') {
-                    if (clasifIntra.estatus === 'NUEVO') {
-                        grupoNote.style.display = 'block';
-                        grupoNote.style.background = '#d1e7dd';
-                        grupoNote.style.color = '#0f5132';
-                        grupoNote.innerHTML = '<i class="bi bi-star-fill me-1"></i>Principal del grupo (mayor superficie)';
-                    } else if (clasifIntra.estatus === 'VINCULAR') {
-                        grupoNote.style.display = 'block';
-                        grupoNote.style.background = '#cfe2ff';
-                        grupoNote.style.color = '#084298';
-                        grupoNote.innerHTML = '<i class="bi bi-link-45deg me-1"></i>Vinculado a ' + safeVal(clasifIntra.id_poligono_unico);
-                    } else {
-                        grupoNote.style.display = 'none';
-                    }
-                } else {
-                    grupoNote.style.display = 'none';
-                }
-
-                // ── Populate intra-15K matches list ───────────────────────
-                poblarListaIntra15k(candidatos);
 
                 if (!esNuevo) {
                     noAplicaEl.textContent = propuesta.comentario_chapingo_propuesto || 'Este índice no pertenece al subconjunto de nuevos. El formulario editable de decisión Chapingo no aplica para este polígono.';
@@ -1495,148 +1224,6 @@
             });
     }
 
-    // ── Clasificación Intra-15K ───────────────────────────────────────────────
-    var intraPollingTimer = null;
-
-    function iniciarIntra15k() {
-        fetch('/api/analizador/intra-15k/iniciar', { method: 'POST' })
-            .then(function(r) { return r.json(); })
-            .then(function(data) {
-                if (data.status === 'done' && data.result) {
-                    // Already computed — show results directly
-                    mostrarResultadosIntra(data.result);
-                } else {
-                    // Started or already running — show progress and poll
-                    document.getElementById('intra-idle').style.display = 'none';
-                    document.getElementById('intra-running').style.display = 'block';
-                    document.getElementById('intra-done').style.display = 'none';
-                    pollingIntra15k();
-                }
-            })
-            .catch(function(err) {
-                console.error('Error iniciando análisis intra-15K:', err);
-            });
-    }
-
-    function pollingIntra15k() {
-        if (intraPollingTimer) clearInterval(intraPollingTimer);
-        intraPollingTimer = setInterval(function() {
-            fetch('/api/analizador/intra-15k/estado')
-                .then(function(r) { return r.json(); })
-                .then(function(data) {
-                    var pct = data.progress || 0;
-                    document.getElementById('intra-progress-text').textContent = pct + '%';
-                    document.getElementById('intra-progress-bar').style.width = pct + '%';
-
-                    if (data.status === 'done') {
-                        clearInterval(intraPollingTimer);
-                        intraPollingTimer = null;
-                        mostrarResultadosIntra(data.result);
-                    } else if (data.status === 'error') {
-                        clearInterval(intraPollingTimer);
-                        intraPollingTimer = null;
-                        document.getElementById('intra-running').style.display = 'none';
-                        document.getElementById('intra-idle').style.display = 'block';
-                        alert('Error en el análisis intra-15K: ' + (data.error || 'desconocido'));
-                    }
-                });
-        }, 2000);  // Poll every 2 seconds
-    }
-
-    function mostrarResultadosIntra(result) {
-        document.getElementById('intra-idle').style.display = 'none';
-        document.getElementById('intra-running').style.display = 'none';
-        document.getElementById('intra-done').style.display = 'block';
-
-        var mismoPoligonos = result.mismo_credito_poligonos || result.mismo_credito || 0;
-        var mismoGrupos    = result.mismo_credito_grupos || 0;
-        var difPoligonos   = result.diferente_credito_poligonos || result.diferente_credito || 0;
-        var difGrupos      = result.diferente_credito_grupos || 0;
-        var sinGrupo       = result.sin_grupo || 0;
-        var totalNuevo     = result.total_nuevo || 0;
-        var totalVincular  = result.total_vincular || 0;
-
-        document.getElementById('intra-mismo-poligonos').textContent = mismoPoligonos.toLocaleString('es-MX');
-        document.getElementById('intra-mismo-grupos').textContent    = mismoGrupos.toLocaleString('es-MX');
-        document.getElementById('intra-diferente-poligonos').textContent = difPoligonos.toLocaleString('es-MX');
-        document.getElementById('intra-diferente-grupos').textContent    = difGrupos.toLocaleString('es-MX');
-        document.getElementById('intra-sin-grupo').textContent       = sinGrupo.toLocaleString('es-MX');
-        document.getElementById('intra-total-nuevo').textContent     = totalNuevo.toLocaleString('es-MX');
-        document.getElementById('intra-total-vincular').textContent  = totalVincular.toLocaleString('es-MX');
-
-        // Dim rows with zero polygons
-        document.querySelectorAll('.intra-row').forEach(function(row) {
-            var tipo = row.getAttribute('data-tipo');
-            var count = 0;
-            if (tipo === 'mismo_credito')    count = mismoPoligonos;
-            if (tipo === 'diferente_credito') count = difPoligonos;
-            if (tipo === 'sin_grupo')         count = sinGrupo;
-            if (count === 0) {
-                row.style.opacity = '0.5';
-                row.style.cursor = 'default';
-            } else {
-                row.style.opacity = '1';
-                row.style.cursor = 'pointer';
-            }
-        });
-    }
-
-    function filtrarPorIntra15k(tipo) {
-        var url = '/api/analizador/intra-15k/indices?tipo=' + encodeURIComponent(tipo);
-
-        fetch(url)
-            .then(function(r) {
-                if (!r.ok) throw new Error('HTTP ' + r.status);
-                return r.json();
-            })
-            .then(function(data) {
-                if (!data.indices || data.indices.length === 0) {
-                    alert('No hay polígonos en esta clasificación intra-15K.');
-                    return;
-                }
-                filteredIndices = data.indices;
-                filteredPos = 0;
-                activeFilter = 'intra15k:' + tipo;
-                totalPoligonos = data.total;
-
-                var tipoLabels = {
-                    'mismo_credito':    'Intra-15K: Mismo Crédito',
-                    'diferente_credito': 'Intra-15K: Diferente Crédito',
-                    'sin_grupo':        'Intra-15K: Sin Traslape'
-                };
-
-                var filterLabel = tipoLabels[tipo] || ('Intra-15K: ' + tipo);
-
-                // Update filter badge
-                document.getElementById('filtro-label').textContent = 'Filtrando: ' + filterLabel;
-                document.getElementById('filtro-count').textContent = data.total;
-                document.getElementById('filtro-activo').style.display = 'block';
-
-                // Switch to Analizador tab
-                var tabEl = document.getElementById('tab-analizador');
-                var tab = new bootstrap.Tab(tabEl);
-                tab.show();
-            })
-            .catch(function(err) {
-                console.error('Error filtrando por intra-15K:', err);
-            });
-    }
-
-    // Click handler for intra-15K rows
-    document.getElementById('btn-iniciar-intra').addEventListener('click', function() {
-        iniciarIntra15k();
-    });
-
-    document.addEventListener('click', function(e) {
-        var row = e.target.closest('.intra-row');
-        if (row) {
-            var tipo = row.getAttribute('data-tipo');
-            if (tipo && row.style.opacity !== '0.5') {
-                filtrarPorIntra15k(tipo);
-            }
-        }
-    });
-
     // ── Clasificación → color de badge ───────────────────────────────────────
     var CLASIF_COLORS = {
         'duplicado':          '#dc3545',
@@ -1685,9 +1272,6 @@
                 // ── Limpiar capas anteriores ──────────────────────────────
                 if (poligonoLayer) { map.removeLayer(poligonoLayer); poligonoLayer = null; }
                 if (matchesLayer)  { map.removeLayer(matchesLayer);  matchesLayer  = null; }
-                // Remove individual intra layers
-                intraLayers.forEach(function(il) { if (il.layer) map.removeLayer(il.layer); });
-                intraLayers = [];
                 // Remove individual match layers
                 matchLayerMap.forEach(function(ml) { if (ml.layer) map.removeLayer(ml.layer); });
                 matchLayerMap = [];
@@ -2236,20 +1820,6 @@
                 document.getElementById('clasif-idle').style.display = 'none';
                 document.getElementById('clasif-running').style.display = 'block';
                 iniciarPolling();
-            }
-        })
-        .catch(function() { /* ignore */ });
-
-    // Check if intra-15K analysis already done
-    fetch('/api/analizador/intra-15k/estado')
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-            if (data.status === 'done' && data.result) {
-                mostrarResultadosIntra(data.result);
-            } else if (data.status === 'running') {
-                document.getElementById('intra-idle').style.display = 'none';
-                document.getElementById('intra-running').style.display = 'block';
-                pollingIntra15k();
             }
         })
         .catch(function() { /* ignore */ });
