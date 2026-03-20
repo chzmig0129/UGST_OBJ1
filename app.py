@@ -118,6 +118,8 @@ _dashboard_cache = None
 _indices_filtrados_cache = None
 _clasif_nuevos_state = {'status': 'idle', 'progress': 0, 'processed': 0, 'total': 0, 'result': None, 'indices_por_clasif': None, 'error': None}
 _nuevos_relacionados_cache = None
+_intra_15k_clasif_cache = None
+_intra_15k_state = {'status': 'idle', 'progress': 0, 'processed': 0, 'total': 0, 'result': None, 'error': None}
 
 # Función para obtener municipio y estado desde coordenadas
 def obtener_ubicacion(lat, lon):
@@ -3958,7 +3960,8 @@ def init_validacion_15k_db():
         mega_idx INTEGER,
         overlap_pct REAL,
         fecha_validacion TIMESTAMP,
-        validado_por TEXT DEFAULT 'usuario'
+        validado_por TEXT DEFAULT 'usuario',
+        superficie_calculada REAL
     )
     ''')
 
@@ -3971,6 +3974,7 @@ def init_validacion_15k_db():
         'id_poligono_unico': 'TEXT',
         'superficie_chapingo': 'REAL',
         'comentario_chapingo': 'TEXT',
+        'superficie_calculada': 'REAL',
     }
     for column_name, column_type in required_columns.items():
         if column_name not in existing_columns:
@@ -4369,6 +4373,215 @@ def _build_nuevos_relacionados_cache():
     return _nuevos_relacionados_cache
 
 
+def agrupar_nuevos_intra_15k():
+    """Group overlapping 'nuevos' polygons into clusters by ID_CREDITO.
+
+    Uses the spatial index built by _build_nuevos_relacionados_cache() to find
+    all pairs of nuevos polygons that spatially intersect, then applies
+    union-find to form connected clusters.  For each cluster the function
+    determines whether all members share the same ID_CREDITO and, if so,
+    marks the polygon with the largest UTM-projected surface area as NUEVO
+    while all others become VINCULAR (pointing to the winner's ID_POLIGON).
+
+    Returns a dict with keys:
+        'grupos'               – list of cluster dicts
+        'clasificacion_por_idx' – flat lookup keyed by integer index
+    """
+    global _intra_15k_clasif_cache
+
+    if _intra_15k_clasif_cache is not None:
+        return _intra_15k_clasif_cache
+
+    import pyproj
+    from shapely.ops import transform
+
+    if validacion_gdf is None or mega_gdf is None:
+        raise RuntimeError('Shapefiles no cargados')
+
+    cache = _build_nuevos_relacionados_cache()
+    nuevos_indices = sorted(cache['nuevos_indices_set'])
+    nuevos_gdf = cache['nuevos_gdf']
+    nuevos_sindex = cache['nuevos_sindex']
+
+    # ------------------------------------------------------------------ #
+    # Helper: compute UTM area in hectares for a WGS-84 geometry          #
+    # ------------------------------------------------------------------ #
+    def _area_ha(geom):
+        if geom is None or geom.is_empty:
+            return 0.0
+        centroid = geom.centroid
+        utm_zone = int((centroid.x + 180) / 6) + 1
+        transformer = pyproj.Transformer.from_crs(
+            'EPSG:4326', f'EPSG:326{utm_zone:02d}', always_xy=True
+        )
+        geom_utm = transform(transformer.transform, geom)
+        return geom_utm.area / 10000
+
+    # ------------------------------------------------------------------ #
+    # Build adjacency: for each nuevo find overlapping nuevos             #
+    # ------------------------------------------------------------------ #
+    # Map from src_idx → position in nuevos_gdf for fast iloc access
+    src_idx_to_pos = {
+        int(row.get('__src_idx__', -1)): pos
+        for pos, (_, row) in enumerate(nuevos_gdf.iterrows())
+    }
+
+    adjacency = {idx: set() for idx in nuevos_indices}
+
+    for idx in nuevos_indices:
+        pos = src_idx_to_pos.get(idx)
+        if pos is None:
+            continue
+        row = nuevos_gdf.iloc[pos]
+        geom = row.geometry
+        if geom is None or geom.is_empty:
+            continue
+
+        if nuevos_sindex is not None:
+            candidate_positions = list(nuevos_sindex.intersection(geom.bounds))
+        else:
+            candidate_positions = list(range(len(nuevos_gdf)))
+
+        for cpos in candidate_positions:
+            crow = nuevos_gdf.iloc[cpos]
+            cidx = int(crow.get('__src_idx__', -1))
+            if cidx == idx or cidx not in adjacency:
+                continue
+            cgeom = crow.geometry
+            if cgeom is None or cgeom.is_empty:
+                continue
+            if geom.intersects(cgeom):
+                inter = geom.intersection(cgeom)
+                if not inter.is_empty:
+                    adjacency[idx].add(cidx)
+                    adjacency[cidx].add(idx)
+
+    # ------------------------------------------------------------------ #
+    # Union-Find to form connected clusters                               #
+    # ------------------------------------------------------------------ #
+    parent = {idx: idx for idx in nuevos_indices}
+
+    def _find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def _union(a, b):
+        ra, rb = _find(a), _find(b)
+        if ra != rb:
+            parent[rb] = ra
+
+    for idx, neighbors in adjacency.items():
+        for nb in neighbors:
+            _union(idx, nb)
+
+    # Group indices by root
+    clusters_map = {}
+    for idx in nuevos_indices:
+        root = _find(idx)
+        clusters_map.setdefault(root, []).append(idx)
+
+    # ------------------------------------------------------------------ #
+    # Build result structures                                             #
+    # ------------------------------------------------------------------ #
+    grupos = []
+    clasificacion_por_idx = {}
+
+    for root, members in clusters_map.items():
+        # Gather per-member info
+        miembros = []
+        for idx in members:
+            pos = src_idx_to_pos.get(idx)
+            if pos is None:
+                continue
+            row = nuevos_gdf.iloc[pos]
+            geom = row.geometry
+            sup_ha = round(_area_ha(geom), 4)
+            id_poligon = str(row.get('ID_POLIGON', '') or '').strip()
+            id_credito = str(row.get('ID_CREDITO', '') or '').strip()
+            miembros.append({
+                'idx': idx,
+                'id_poligon': id_poligon,
+                'id_credito': id_credito,
+                'superficie_ha': sup_ha,
+                # estatus and id_poligono_unico filled in below
+                'estatus': None,
+                'id_poligono_unico': None,
+            })
+
+        if not miembros:
+            continue
+
+        # Determine cluster credit type
+        creditos = {m['id_credito'] for m in miembros}
+        if len(creditos) == 1:
+            tipo_credito = 'mismo_credito'
+        else:
+            tipo_credito = 'diferente_credito'
+
+        grupo = {
+            'indices': [m['idx'] for m in miembros],
+            'tipo_credito': tipo_credito,
+            'id_credito': list(creditos)[0] if tipo_credito == 'mismo_credito' else None,
+            'ganador_idx': None,
+            'ganador_id_poligon': None,
+            'ganador_superficie_ha': None,
+            'miembros': miembros,
+        }
+
+        if tipo_credito == 'mismo_credito' and len(miembros) > 1:
+            # Winner = largest surface
+            ganador = max(miembros, key=lambda m: m['superficie_ha'])
+            ganador_idx = ganador['idx']
+            ganador_id_poligon = ganador['id_poligon']
+            ganador_sup = ganador['superficie_ha']
+
+            grupo['ganador_idx'] = ganador_idx
+            grupo['ganador_id_poligon'] = ganador_id_poligon
+            grupo['ganador_superficie_ha'] = ganador_sup
+
+            for m in miembros:
+                if m['idx'] == ganador_idx:
+                    m['estatus'] = 'NUEVO'
+                    m['id_poligono_unico'] = m['id_poligon']
+                else:
+                    m['estatus'] = 'VINCULAR'
+                    m['id_poligono_unico'] = ganador_id_poligon
+
+                clasificacion_por_idx[m['idx']] = {
+                    'estatus': m['estatus'],
+                    'id_poligono_unico': m['id_poligono_unico'],
+                    'superficie_calculada': m['superficie_ha'],
+                    'grupo_tipo': 'mismo_credito',
+                }
+
+        else:
+            # diferente_credito or single-member: all NUEVO
+            is_single = len(miembros) == 1
+            grupo_tipo = 'sin_grupo' if is_single else 'diferente_credito'
+
+            for m in miembros:
+                m['estatus'] = 'NUEVO'
+                m['id_poligono_unico'] = m['id_poligon']
+
+                clasificacion_por_idx[m['idx']] = {
+                    'estatus': 'NUEVO',
+                    'id_poligono_unico': m['id_poligon'],
+                    'superficie_calculada': m['superficie_ha'],
+                    'grupo_tipo': grupo_tipo,
+                }
+
+        grupos.append(grupo)
+
+    result = {
+        'grupos': grupos,
+        'clasificacion_por_idx': clasificacion_por_idx,
+    }
+    _intra_15k_clasif_cache = result
+    return result
+
+
 def obtener_candidatos_nuevos_relacionados(idx, overlap_min_pct=0.1):
     """Return intra-15K related candidates for a new polygon index.
 
@@ -4490,87 +4703,172 @@ def generar_propuesta_chapingo_nuevo(idx, analisis_mega=None, candidatos_intra_1
         propuesta['reglas_disparadas'].append('indice_fuera_subconjunto_nuevos')
         return propuesta
 
-    matches_mega = analisis_mega.get('matches') or []
-    if matches_mega:
-        propuesta['comentario_chapingo_propuesto'] = (
-            'Se detectaron traslapes con Mega; mantener propuesta parcial y revisar manualmente antes de definir estatus Chapingo.'
-        )
-        propuesta['reglas_disparadas'].extend(['match_mega_detectado', 'revision_manual_requerida'])
-        return propuesta
+    if _intra_15k_clasif_cache is not None:
+        # ------------------------------------------------------------------ #
+        # NEW PATH: use pre-computed intra-15K classification                 #
+        # ------------------------------------------------------------------ #
+        clasif = _intra_15k_clasif_cache['clasificacion_por_idx'].get(idx)
+        if clasif:
+            propuesta['estatus_chapingo_propuesto'] = clasif['estatus']
+            propuesta['id_poligono_unico_propuesto'] = clasif['id_poligono_unico']
+            # superficie_chapingo_propuesta is ALWAYS the current polygon's calculated area
+            propuesta['superficie_chapingo_propuesta'] = clasif['superficie_calculada']
 
-    propuesta['reglas_disparadas'].append('sin_match_mega')
+            grupo_tipo = clasif.get('grupo_tipo', 'sin_grupo')
 
-    mismos_credito = [c for c in candidatos_intra_15k if c.get('same_credit')]
-    diferentes_credito = [c for c in candidatos_intra_15k if not c.get('same_credit')]
+            if clasif['estatus'] == 'VINCULAR':
+                ganador_id = clasif['id_poligono_unico']
+                # Find the winner's surface from the cache for a richer comment
+                ganador_sup = None
+                for entry in _intra_15k_clasif_cache['clasificacion_por_idx'].values():
+                    if (entry.get('estatus') == 'NUEVO'
+                            and entry.get('id_poligono_unico') == ganador_id
+                            and entry.get('grupo_tipo') == 'mismo_credito'):
+                        ganador_sup = entry.get('superficie_calculada')
+                        break
+                if ganador_sup is not None:
+                    propuesta['comentario_chapingo_propuesto'] = (
+                        f'Intra-15K: mismo credito, superficie menor. '
+                        f'Vinculado a {ganador_id} ({ganador_sup} ha)'
+                    )
+                else:
+                    propuesta['comentario_chapingo_propuesto'] = (
+                        f'Intra-15K: mismo credito, superficie menor. Vinculado a {ganador_id}'
+                    )
+                propuesta['reglas_disparadas'].extend([
+                    'intra_15k_cache_usado',
+                    'duplicado_mismo_credito_ganador_por_superficie',
+                    'no_ganador_propuesto_vincular',
+                ])
+            else:
+                # estatus == 'NUEVO'
+                if grupo_tipo == 'mismo_credito':
+                    propuesta['comentario_chapingo_propuesto'] = (
+                        f'Intra-15K: mismo credito, mayor superficie '
+                        f'({clasif["superficie_calculada"]} ha). Poligono principal.'
+                    )
+                    propuesta['reglas_disparadas'].extend([
+                        'intra_15k_cache_usado',
+                        'duplicado_mismo_credito_ganador_por_superficie',
+                        'ganador_permanece_nuevo',
+                    ])
+                elif grupo_tipo == 'diferente_credito':
+                    propuesta['comentario_chapingo_propuesto'] = (
+                        'Intra-15K: diferente credito, se respeta como nuevo.'
+                    )
+                    propuesta['reglas_disparadas'].extend([
+                        'intra_15k_cache_usado',
+                        'traslape_diferente_credito',
+                        'diferente_credito_no_fuerza_vinculacion',
+                    ])
+                else:
+                    # sin_grupo: no overlaps with other nuevos
+                    propuesta['comentario_chapingo_propuesto'] = (
+                        'Intra-15K: sin traslapes con otros nuevos.'
+                    )
+                    propuesta['reglas_disparadas'].extend([
+                        'intra_15k_cache_usado',
+                        'sin_conflicto_intra_15k',
+                    ])
 
-    if mismos_credito:
-        ranking = [
-            {
-                'idx': int(idx),
-                'id_poligon': id_poligono_base,
-                'superficie_ha': superficie_base
-            }
-        ]
-        ranking.extend({
-            'idx': int(c['idx']),
-            'id_poligon': c.get('id_poligon'),
-            'superficie_ha': c.get('superficie_ha')
-        } for c in mismos_credito)
-
-        ranking_valid = [r for r in ranking if r.get('superficie_ha') is not None]
-        if not ranking_valid:
+        # Still check megacapa and APPEND that info to the comment
+        matches_mega = analisis_mega.get('matches') or []
+        if matches_mega:
             propuesta['comentario_chapingo_propuesto'] = (
-                'No hay superficies suficientes para resolver duplicados de mismo credito; revisar manualmente.'
+                propuesta['comentario_chapingo_propuesto']
+                + ' | Mega: se detectaron traslapes con Mega; revisar manualmente.'
             )
-            propuesta['reglas_disparadas'].extend(['duplicado_mismo_credito', 'superficie_insuficiente'])
-            return propuesta
-
-        superficie_ganadora = max(r['superficie_ha'] for r in ranking_valid)
-        ganadores = [r for r in ranking_valid if abs(r['superficie_ha'] - superficie_ganadora) < 1e-6]
-        if len(ganadores) != 1:
-            propuesta['comentario_chapingo_propuesto'] = (
-                'Se detecto empate de superficie en duplicados de mismo credito; revisar manualmente para elegir poligono unico.'
-            )
-            propuesta['reglas_disparadas'].extend(['duplicado_mismo_credito', 'empate_superficie'])
-            return propuesta
-
-        ganador = ganadores[0]
-        propuesta['id_poligono_unico_propuesto'] = ganador.get('id_poligon')
-        propuesta['superficie_chapingo_propuesta'] = round(float(ganador['superficie_ha']), 4)
-        propuesta['reglas_disparadas'].append('duplicado_mismo_credito_ganador_por_superficie')
-
-        if int(ganador['idx']) == int(idx):
-            propuesta['estatus_chapingo_propuesto'] = 'NUEVO'
-            propuesta['comentario_chapingo_propuesto'] = (
-                'Sin match en Mega. Entre nuevos con mismo credito, este poligono es el de mayor superficie y se propone como unico NUEVO.'
-            )
-            propuesta['reglas_disparadas'].append('ganador_permanece_nuevo')
+            propuesta['reglas_disparadas'].extend(['match_mega_detectado', 'revision_manual_requerida'])
         else:
-            propuesta['estatus_chapingo_propuesto'] = 'VINCULAR'
-            propuesta['comentario_chapingo_propuesto'] = (
-                f"Sin match en Mega. Se detecto duplicado con mismo credito y mayor superficie en {ganador.get('id_poligon')}; se propone VINCULAR este indice."
-            )
-            propuesta['reglas_disparadas'].append('no_ganador_propuesto_vincular')
+            propuesta['reglas_disparadas'].append('sin_match_mega')
 
         return propuesta
 
-    propuesta['estatus_chapingo_propuesto'] = 'NUEVO'
-    propuesta['id_poligono_unico_propuesto'] = id_poligono_base or None
-    propuesta['superficie_chapingo_propuesta'] = superficie_base
-
-    if diferentes_credito:
-        propuesta['comentario_chapingo_propuesto'] = (
-            'Sin match en Mega. Existen traslapes con diferente credito en nuevos; no se fuerza vinculacion automatica y se mantiene NUEVO.'
-        )
-        propuesta['reglas_disparadas'].extend([
-            'traslape_diferente_credito',
-            'diferente_credito_no_fuerza_vinculacion'
-        ])
     else:
-        propuesta['comentario_chapingo_propuesto'] = 'Sin match en Mega y sin conflicto intra-15K; se propone NUEVO.'
-        propuesta['reglas_disparadas'].append('sin_conflicto_intra_15k')
+        # ------------------------------------------------------------------ #
+        # FALLBACK PATH: original logic when cache is not available           #
+        # ------------------------------------------------------------------ #
+        matches_mega = analisis_mega.get('matches') or []
+        if matches_mega:
+            propuesta['comentario_chapingo_propuesto'] = (
+                'Se detectaron traslapes con Mega; mantener propuesta parcial y revisar manualmente antes de definir estatus Chapingo.'
+            )
+            propuesta['reglas_disparadas'].extend(['match_mega_detectado', 'revision_manual_requerida'])
+            return propuesta
 
-    return propuesta
+        propuesta['reglas_disparadas'].append('sin_match_mega')
+
+        mismos_credito = [c for c in candidatos_intra_15k if c.get('same_credit')]
+        diferentes_credito = [c for c in candidatos_intra_15k if not c.get('same_credit')]
+
+        if mismos_credito:
+            ranking = [
+                {
+                    'idx': int(idx),
+                    'id_poligon': id_poligono_base,
+                    'superficie_ha': superficie_base
+                }
+            ]
+            ranking.extend({
+                'idx': int(c['idx']),
+                'id_poligon': c.get('id_poligon'),
+                'superficie_ha': c.get('superficie_ha')
+            } for c in mismos_credito)
+
+            ranking_valid = [r for r in ranking if r.get('superficie_ha') is not None]
+            if not ranking_valid:
+                propuesta['comentario_chapingo_propuesto'] = (
+                    'No hay superficies suficientes para resolver duplicados de mismo credito; revisar manualmente.'
+                )
+                propuesta['reglas_disparadas'].extend(['duplicado_mismo_credito', 'superficie_insuficiente'])
+                return propuesta
+
+            superficie_ganadora = max(r['superficie_ha'] for r in ranking_valid)
+            ganadores = [r for r in ranking_valid if abs(r['superficie_ha'] - superficie_ganadora) < 1e-6]
+            if len(ganadores) != 1:
+                propuesta['comentario_chapingo_propuesto'] = (
+                    'Se detecto empate de superficie en duplicados de mismo credito; revisar manualmente para elegir poligono unico.'
+                )
+                propuesta['reglas_disparadas'].extend(['duplicado_mismo_credito', 'empate_superficie'])
+                return propuesta
+
+            ganador = ganadores[0]
+            propuesta['id_poligono_unico_propuesto'] = ganador.get('id_poligon')
+            propuesta['superficie_chapingo_propuesta'] = round(float(ganador['superficie_ha']), 4)
+            propuesta['reglas_disparadas'].append('duplicado_mismo_credito_ganador_por_superficie')
+
+            if int(ganador['idx']) == int(idx):
+                propuesta['estatus_chapingo_propuesto'] = 'NUEVO'
+                propuesta['comentario_chapingo_propuesto'] = (
+                    'Sin match en Mega. Entre nuevos con mismo credito, este poligono es el de mayor superficie y se propone como unico NUEVO.'
+                )
+                propuesta['reglas_disparadas'].append('ganador_permanece_nuevo')
+            else:
+                propuesta['estatus_chapingo_propuesto'] = 'VINCULAR'
+                propuesta['comentario_chapingo_propuesto'] = (
+                    f"Sin match en Mega. Se detecto duplicado con mismo credito y mayor superficie en {ganador.get('id_poligon')}; se propone VINCULAR este indice."
+                )
+                propuesta['reglas_disparadas'].append('no_ganador_propuesto_vincular')
+
+            return propuesta
+
+        propuesta['estatus_chapingo_propuesto'] = 'NUEVO'
+        propuesta['id_poligono_unico_propuesto'] = id_poligono_base or None
+        propuesta['superficie_chapingo_propuesta'] = superficie_base
+
+        if diferentes_credito:
+            propuesta['comentario_chapingo_propuesto'] = (
+                'Sin match en Mega. Existen traslapes con diferente credito en nuevos; no se fuerza vinculacion automatica y se mantiene NUEVO.'
+            )
+            propuesta['reglas_disparadas'].extend([
+                'traslape_diferente_credito',
+                'diferente_credito_no_fuerza_vinculacion'
+            ])
+        else:
+            propuesta['comentario_chapingo_propuesto'] = 'Sin match en Mega y sin conflicto intra-15K; se propone NUEVO.'
+            propuesta['reglas_disparadas'].append('sin_conflicto_intra_15k')
+
+        return propuesta
 
 
 def construir_evidencia_flujo_chapingo():
@@ -4828,7 +5126,8 @@ def obtener_guardado_validacion_15k(idx):
             'id_poligon_historico': None,
             'mega_idx': None,
             'overlap_pct': None,
-            'fecha_validacion': None
+            'fecha_validacion': None,
+            'superficie_calculada': None
         }
 
     return {
@@ -4840,7 +5139,8 @@ def obtener_guardado_validacion_15k(idx):
         'id_poligon_historico': row['id_poligon_historico'],
         'mega_idx': row['mega_idx'],
         'overlap_pct': row['overlap_pct'],
-        'fecha_validacion': row['fecha_validacion']
+        'fecha_validacion': row['fecha_validacion'],
+        'superficie_calculada': row['superficie_calculada']
     }
 
 
@@ -5030,23 +5330,36 @@ def api_analizador_guardar_propuesta_editable(idx):
             'error': 'id_poligono_unico es requerido cuando la propuesta requiere vinculacion'
         }), 400
 
+    # Auto-calculate surface area in hectares using UTM projection
+    import pyproj
+    from shapely.ops import transform
+    vrow = validacion_gdf.iloc[idx]
+    vgeom = vrow.geometry
+    centroid = vgeom.centroid
+    utm_zone = int((centroid.x + 180) / 6) + 1
+    transformer = pyproj.Transformer.from_crs('EPSG:4326', f'EPSG:326{utm_zone:02d}', always_xy=True)
+    vgeom_utm = transform(transformer.transform, vgeom)
+    superficie_calculada = round(vgeom_utm.area / 10000, 4)
+
     conn = get_db_connection()
     try:
         conn.execute(
             '''INSERT INTO validacion_15k
-               (idx, estatus_chapingo, id_poligono_unico, superficie_chapingo, comentario_chapingo)
-               VALUES (?, ?, ?, ?, ?)
+               (idx, estatus_chapingo, id_poligono_unico, superficie_chapingo, comentario_chapingo, superficie_calculada)
+               VALUES (?, ?, ?, ?, ?, ?)
                ON CONFLICT(idx) DO UPDATE SET
                    estatus_chapingo = excluded.estatus_chapingo,
                    id_poligono_unico = excluded.id_poligono_unico,
                    superficie_chapingo = excluded.superficie_chapingo,
-                   comentario_chapingo = excluded.comentario_chapingo''',
+                   comentario_chapingo = excluded.comentario_chapingo,
+                   superficie_calculada = excluded.superficie_calculada''',
             (
                 idx,
                 estatus_chapingo,
                 id_poligono_unico,
                 superficie_chapingo,
                 comentario_chapingo,
+                superficie_calculada,
             )
         )
         conn.commit()
@@ -5062,6 +5375,7 @@ def api_analizador_guardar_propuesta_editable(idx):
             'id_poligono_unico': guardado['id_poligono_unico'],
             'superficie_chapingo': guardado['superficie_chapingo'],
             'comentario_chapingo': guardado['comentario_chapingo'],
+            'superficie_calculada': guardado['superficie_calculada'],
         }
     })
 
@@ -5290,6 +5604,159 @@ def api_clasificacion_nuevos_indices():
     if clasif == 'duplicado' and subfiltro not in (None, ''):
         response['subfiltro'] = subfiltro
     return jsonify(response)
+
+
+def _run_intra_15k_clasificacion():
+    """Background thread: runs intra-15K grouping and stores summary counts."""
+    global _intra_15k_state
+    try:
+        _intra_15k_state['progress'] = 10
+        result_raw = agrupar_nuevos_intra_15k()
+        grupos = result_raw['grupos']
+        clasificacion_por_idx = result_raw['clasificacion_por_idx']
+
+        # Compute summary counts
+        mismo_credito_grupos = 0
+        mismo_credito_poligonos = 0
+        diferente_credito_grupos = 0
+        diferente_credito_poligonos = 0
+        sin_grupo = 0
+        total_nuevo = 0
+        total_vincular = 0
+
+        for grupo in grupos:
+            members = grupo.get('indices', [])
+            tipo = grupo.get('tipo_credito')
+            if len(members) == 1:
+                sin_grupo += 1
+            elif tipo == 'mismo_credito':
+                mismo_credito_grupos += 1
+                mismo_credito_poligonos += len(members)
+            else:
+                diferente_credito_grupos += 1
+                diferente_credito_poligonos += len(members)
+
+        for info in clasificacion_por_idx.values():
+            if info.get('estatus') == 'VINCULAR':
+                total_vincular += 1
+            else:
+                total_nuevo += 1
+
+        total_nuevos = len(clasificacion_por_idx)
+
+        summary = {
+            'total_nuevos': total_nuevos,
+            'mismo_credito_grupos': mismo_credito_grupos,
+            'mismo_credito_poligonos': mismo_credito_poligonos,
+            'diferente_credito_grupos': diferente_credito_grupos,
+            'diferente_credito_poligonos': diferente_credito_poligonos,
+            'sin_grupo': sin_grupo,
+            'total_nuevo': total_nuevo,
+            'total_vincular': total_vincular,
+            'grupos': grupos,
+            'clasificacion_por_idx': clasificacion_por_idx,
+        }
+
+        _intra_15k_state['result'] = summary
+        _intra_15k_state['processed'] = total_nuevos
+        _intra_15k_state['total'] = total_nuevos
+        _intra_15k_state['status'] = 'done'
+        _intra_15k_state['progress'] = 100
+    except Exception as e:
+        _intra_15k_state['status'] = 'error'
+        _intra_15k_state['error'] = str(e)
+
+
+@app.route('/api/analizador/intra-15k/iniciar', methods=['POST'])
+def api_intra_15k_iniciar():
+    global _intra_15k_state
+    if validacion_gdf is None or mega_gdf is None:
+        return jsonify({'error': 'Shapefiles no cargados'}), 500
+
+    if _intra_15k_state['status'] == 'running':
+        return jsonify({'error': 'Cálculo en progreso'}), 409
+
+    if _intra_15k_state['status'] == 'done':
+        return jsonify({
+            'status': 'done',
+            'progress': 100,
+            'processed': _intra_15k_state['processed'],
+            'total': _intra_15k_state['total'],
+            'result': _intra_15k_state['result'],
+        }), 200
+
+    # Reset state and start background thread
+    _intra_15k_state['status'] = 'running'
+    _intra_15k_state['progress'] = 0
+    _intra_15k_state['processed'] = 0
+    _intra_15k_state['result'] = None
+    _intra_15k_state['error'] = None
+
+    threading.Thread(target=_run_intra_15k_clasificacion, daemon=True).start()
+    return jsonify({'message': 'Cálculo iniciado'}), 202
+
+
+@app.route('/api/analizador/intra-15k/estado')
+def api_intra_15k_estado():
+    state = _intra_15k_state
+    response = {
+        'status': state['status'],
+        'progress': state['progress'],
+        'processed': state['processed'],
+        'total': state['total'],
+    }
+    if state['status'] == 'done':
+        response['result'] = state['result']
+    if state['status'] == 'error':
+        response['error'] = state['error']
+    return jsonify(response)
+
+
+@app.route('/api/analizador/intra-15k/indices')
+def api_intra_15k_indices():
+    if _intra_15k_state['status'] != 'done' or _intra_15k_state['result'] is None:
+        return jsonify({'error': 'Clasificación no completada aún'}), 409
+
+    tipo = request.args.get('tipo')
+    valid_tipos = ['mismo_credito', 'diferente_credito', 'sin_grupo', 'nuevo', 'vincular']
+    if tipo not in valid_tipos:
+        return jsonify({'error': 'Tipo inválido. Use: ' + ', '.join(valid_tipos)}), 400
+
+    clasificacion_por_idx = _intra_15k_state['result']['clasificacion_por_idx']
+    grupos = _intra_15k_state['result']['grupos']
+
+    if tipo == 'mismo_credito':
+        indices = [
+            idx for grupo in grupos
+            if grupo.get('tipo_credito') == 'mismo_credito' and len(grupo.get('indices', [])) > 1
+            for idx in grupo['indices']
+        ]
+    elif tipo == 'diferente_credito':
+        indices = [
+            idx for grupo in grupos
+            if grupo.get('tipo_credito') == 'diferente_credito' and len(grupo.get('indices', [])) > 1
+            for idx in grupo['indices']
+        ]
+    elif tipo == 'sin_grupo':
+        indices = [
+            idx for grupo in grupos
+            if len(grupo.get('indices', [])) == 1
+            for idx in grupo['indices']
+        ]
+    elif tipo == 'nuevo':
+        indices = [
+            idx for idx, info in clasificacion_por_idx.items()
+            if info.get('estatus') == 'NUEVO'
+        ]
+    elif tipo == 'vincular':
+        indices = [
+            idx for idx, info in clasificacion_por_idx.items()
+            if info.get('estatus') == 'VINCULAR'
+        ]
+    else:
+        indices = []
+
+    return jsonify({'tipo': tipo, 'indices': indices, 'total': len(indices)})
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -5574,6 +6041,7 @@ def api_validacion_15k_exportar():
             overlap_pct = db_row['overlap_pct']
             fecha_validacion = db_row['fecha_validacion']
             mega_idx = db_row['mega_idx']
+            superficie_calculada = db_row['superficie_calculada']
         else:
             # pendiente — populate from validacion_gdf
             estatus = 'pendiente'
@@ -5584,6 +6052,7 @@ def api_validacion_15k_exportar():
             overlap_pct = None
             fecha_validacion = None
             mega_idx = None
+            superficie_calculada = None
 
         record = {
             'IDX': i,
@@ -5594,6 +6063,7 @@ def api_validacion_15k_exportar():
             'ID_POLIGON_HISTORICO': id_poligon_historico,
             'OVERLAP_PCT': overlap_pct,
             'FECHA_VALIDACION': fecha_validacion,
+            'SUPERFICIE_CALCULADA': superficie_calculada,
         }
 
         # Add HIST_ columns from mega_gdf when estatus='encima'
