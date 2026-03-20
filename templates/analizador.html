@@ -278,6 +278,26 @@
         color: #495057;
     }
 
+    .chapingo-candidato-item {
+        list-style: none;
+        margin-left: -18px;
+        padding: 6px 8px;
+        border: 1px solid #e9ecef;
+        border-radius: 6px;
+        background: #f8f9fa;
+    }
+
+    .chapingo-candidato-item .linea-principal {
+        font-size: 12px;
+        font-weight: 600;
+        color: #212529;
+    }
+
+    .chapingo-candidato-item .linea-secundaria {
+        font-size: 11px;
+        color: #495057;
+    }
+
     .chapingo-note {
         font-size: 11px;
         color: #6c757d;
@@ -814,7 +834,7 @@
 
                                 <div class="small text-muted mb-1">Candidatos intra-15K</div>
                                 <ul id="chapingo-candidatos-list">
-                                    <li>Sin candidatos relacionados</li>
+                                    <li>Sin candidatos intra-15K relacionados para este polígono.</li>
                                 </ul>
                             </div>
                         </form>
@@ -1000,17 +1020,26 @@
         list.innerHTML = '';
 
         if (!Array.isArray(candidatos) || candidatos.length === 0) {
-            list.innerHTML = '<li>Sin candidatos relacionados</li>';
+            list.innerHTML = '<li class="text-muted">Sin candidatos intra-15K relacionados para este polígono.</li>';
             return;
         }
 
         candidatos.forEach(function(c) {
             var li = document.createElement('li');
-            var creditoLabel = c.same_credit ? 'mismo crédito' : 'diferente crédito';
-            li.textContent =
-                '#' + safeVal(c.idx) + ' | ' + safeVal(c.id_poligon) +
-                ' | overlap ' + safeVal(c.overlap_pct) + '% | ' +
-                creditoLabel + ' | ' + formatSuperficie(c.superficie_ha);
+            li.className = 'chapingo-candidato-item';
+
+            var relacionRaw = String(c.relacion_credito || '').toLowerCase();
+            var relacionLabel = relacionRaw === 'mismo_credito'
+                ? 'Mismo crédito'
+                : relacionRaw === 'diferente_credito'
+                    ? 'Diferente crédito'
+                    : safeVal(c.tipo_relacion || c.relacion_credito);
+
+            var traslapeLabel = hasValor(c.overlap_pct) ? safeVal(c.overlap_pct) + '%' : '—';
+
+            li.innerHTML =
+                '<div class="linea-principal">ID polígono: ' + safeVal(c.id_poligon) + ' · ID crédito: ' + safeVal(c.id_credito) + '</div>' +
+                '<div class="linea-secundaria">Relación: ' + relacionLabel + ' · Traslape: ' + traslapeLabel + '</div>';
             list.appendChild(li);
         });
     }
