@@ -758,6 +758,18 @@ kbd {
                                    min="0" placeholder="0">
                             <button class="btn btn-sm btn-outline-primary" id="btn-goto">Ir</button>
                         </div>
+
+                        <!-- Progress tracker -->
+                        <div id="verif-progress-section" class="mt-2 pt-2" style="border-top: 1px solid #dee2e6;">
+                          <div class="d-flex justify-content-between align-items-center mb-1">
+                            <span class="small text-muted" style="font-size:10px;">Progreso de verificación</span>
+                            <span class="small fw-bold" id="verif-progress-text" style="font-size:11px;">0 / 0</span>
+                          </div>
+                          <div class="progress" style="height: 6px;">
+                            <div class="progress-bar bg-success" id="verif-progress-bar" role="progressbar" style="width:0%; transition: width 0.3s ease;"></div>
+                          </div>
+                          <div class="text-end small text-muted" id="verif-progress-pct" style="font-size:10px;">0%</div>
+                        </div>
                     </div>
 
                     <!-- ── Spinner ───────────────────────────────────────────── -->
@@ -1019,6 +1031,7 @@ kbd {
     document.getElementById('tab-analizador').addEventListener('shown.bs.tab', function() {
         initMap();
         map.invalidateSize();
+        actualizarProgreso();
         if (filteredIndices !== null) {
             // Filtered mode: load the first filtered polygon
             if (filteredIndices.length > 0) {
@@ -1228,6 +1241,8 @@ kbd {
                 successEl.textContent = 'Guardado correctamente.';
                 successEl.style.display = 'block';
                 setTimeout(function() { successEl.style.display = 'none'; }, 500);
+
+                incrementarProgreso();
 
                 if (data.hay_siguiente && data.siguiente) {
                     // Advance to next polygon
@@ -2114,8 +2129,37 @@ kbd {
             document.getElementById('btn-prev').click();
         } else if (e.key === 'ArrowRight') {
             document.getElementById('btn-next').click();
+        } else if (e.key === 'Enter' || e.key === ' ') {
+            var verifPropuesta = document.getElementById('verif-propuesta');
+            if (verifPropuesta && verifPropuesta.style.display !== 'none') {
+                if (e.key === ' ') e.preventDefault();
+                confirmarYAvanzar();
+            }
+        } else if (e.key === 'Escape') {
+            document.getElementById('btn-next').click();
+        } else if (e.key === 's' || e.key === 'S') {
+            e.preventDefault();
+            document.getElementById('verif-id-unico').focus();
+        } else if (e.key === 'd' || e.key === 'D') {
+            document.getElementById('btn-toggle-cercanos').click();
         }
     });
+
+    // ── Keyboard hint below confirm button ────────────────────────────────────
+    (function() {
+        var btnConfirmar = document.getElementById('btn-confirmar-siguiente');
+        if (btnConfirmar) {
+            var parentDiv = btnConfirmar.parentElement;
+            if (parentDiv) {
+                var hintEl = document.createElement('div');
+                hintEl.className = 'text-muted text-center';
+                hintEl.style.fontSize = '10px';
+                hintEl.style.marginTop = '2px';
+                hintEl.innerHTML = '<kbd>Enter</kbd> confirmar · <kbd>Esc</kbd> saltar · <kbd>←</kbd><kbd>→</kbd> navegar';
+                parentDiv.insertAdjacentElement('afterend', hintEl);
+            }
+        }
+    }());
 
     // ── Búsqueda ──────────────────────────────────────────────────────────────
     var searchDropdown = document.getElementById('search-dropdown');
@@ -2435,6 +2479,39 @@ kbd {
     document.getElementById('tab-resultados').addEventListener('shown.bs.tab', function() {
         cargarResultados();
     });
+
+    // ── Progreso de verificación ──────────────────────────────────────────────
+    var _progresoConDecision = 0;
+    var _progresoTotal = 0;
+
+    function actualizarProgreso() {
+        fetch('/api/analizador/dashboard-estatus')
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                _progresoConDecision = data.con_decision || 0;
+                _progresoTotal = data.total_15k || 0;
+                renderProgreso();
+            })
+            .catch(function(err) { console.error('Error actualizando progreso:', err); });
+    }
+
+    function renderProgreso() {
+        var pct = _progresoTotal > 0 ? (_progresoConDecision / _progresoTotal * 100) : 0;
+        document.getElementById('verif-progress-text').textContent =
+            _progresoConDecision.toLocaleString('es-MX') + ' / ' + _progresoTotal.toLocaleString('es-MX');
+        document.getElementById('verif-progress-bar').style.width = pct.toFixed(1) + '%';
+        document.getElementById('verif-progress-pct').textContent = pct.toFixed(1) + '%';
+    }
+
+    function incrementarProgreso() {
+        _progresoConDecision++;
+        renderProgreso();
+        // Also update resultados badge
+        var badge = document.getElementById('resultados-count');
+        if (badge) badge.textContent = _progresoConDecision;
+        // Background refresh for accuracy
+        setTimeout(actualizarProgreso, 2000);
+    }
 
     // ── Carga inicial ─────────────────────────────────────────────────────────
     // Only load dashboard on page load. Map + first polygon load lazily when
