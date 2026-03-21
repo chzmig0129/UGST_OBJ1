@@ -67,10 +67,10 @@ if not app.debug:
     }
     Talisman(
         app,
-        force_https=True,
+        force_https=os.environ.get('FORCE_HTTPS', 'false').lower() == 'true',
         strict_transport_security=True,
         content_security_policy=_csp,
-        session_cookie_secure=True,
+        session_cookie_secure=os.environ.get('FORCE_HTTPS', 'false').lower() == 'true',
         session_cookie_http_only=True,
     )
 
