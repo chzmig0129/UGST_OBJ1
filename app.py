@@ -5729,6 +5729,175 @@ def api_validacion_15k_exportar():
     )
 
 
+# ==============================================
+# RESULTADOS 15K — Global progress view
+# ==============================================
+
+@app.route('/resultados-15k')
+@login_required
+def resultados_15k():
+    return render_template('resultados_15k.html')
+
+
+@app.route('/api/resultados-15k/estadisticas')
+@login_required
+def api_resultados_15k_estadisticas():
+    """Global statistics for all 15K polygons — visible to all users."""
+    from sqlalchemy import func
+
+    total = Analizador15K.query.count()
+    con_decision = Analizador15K.query.filter_by(tiene_decision=True).count()
+    pendientes = total - con_decision
+
+    # By status
+    por_estatus = {}
+    status_counts = db.session.query(
+        Analizador15K.estatus_chapingo, func.count()
+    ).filter(
+        Analizador15K.tiene_decision == True  # noqa: E712
+    ).group_by(Analizador15K.estatus_chapingo).all()
+    for status, count in status_counts:
+        if status:
+            por_estatus[status] = count
+
+    # By region
+    por_region = {}
+    region_stats = db.session.query(
+        Analizador15K.region,
+        func.count(),
+        func.sum(
+            db.case((Analizador15K.tiene_decision == True, 1), else_=0)  # noqa: E712
+        )
+    ).group_by(Analizador15K.region).all()
+    for region, total_r, decididos_r in region_stats:
+        if region:
+            por_region[region] = {
+                'total': total_r,
+                'decididos': int(decididos_r or 0),
+            }
+
+    # By user
+    por_usuario = []
+    from models.user import User
+    user_stats = db.session.query(
+        Analizador15K.usuario_asignado_id,
+        func.count(),
+        func.sum(
+            db.case((Analizador15K.tiene_decision == True, 1), else_=0)  # noqa: E712
+        )
+    ).filter(
+        Analizador15K.usuario_asignado_id.isnot(None)
+    ).group_by(Analizador15K.usuario_asignado_id).all()
+
+    for user_id, asignados, decididos in user_stats:
+        user = User.query.get(user_id)
+        if user:
+            # Get the most common region for this user
+            region_mode = db.session.query(
+                Analizador15K.region
+            ).filter_by(
+                usuario_asignado_id=user_id
+            ).group_by(
+                Analizador15K.region
+            ).order_by(func.count().desc()).first()
+
+            por_usuario.append({
+                'user_id': user_id,
+                'username': user.username,
+                'region': region_mode[0] if region_mode else None,
+                'asignados': asignados,
+                'decididos': int(decididos or 0),
+            })
+
+    return jsonify({
+        'total': total,
+        'con_decision': con_decision,
+        'pendientes': pendientes,
+        'por_estatus': por_estatus,
+        'por_region': por_region,
+        'por_usuario': por_usuario,
+    })
+
+
+@app.route('/api/resultados-15k/decisiones')
+@login_required
+def api_resultados_15k_decisiones():
+    """Return ALL decided polygons from all users."""
+    from models.user import User
+
+    records = Analizador15K.query.filter_by(tiene_decision=True).order_by(Analizador15K.idx_shp).all()
+
+    decisiones = []
+    for r in records:
+        d = r.to_dict()
+        # Add username of who decided
+        if r.decidido_por_id:
+            user = User.query.get(r.decidido_por_id)
+            d['decidido_por'] = user.username if user else None
+        else:
+            d['decidido_por'] = None
+        decisiones.append(d)
+
+    return jsonify({
+        'total': len(decisiones),
+        'decisiones': decisiones,
+    })
+
+
+@app.route('/api/resultados-15k/exportar')
+@login_required
+def api_resultados_15k_exportar():
+    """Export all decided polygons to Excel."""
+    import io as _io
+
+    records = Analizador15K.query.filter_by(tiene_decision=True).order_by(Analizador15K.idx_shp).all()
+
+    if not records:
+        return jsonify({'error': 'No hay decisiones para exportar'}), 404
+
+    try:
+        import openpyxl
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = 'Resultados 15K'
+
+        # Headers
+        headers = ['#', 'ID Polígono', 'ID Crédito', 'Archivo ZIP', 'Región',
+                   'Estatus Chapingo', 'ID Polígono Único', 'Superficie SHP',
+                   'Superficie Calculada', 'Decidido por', 'Fecha']
+        ws.append(headers)
+
+        from models.user import User
+        for i, r in enumerate(records):
+            user = User.query.get(r.decidido_por_id) if r.decidido_por_id else None
+            ws.append([
+                i + 1,
+                r.id_poligon,
+                r.id_credito,
+                r.nombre_zip,
+                r.region,
+                r.estatus_chapingo,
+                r.id_poligono_unico,
+                r.superficie_shp,
+                r.superficie_calculada,
+                user.username if user else '',
+                r.fecha_decision.strftime('%Y-%m-%d %H:%M') if r.fecha_decision else '',
+            ])
+
+        output = _io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+
+        return send_file(
+            output,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name='resultados_15k.xlsx'
+        )
+    except ImportError:
+        return jsonify({'error': 'openpyxl no está instalado'}), 500
+
+
 @app.route('/analizador')
 @login_required
 def analizador():
