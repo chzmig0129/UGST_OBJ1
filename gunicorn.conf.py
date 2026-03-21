@@ -44,8 +44,10 @@ def post_fork(server, worker):
     worker to create fresh connections.
     """
     try:
-        from extensions import db
-        db.engine.dispose()
+        from app import app
+        with app.app_context():
+            from extensions import db
+            db.engine.dispose()
         server.log.info("Worker %s: disposed DB connection pool", worker.pid)
     except Exception as e:
         server.log.warning("Worker %s: failed to dispose DB pool: %s", worker.pid, e)
