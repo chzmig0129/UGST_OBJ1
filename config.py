@@ -30,6 +30,17 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     JSON_AS_ASCII = False  # Allow UTF-8 characters in JSON responses
 
+    # SQLAlchemy engine options — applied to all environments.
+    # pool_pre_ping: test each connection before use so stale connections
+    #   (e.g. after a DB restart or network blip) are detected and recycled
+    #   automatically instead of surfacing as 500 errors.
+    # pool_recycle: return connections to the pool after 5 minutes to avoid
+    #   hitting PostgreSQL's idle-connection timeout.
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        'pool_pre_ping': True,
+        'pool_recycle': 300,
+    }
+
 
 class DevelopmentConfig(Config):
     """Local development — SQLite, debug on, safe defaults."""

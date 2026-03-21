@@ -32,3 +32,20 @@ errorlog = '-'
 # Without this, each worker would independently load all shapefiles, pushing
 # total RAM usage to ~3.6GB+ and risking OOM on the 8GB VPS.
 preload_app = True
+
+
+def post_fork(server, worker):
+    """Dispose SQLAlchemy connection pool after fork.
+
+    preload_app=True loads the app (and shapefiles) in the master process
+    before forking. But PostgreSQL connections are NOT fork-safe — sharing
+    them across processes causes intermittent 'tuple index out of range'
+    and 'PGRES_TUPLES_OK' errors. Disposing the pool here forces each
+    worker to create fresh connections.
+    """
+    try:
+        from extensions import db
+        db.engine.dispose()
+        server.log.info("Worker %s: disposed DB connection pool", worker.pid)
+    except Exception as e:
+        server.log.warning("Worker %s: failed to dispose DB pool: %s", worker.pid, e)
