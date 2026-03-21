@@ -6321,5 +6321,122 @@ def analizador():
 
 shp_cache.preload_all()  # Preload in production for gunicorn preload_app
 
+
+# ==============================================
+# Admin — User Management Routes
+# ==============================================
+
+@app.route('/admin/usuarios')
+@login_required
+def admin_usuarios():
+    if not current_user.is_admin:
+        flash('Acceso denegado', 'danger')
+        return redirect(url_for('index'))
+    users = User.query.order_by(User.created_at.desc()).all()
+    # Get polygon assignment counts per user
+    from sqlalchemy import func
+    asignaciones = db.session.query(
+        Analizador15K.usuario_asignado_id,
+        func.count(Analizador15K.id).label('total'),
+        func.count(db.case((Analizador15K.tiene_decision == True, 1))).label('decididos')
+    ).filter(Analizador15K.usuario_asignado_id.isnot(None)).group_by(Analizador15K.usuario_asignado_id).all()
+
+    asig_map = {a.usuario_asignado_id: {'total': a.total, 'decididos': a.decididos} for a in asignaciones}
+
+    return render_template('admin_usuarios.html', users=users, asig_map=asig_map)
+
+
+@app.route('/api/admin/usuarios/<int:user_id>/toggle-active', methods=['POST'])
+@login_required
+def api_admin_toggle_active(user_id):
+    if not current_user.is_admin:
+        return jsonify({'error': 'No autorizado'}), 403
+    user = User.query.get_or_404(user_id)
+    if user.id == current_user.id:
+        return jsonify({'error': 'No puedes desactivarte a ti mismo'}), 400
+    user.is_active = not user.is_active
+    db.session.commit()
+    return jsonify({'success': True, 'is_active': user.is_active, 'username': user.username})
+
+
+@app.route('/api/admin/usuarios/<int:user_id>/toggle-admin', methods=['POST'])
+@login_required
+def api_admin_toggle_admin(user_id):
+    if not current_user.is_admin:
+        return jsonify({'error': 'No autorizado'}), 403
+    user = User.query.get_or_404(user_id)
+    if user.id == current_user.id:
+        return jsonify({'error': 'No puedes quitarte admin a ti mismo'}), 400
+    user.is_admin = not user.is_admin
+    db.session.commit()
+    return jsonify({'success': True, 'is_admin': user.is_admin, 'username': user.username})
+
+
+@app.route('/api/admin/usuarios/crear', methods=['POST'])
+@login_required
+def api_admin_crear_usuario():
+    if not current_user.is_admin:
+        return jsonify({'error': 'No autorizado'}), 403
+    data = request.get_json()
+    username = (data.get('username') or '').strip()
+    email = (data.get('email') or '').strip()
+    password = data.get('password', '')
+    is_admin = data.get('is_admin', False)
+
+    if not username or not email or not password:
+        return jsonify({'error': 'Username, email y password son requeridos'}), 400
+    if len(password) < 6:
+        return jsonify({'error': 'Password debe tener al menos 6 caracteres'}), 400
+    if User.query.filter_by(username=username).first():
+        return jsonify({'error': f'Username "{username}" ya existe'}), 400
+    if User.query.filter_by(email=email).first():
+        return jsonify({'error': f'Email "{email}" ya existe'}), 400
+
+    user = User(username=username, email=email, is_admin=bool(is_admin), is_active=True)
+    user.set_password(password)
+    db.session.add(user)
+    db.session.commit()
+    return jsonify({'success': True, 'user_id': user.id, 'username': user.username})
+
+
+@app.route('/api/admin/reset-decisiones', methods=['POST'])
+@login_required
+def api_admin_reset_decisiones():
+    if not current_user.is_admin:
+        return jsonify({'error': 'No autorizado'}), 403
+
+    # Reset all decision fields to null/false
+    count = Analizador15K.query.filter_by(tiene_decision=True).count()
+    Analizador15K.query.update({
+        Analizador15K.estatus_chapingo: None,
+        Analizador15K.id_poligono_unico: None,
+        Analizador15K.superficie_chapingo: None,
+        Analizador15K.superficie_calculada: None,
+        Analizador15K.comentario_chapingo: None,
+        Analizador15K.tiene_decision: False,
+        Analizador15K.decidido_por_id: None,
+        Analizador15K.fecha_decision: None,
+    })
+    db.session.commit()
+    return jsonify({'success': True, 'registros_reseteados': count})
+
+
+@app.route('/api/admin/usuarios/<int:user_id>/eliminar', methods=['DELETE'])
+@login_required
+def api_admin_eliminar_usuario(user_id):
+    if not current_user.is_admin:
+        return jsonify({'error': 'No autorizado'}), 403
+    user = User.query.get_or_404(user_id)
+    if user.id == current_user.id:
+        return jsonify({'error': 'No puedes eliminarte a ti mismo'}), 400
+    # Unassign polygons
+    Analizador15K.query.filter_by(usuario_asignado_id=user_id).update({Analizador15K.usuario_asignado_id: None})
+    # Clear decidido_por references
+    Analizador15K.query.filter_by(decidido_por_id=user_id).update({Analizador15K.decidido_por_id: None})
+    db.session.delete(user)
+    db.session.commit()
+    return jsonify({'success': True})
+
+
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)

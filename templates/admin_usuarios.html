@@ -1,0 +1,270 @@
+{% extends "base.html" %}
+
+{% block title %}Admin — Usuarios{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4" style="max-width: 1200px;">
+    <h2 class="mb-4"><i class="bi bi-people-fill me-2"></i>Administración de Usuarios</h2>
+    
+    <!-- Alert area -->
+    <div id="admin-alert" class="alert" style="display:none;" role="alert"></div>
+
+    <!-- Create User Card -->
+    <div class="card mb-4">
+        <div class="card-header bg-primary text-white">
+            <i class="bi bi-person-plus me-1"></i> Crear Usuario
+        </div>
+        <div class="card-body">
+            <form id="form-crear-usuario" class="row g-2 align-items-end">
+                <div class="col-md-3">
+                    <label class="form-label small">Username</label>
+                    <input type="text" class="form-control form-control-sm" id="new-username" required>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small">Email</label>
+                    <input type="email" class="form-control form-control-sm" id="new-email" required>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small">Password</label>
+                    <input type="password" class="form-control form-control-sm" id="new-password" required minlength="6">
+                </div>
+                <div class="col-md-2">
+                    <div class="form-check mt-4">
+                        <input class="form-check-input" type="checkbox" id="new-is-admin">
+                        <label class="form-check-label small" for="new-is-admin">Admin</label>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-primary btn-sm w-100">
+                        <i class="bi bi-plus-lg me-1"></i>Crear
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Users Table -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <i class="bi bi-table me-1"></i> Usuarios Registrados
+            <span class="badge bg-secondary ms-1">{{ users|length }}</span>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover table-sm mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Username</th>
+                            <th>Email</th>
+                            <th>Rol</th>
+                            <th>Estado</th>
+                            <th>Creado</th>
+                            <th>Polígonos</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for user in users %}
+                        <tr id="user-row-{{ user.id }}">
+                            <td class="fw-bold">{{ user.username }}</td>
+                            <td class="small">{{ user.email }}</td>
+                            <td>
+                                <span class="badge {{ 'bg-danger' if user.is_admin else 'bg-secondary' }}" id="badge-admin-{{ user.id }}">
+                                    {{ 'Admin' if user.is_admin else 'Usuario' }}
+                                </span>
+                            </td>
+                            <td>
+                                <span class="badge {{ 'bg-success' if user.is_active else 'bg-warning text-dark' }}" id="badge-active-{{ user.id }}">
+                                    {{ 'Activo' if user.is_active else 'Inactivo' }}
+                                </span>
+                            </td>
+                            <td class="small">{{ user.created_at.strftime('%Y-%m-%d') if user.created_at else '—' }}</td>
+                            <td class="small">
+                                {% set asig = asig_map.get(user.id, {'total': 0, 'decididos': 0}) %}
+                                {{ asig.decididos }}/{{ asig.total }}
+                            </td>
+                            <td>
+                                {% if user.id != current_user.id %}
+                                <div class="btn-group btn-group-sm">
+                                    <button class="btn btn-outline-{{ 'warning' if user.is_active else 'success' }} btn-sm" 
+                                            onclick="toggleActive({{ user.id }})" title="{{ 'Desactivar' if user.is_active else 'Activar' }}">
+                                        <i class="bi bi-{{ 'pause-circle' if user.is_active else 'play-circle' }}"></i>
+                                    </button>
+                                    <button class="btn btn-outline-{{ 'danger' if user.is_admin else 'primary' }} btn-sm" 
+                                            onclick="toggleAdmin({{ user.id }})" title="{{ 'Quitar admin' if user.is_admin else 'Hacer admin' }}">
+                                        <i class="bi bi-shield-{{ 'minus' if user.is_admin else 'plus' }}"></i>
+                                    </button>
+                                    <button class="btn btn-outline-danger btn-sm" onclick="eliminarUsuario({{ user.id }}, '{{ user.username }}')" title="Eliminar">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </div>
+                                {% else %}
+                                <span class="text-muted small">(tú)</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Danger Zone -->
+    <div class="card border-danger">
+        <div class="card-header bg-danger text-white">
+            <i class="bi bi-exclamation-triangle me-1"></i> Zona de Peligro
+        </div>
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h6 class="mb-1">Resetear TODAS las decisiones</h6>
+                    <p class="text-muted small mb-0">
+                        Borra estatus_chapingo, id_poligono_unico, superficie_chapingo y superficie_calculada de TODOS los registros.
+                        Esta acción no se puede deshacer.
+                    </p>
+                </div>
+                <button class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#modal-reset">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i>Resetear
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Reset Confirmation Modal -->
+<div class="modal fade" id="modal-reset" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title"><i class="bi bi-exclamation-triangle me-2"></i>Confirmar Reset</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Esta acción eliminará <strong>TODAS</strong> las decisiones de clasificación (estatus, ID polígono único, superficie) de todos los registros.</p>
+                <p class="text-danger fw-bold">Esta acción NO se puede deshacer.</p>
+                <label class="form-label">Escribe <strong>RESETEAR</strong> para confirmar:</label>
+                <input type="text" class="form-control" id="reset-confirm-input" placeholder="RESETEAR">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-danger" id="btn-confirmar-reset" disabled>
+                    <i class="bi bi-arrow-counterclockwise me-1"></i>Resetear Todo
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function showAlert(msg, type) {
+    var el = document.getElementById('admin-alert');
+    el.className = 'alert alert-' + type;
+    el.textContent = msg;
+    el.style.display = 'block';
+    setTimeout(function() { el.style.display = 'none'; }, 5000);
+}
+
+function toggleActive(userId) {
+    fetch('/api/admin/usuarios/' + userId + '/toggle-active', { method: 'POST' })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.success) {
+                showAlert('Usuario ' + data.username + ': ' + (data.is_active ? 'activado' : 'desactivado'), 'success');
+                setTimeout(function() { location.reload(); }, 800);
+            } else {
+                showAlert(data.error || 'Error', 'danger');
+            }
+        })
+        .catch(function(e) { showAlert('Error: ' + e.message, 'danger'); });
+}
+
+function toggleAdmin(userId) {
+    fetch('/api/admin/usuarios/' + userId + '/toggle-admin', { method: 'POST' })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.success) {
+                showAlert('Usuario ' + data.username + ': ' + (data.is_admin ? 'ahora es admin' : 'ya no es admin'), 'success');
+                setTimeout(function() { location.reload(); }, 800);
+            } else {
+                showAlert(data.error || 'Error', 'danger');
+            }
+        })
+        .catch(function(e) { showAlert('Error: ' + e.message, 'danger'); });
+}
+
+function eliminarUsuario(userId, username) {
+    if (!confirm('¿Eliminar al usuario "' + username + '"? Sus polígonos asignados quedarán sin asignar.')) return;
+    fetch('/api/admin/usuarios/' + userId + '/eliminar', { method: 'DELETE' })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.success) {
+                showAlert('Usuario "' + username + '" eliminado', 'success');
+                document.getElementById('user-row-' + userId).remove();
+            } else {
+                showAlert(data.error || 'Error', 'danger');
+            }
+        })
+        .catch(function(e) { showAlert('Error: ' + e.message, 'danger'); });
+}
+
+// Create user form
+document.getElementById('form-crear-usuario').addEventListener('submit', function(e) {
+    e.preventDefault();
+    var data = {
+        username: document.getElementById('new-username').value.trim(),
+        email: document.getElementById('new-email').value.trim(),
+        password: document.getElementById('new-password').value,
+        is_admin: document.getElementById('new-is-admin').checked
+    };
+    fetch('/api/admin/usuarios/crear', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(resp) {
+        if (resp.success) {
+            showAlert('Usuario "' + resp.username + '" creado exitosamente', 'success');
+            setTimeout(function() { location.reload(); }, 800);
+        } else {
+            showAlert(resp.error || 'Error al crear usuario', 'danger');
+        }
+    })
+    .catch(function(e) { showAlert('Error: ' + e.message, 'danger'); });
+});
+
+// Reset confirmation
+document.getElementById('reset-confirm-input').addEventListener('input', function() {
+    document.getElementById('btn-confirmar-reset').disabled = this.value !== 'RESETEAR';
+});
+
+document.getElementById('btn-confirmar-reset').addEventListener('click', function() {
+    var btn = this;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Reseteando...';
+    fetch('/api/admin/reset-decisiones', { method: 'POST' })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.success) {
+                var modal = bootstrap.Modal.getInstance(document.getElementById('modal-reset'));
+                modal.hide();
+                showAlert('Se resetearon ' + data.registros_reseteados + ' decisiones exitosamente', 'success');
+                document.getElementById('reset-confirm-input').value = '';
+                btn.disabled = true;
+                btn.innerHTML = '<i class="bi bi-arrow-counterclockwise me-1"></i>Resetear Todo';
+                setTimeout(function() { location.reload(); }, 1500);
+            } else {
+                showAlert(data.error || 'Error al resetear', 'danger');
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-arrow-counterclockwise me-1"></i>Resetear Todo';
+            }
+        })
+        .catch(function(e) {
+            showAlert('Error: ' + e.message, 'danger');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-arrow-counterclockwise me-1"></i>Resetear Todo';
+        });
+});
+</script>
+{% endblock %}
