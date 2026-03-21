@@ -388,6 +388,107 @@
         margin: 0 6px;
         color: #adb5bd;
     }
+
+/* ── Verificación Rápida ──────────────────────────────────────────────── */
+#section-verificacion-rapida {
+    background: #f0fdf4;
+    border-color: #86efac;
+}
+
+#section-verificacion-rapida .panel-section-title {
+    color: #166534;
+}
+
+#btn-confirmar-siguiente {
+    font-weight: 700;
+    font-size: 13px;
+    padding: 8px 12px;
+    transition: transform 0.1s, box-shadow 0.1s;
+}
+
+#btn-confirmar-siguiente:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(25, 135, 84, 0.3);
+}
+
+#btn-confirmar-siguiente:active {
+    transform: translateY(0);
+}
+
+/* Cercanos dropdown */
+#cercanos-dropdown .cercano-item {
+    padding: 6px 10px;
+    cursor: pointer;
+    border-bottom: 1px solid #f0f0f0;
+    font-size: 12px;
+    transition: background 0.1s;
+}
+
+#cercanos-dropdown .cercano-item:last-child {
+    border-bottom: none;
+}
+
+#cercanos-dropdown .cercano-item:hover {
+    background: #e9f0ff;
+}
+
+#cercanos-dropdown .cercano-item .cercano-id {
+    font-weight: 700;
+    color: #212529;
+}
+
+#cercanos-dropdown .cercano-item .cercano-meta {
+    font-size: 10px;
+    color: #6c757d;
+}
+
+/* Verification badge sizes */
+#verif-estatus-badge {
+    min-width: 80px;
+    text-align: center;
+    font-size: 14px !important;
+    letter-spacing: 0.05em;
+}
+
+/* Override details/summary styling */
+#verif-override-details summary {
+    list-style: none;
+    padding: 4px 0;
+}
+
+#verif-override-details summary::-webkit-details-marker {
+    display: none;
+}
+
+#verif-override-details summary::before {
+    content: "▸ ";
+    font-size: 10px;
+}
+
+#verif-override-details[open] summary::before {
+    content: "▾ ";
+}
+
+/* Keyboard hint styling */
+kbd {
+    background: #e9ecef;
+    border: 1px solid #ced4da;
+    border-radius: 3px;
+    padding: 1px 4px;
+    font-size: 10px;
+    font-family: inherit;
+    color: #495057;
+}
+
+/* Saved indicator pulse */
+@keyframes savedPulse {
+    0% { background-color: #d1f5d9; }
+    100% { background-color: transparent; }
+}
+
+.saved-flash {
+    animation: savedPulse 0.5s ease-out;
+}
 </style>
 {% endblock %}
 
@@ -668,7 +769,7 @@
                     </div>
 
                     <!-- ── Sección 2: Info del polígono actual ───────────────── -->
-                    <div class="panel-section" id="section-info">
+                    <div class="panel-section" id="section-info" style="padding:8px;">
                         <div class="panel-section-title" style="display:flex; align-items:center; justify-content:space-between;">
                             <span><i class="bi bi-geo-alt me-1"></i>Polígono Actual</span>
                             <div class="form-check form-switch" style="margin:0; padding-left:2.5em;">
@@ -676,73 +777,96 @@
                             </div>
                         </div>
 
-                        <div class="info-label">ID Polígono</div>
-                        <div class="info-value" id="info-id-poligon">—</div>
-
-                        <div class="info-label">ID Crédito</div>
-                        <div class="info-value" id="info-id-credito">—</div>
-
-                        <div class="info-label">Archivo (ZIP)</div>
-                        <div class="info-value" id="info-nombre-zip">—</div>
-
-                        <div class="info-label">Área</div>
-                        <div class="info-value" id="info-area">—</div>
-
-                        <!-- Propuesta automática -->
-                        <div style="border-top: 1px solid #dee2e6; margin-top: 10px; padding-top: 10px;">
-                            <div class="info-label">Estatus Propuesto</div>
-                            <div class="info-value">
-                                <span class="badge" id="info-estatus-propuesto" style="font-size: 13px;">—</span>
-                            </div>
-
-                            <div class="info-label">ID Polígono Único</div>
-                            <div class="info-value" id="info-id-unico-propuesto">—</div>
-
-                            <div class="info-label">Superficie Calculada</div>
-                            <div class="info-value" id="info-superficie-calculada">—</div>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px 12px;">
+                          <div>
+                            <div class="info-label">ID Polígono</div>
+                            <div class="info-value" id="info-id-poligon" style="font-size:14px;">—</div>
+                          </div>
+                          <div>
+                            <div class="info-label">ID Crédito</div>
+                            <div class="info-value" id="info-id-credito" style="font-size:12px;">—</div>
+                          </div>
+                          <div>
+                            <div class="info-label">Archivo (ZIP)</div>
+                            <div class="info-value" id="info-nombre-zip" style="font-size:11px;">—</div>
+                          </div>
+                          <div>
+                            <div class="info-label">Área</div>
+                            <div class="info-value" id="info-area" style="font-size:12px;">—</div>
+                          </div>
                         </div>
+
+                        <!-- Hidden spans to preserve IDs for existing JS -->
+                        <span id="info-estatus-propuesto" style="display:none;"></span>
+                        <span id="info-id-unico-propuesto" style="display:none;"></span>
+                        <span id="info-superficie-calculada" style="display:none;"></span>
                     </div>
 
-                    <!-- ── Sección 4: Decisión Chapingo (nuevos) ─────────────── -->
-                    <div class="panel-section" id="section-chapingo">
-                        <div class="panel-section-title"><i class="bi bi-pencil-square me-1"></i>Decisión Chapingo</div>
+                    <!-- ── Sección 4: Verificación Rápida ───────────────────── -->
+                    <div class="panel-section" id="section-verificacion-rapida">
+                      <div class="panel-section-title">
+                        <i class="bi bi-lightning-charge me-1"></i>Verificación Rápida
+                      </div>
 
-                        <div id="chapingo-loading" class="small text-muted mb-2" style="display:none;">
-                            <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
-                            Cargando...
+                      <!-- Loading state -->
+                      <div id="verif-loading" class="small text-muted mb-2" style="display:none;">
+                        <span class="spinner-border spinner-border-sm me-1"></span> Cargando...
+                      </div>
+
+                      <!-- Proposed values display (always visible, compact) -->
+                      <div id="verif-propuesta" style="display:none;">
+                        <!-- Row 1: Estatus badge + Confirmar button side by side -->
+                        <div class="d-flex align-items-center gap-2 mb-2">
+                          <span class="badge fs-6" id="verif-estatus-badge" style="padding: 6px 12px;">—</span>
+                          <button id="btn-confirmar-siguiente" class="btn btn-success btn-sm flex-grow-1" title="Confirmar y siguiente (Enter)">
+                            <i class="bi bi-check-lg me-1"></i>Confirmar ✓ Siguiente →
+                            <span class="spinner-border spinner-border-sm ms-1" id="verif-save-spinner" style="display:none;"></span>
+                          </button>
                         </div>
 
-                        <div id="chapingo-no-aplica" class="alert alert-info py-2 px-2 mb-2" style="display:none; font-size:12px;"></div>
-
-                        <form id="chapingo-form" style="display:none;">
-                            <div class="mb-2">
-                                <label for="chapingo-estatus" class="form-label small text-muted mb-1">Estatus Chapingo</label>
-                                <select id="chapingo-estatus" class="form-select form-select-sm">
-                                    <option value="">Seleccionar...</option>
-                                    <option value="NUEVO">NUEVO</option>
-                                    <option value="VINCULAR">VINCULAR</option>
-                                    <option value="ELIMINAR">ELIMINAR</option>
-                                </select>
-                            </div>
-
-                            <div class="mb-2">
-                                <label for="chapingo-id-unico" class="form-label small text-muted mb-1">ID polígono único</label>
-                                <input id="chapingo-id-unico" type="text" class="form-control form-control-sm" placeholder="Ej. 28-5910-00030626-1">
-                            </div>
-
-                            <div class="mb-2">
-                                <label for="chapingo-superficie" class="form-label small text-muted mb-1">Superficie Calculada (ha)</label>
-                                <input id="chapingo-superficie" type="number" step="0.0001" min="0" class="form-control form-control-sm" placeholder="0.0000" readonly style="background:#f8f9fa;">
-                            </div>
-
-                            <div id="chapingo-form-error" class="alert alert-danger py-2 px-2 mb-2" style="display:none; font-size:12px;"></div>
-                            <div id="chapingo-form-success" class="alert alert-success py-2 px-2 mb-2" style="display:none; font-size:12px;"></div>
-
-                            <button id="chapingo-btn-guardar" type="submit" class="btn btn-sm btn-primary w-100">
-                                <span class="spinner-border spinner-border-sm me-1" id="chapingo-save-spinner" role="status" aria-hidden="true" style="display:none;"></span>
-                                <i class="bi bi-check-lg me-1"></i>Guardar decisión
+                        <!-- Row 2: ID Polígono Único — editable inline with dropdown -->
+                        <div class="mb-2">
+                          <label class="form-label small text-muted mb-0" style="font-size:10px;">ID Polígono Único</label>
+                          <div class="input-group input-group-sm" id="verif-id-wrapper" style="position:relative;">
+                            <input id="verif-id-unico" type="text" class="form-control form-control-sm" 
+                                   placeholder="ID polígono único" style="font-weight:600;">
+                            <button class="btn btn-outline-secondary" type="button" id="btn-toggle-cercanos" 
+                                    title="Ver polígonos cercanos">
+                              <i class="bi bi-geo-alt"></i>
                             </button>
-                        </form>
+                            <!-- Dropdown for nearby polygon IDs (populated dynamically) -->
+                            <div id="cercanos-dropdown" style="display:none; position:absolute; top:100%; left:0; right:0; z-index:9999; background:#fff; border:1px solid #dee2e6; border-radius:0 0 6px 6px; box-shadow:0 4px 12px rgba(0,0,0,0.15); max-height:200px; overflow-y:auto;">
+                            </div>
+                          </div>
+                        </div>
+
+                        <!-- Row 3: Superficie (readonly, compact) -->
+                        <div class="mb-2">
+                          <label class="form-label small text-muted mb-0" style="font-size:10px;">Superficie Calculada</label>
+                          <input id="verif-superficie" type="text" class="form-control form-control-sm" readonly 
+                                 style="background:#f8f9fa; font-size:12px;">
+                        </div>
+
+                        <!-- Row 4: Estatus override (collapsed by default, expandable) -->
+                        <details id="verif-override-details" class="mb-2">
+                          <summary class="small text-muted" style="cursor:pointer; font-size:11px;">
+                            <i class="bi bi-pencil me-1"></i>Modificar estatus propuesto
+                          </summary>
+                          <select id="verif-estatus-select" class="form-select form-select-sm mt-1">
+                            <option value="">Usar propuesto</option>
+                            <option value="NUEVO">NUEVO</option>
+                            <option value="VINCULAR">VINCULAR</option>
+                            <option value="ELIMINAR">ELIMINAR</option>
+                          </select>
+                        </details>
+
+                        <!-- Feedback messages -->
+                        <div id="verif-error" class="alert alert-danger py-1 px-2 mb-0" style="display:none; font-size:11px;"></div>
+                        <div id="verif-success" class="alert alert-success py-1 px-2 mb-0" style="display:none; font-size:11px;"></div>
+                      </div>
+
+                      <!-- Non-applicable state -->
+                      <div id="verif-no-aplica" class="alert alert-info py-2 px-2 mb-0" style="display:none; font-size:12px;"></div>
                     </div>
 
                     <!-- ── Sección 5: Polígonos Traslapados ─────────────────── -->

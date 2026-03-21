@@ -5022,20 +5022,99 @@ def api_analizador_guardar_propuesta_editable(idx):
     """Save editable Chapingo decision values for a single index."""
     if not _user_can_access_idx(idx):
         return jsonify({'error': 'No tienes acceso a este polígono'}), 403
-    if shp_cache.validacion is None:
-        return jsonify({'error': 'Shapefiles no cargados'}), 500
-    if idx < 0 or idx >= len(shp_cache.validacion):
-        return jsonify({'error': f'idx fuera de rango (0-{len(shp_cache.validacion)-1})'}), 400
 
     data = request.get_json(force=True, silent=True) or {}
 
+    guardado, error_msg, error_status = _guardar_decision_chapingo(idx, data)
+    if error_msg is not None:
+        return jsonify({'error': error_msg}), error_status
+
+    return jsonify({
+        'success': True,
+        'idx': idx,
+        'guardado': guardado,
+    })
+
+
+@app.route('/api/analizador/poligonos-cercanos/<int:idx>')
+@login_required
+def api_analizador_poligonos_cercanos(idx):
+    """Return MEGA polygon IDs spatially near the current validation polygon."""
+    if shp_cache.validacion is None or shp_cache.mega is None:
+        return jsonify({'error': 'Shapefiles no cargados'}), 500
+    if idx < 0 or idx >= len(shp_cache.validacion):
+        return jsonify({'error': f'idx fuera de rango (0-{len(shp_cache.validacion)-1})'}), 400
+    if not _user_can_access_idx(idx):
+        return jsonify({'error': 'No tienes acceso a este polígono'}), 403
+
+    import pyproj
+    from shapely.ops import transform
+
+    vrow = shp_cache.validacion.iloc[idx]
+    vgeom = vrow.geometry
+
+    # Buffered bounding box: expand bounds by 0.01 degrees (~1 km) in each direction
+    minx, miny, maxx, maxy = vgeom.bounds
+    buffered_bounds = (minx - 0.01, miny - 0.01, maxx + 0.01, maxy + 0.01)
+
+    # Spatial index query on MEGA
+    candidate_indices = list(shp_cache.mega.sindex.intersection(buffered_bounds))
+
+    # Compute centroid of current polygon for distance calculation
+    v_centroid = vgeom.centroid
+
+    # Set up UTM transformer for area calculation (based on centroid longitude)
+    utm_zone = int((v_centroid.x + 180) / 6) + 1
+    transformer = pyproj.Transformer.from_crs('EPSG:4326', f'EPSG:326{utm_zone:02d}', always_xy=True)
+
+    cercanos = []
+    for ci in candidate_indices:
+        mrow = shp_cache.mega.iloc[ci]
+        mgeom = mrow.geometry
+
+        # Centroid-to-centroid distance in km
+        m_centroid = mgeom.centroid
+        # Use pyproj to compute geodesic distance
+        geod = pyproj.Geod(ellps='WGS84')
+        _, _, dist_m = geod.inv(v_centroid.x, v_centroid.y, m_centroid.x, m_centroid.y)
+        distance_km = round(dist_m / 1000, 3)
+
+        # Area in hectares using UTM projection
+        mgeom_utm = transform(transformer.transform, mgeom)
+        area_ha = round(mgeom_utm.area / 10000, 4)
+
+        cercanos.append({
+            'id_poligon': str(mrow.get('ID_POLIGON', '')),
+            'id_credito': str(mrow.get('ID_CREDITO', '')),
+            'distance_km': distance_km,
+            'area_ha': area_ha,
+        })
+
+    # Sort by distance ascending and limit to 50
+    cercanos.sort(key=lambda x: x['distance_km'])
+    cercanos = cercanos[:50]
+
+    return jsonify({'idx': idx, 'cercanos': cercanos})
+
+
+def _guardar_decision_chapingo(idx, data):
+    """Save Chapingo decision for idx from a data dict.
+
+    Returns (result_dict, error_message, http_status) where result_dict is the
+    saved state on success, or None on failure.
+    """
+    if shp_cache.validacion is None:
+        return None, 'Shapefiles no cargados', 500
+    if idx < 0 or idx >= len(shp_cache.validacion):
+        return None, f'idx fuera de rango (0-{len(shp_cache.validacion)-1})', 400
+
     estatus_raw = data.get('estatus_chapingo')
     if estatus_raw is None:
-        return jsonify({'error': 'estatus_chapingo es requerido'}), 400
+        return None, 'estatus_chapingo es requerido', 400
 
     estatus_chapingo = str(estatus_raw).strip().upper()
     if not estatus_chapingo:
-        return jsonify({'error': 'estatus_chapingo no puede estar vacio'}), 400
+        return None, 'estatus_chapingo no puede estar vacio', 400
 
     try:
         id_poligono_unico = _normalizar_texto_chapingo(
@@ -5050,12 +5129,10 @@ def api_analizador_guardar_propuesta_editable(idx):
             data.get('superficie_chapingo')
         )
     except ValueError as e:
-        return jsonify({'error': str(e)}), 400
+        return None, str(e), 400
 
     if _requiere_vinculacion_chapingo(idx, estatus_chapingo) and not id_poligono_unico:
-        return jsonify({
-            'error': 'id_poligono_unico es requerido cuando la propuesta requiere vinculacion'
-        }), 400
+        return None, 'id_poligono_unico es requerido cuando la propuesta requiere vinculacion', 400
 
     # Auto-calculate surface area in hectares using UTM projection
     import pyproj
@@ -5082,18 +5159,166 @@ def api_analizador_guardar_propuesta_editable(idx):
         pg_record.fecha_decision = datetime.utcnow()
         db.session.commit()
 
-    # Return saved state
+    guardado = {
+        'estatus_chapingo': pg_record.estatus_chapingo if pg_record else estatus_chapingo,
+        'id_poligono_unico': pg_record.id_poligono_unico if pg_record else id_poligono_unico,
+        'superficie_chapingo': pg_record.superficie_chapingo if pg_record else superficie_chapingo,
+        'comentario_chapingo': pg_record.comentario_chapingo if pg_record else comentario_chapingo,
+        'superficie_calculada': pg_record.superficie_calculada if pg_record else superficie_calculada,
+    }
+    return guardado, None, 200
+
+
+@app.route('/api/analizador/confirmar-y-avanzar/<int:idx>', methods=['POST'])
+@login_required
+def api_analizador_confirmar_y_avanzar(idx):
+    """Save current polygon decision and return next polygon data in one request."""
+    if not _user_can_access_idx(idx):
+        return jsonify({'error': 'No tienes acceso a este polígono'}), 403
+
+    data = request.get_json(force=True, silent=True) or {}
+
+    # Save the decision using the shared helper
+    guardado, error_msg, error_status = _guardar_decision_chapingo(idx, data)
+    if error_msg is not None:
+        return jsonify({'error': error_msg}), error_status
+
+    # Determine next index based on optional filter params
+    filtro = request.args.get('filtro')  # e.g. 'nuevos', 'existentes', 'por_clasificar', 'clasificacion:duplicado'
+    pos_str = request.args.get('pos')    # current position in filtered list (0-based)
+
+    next_idx = None
+
+    if filtro and pos_str is not None:
+        try:
+            pos = int(pos_str)
+        except (ValueError, TypeError):
+            pos = None
+
+        if pos is not None:
+            # Build the filtered index list
+            filtered_indices = _get_filtered_indices_for_advance(filtro)
+            next_pos = pos + 1
+            if next_pos < len(filtered_indices):
+                candidate = filtered_indices[next_pos]
+                if _user_can_access_idx(candidate):
+                    next_idx = candidate
+
+    if next_idx is None and filtro is None:
+        # Unfiltered: advance to idx+1
+        candidate = idx + 1
+        if shp_cache.validacion is not None and candidate < len(shp_cache.validacion):
+            if _user_can_access_idx(candidate):
+                next_idx = candidate
+
+    # Load next polygon data
+    siguiente = None
+    hay_siguiente = False
+
+    if next_idx is not None:
+        try:
+            analisis = calcular_traslapes(next_idx)
+            es_nuevo = indice_pertenece_a_nuevos(next_idx)
+            if es_nuevo:
+                propuesta = generar_propuesta_chapingo_nuevo(next_idx, analisis_mega=analisis)
+                propuesta['aplica'] = True
+            else:
+                propuesta = {
+                    'aplica': False,
+                    'estatus_chapingo_propuesto': None,
+                    'id_poligono_unico_propuesto': None,
+                    'superficie_chapingo_propuesta': None,
+                    'comentario_chapingo_propuesto': 'El indice no pertenece al subconjunto nuevos; propuesta automatica no aplica.',
+                }
+
+            # Read saved state for next polygon
+            pg_next = Analizador15K.query.filter_by(idx_shp=next_idx).first()
+            if pg_next and pg_next.tiene_decision:
+                guardado_siguiente = {
+                    'tiene_decision': True,
+                    'estatus_chapingo': pg_next.estatus_chapingo,
+                    'id_poligono_unico': pg_next.id_poligono_unico,
+                    'superficie_chapingo': pg_next.superficie_chapingo,
+                    'comentario_chapingo': pg_next.comentario_chapingo,
+                    'superficie_calculada': pg_next.superficie_calculada,
+                    'fecha_validacion': pg_next.fecha_decision.isoformat() if pg_next.fecha_decision else None,
+                }
+            else:
+                guardado_siguiente = {
+                    'tiene_decision': False,
+                    'estatus_chapingo': None,
+                    'id_poligono_unico': None,
+                    'superficie_chapingo': None,
+                    'comentario_chapingo': None,
+                    'superficie_calculada': None,
+                    'fecha_validacion': None,
+                }
+
+            siguiente = {
+                'idx': next_idx,
+                'poligono': analisis['poligono'],
+                'matches': analisis['matches'],
+                'match_features': analisis['match_features'],
+                'propuesta': propuesta,
+                'guardado': guardado_siguiente,
+                'es_nuevo': es_nuevo,
+            }
+            hay_siguiente = True
+        except (ValueError, RuntimeError):
+            # next_idx out of range or shapefiles not loaded — treat as end of list
+            siguiente = None
+            hay_siguiente = False
+
     return jsonify({
         'success': True,
-        'idx': idx,
-        'guardado': {
-            'estatus_chapingo': pg_record.estatus_chapingo if pg_record else estatus_chapingo,
-            'id_poligono_unico': pg_record.id_poligono_unico if pg_record else id_poligono_unico,
-            'superficie_chapingo': pg_record.superficie_chapingo if pg_record else superficie_chapingo,
-            'comentario_chapingo': pg_record.comentario_chapingo if pg_record else comentario_chapingo,
-            'superficie_calculada': pg_record.superficie_calculada if pg_record else superficie_calculada,
-        }
+        'guardado': guardado,
+        'siguiente': siguiente,
+        'hay_siguiente': hay_siguiente,
     })
+
+
+def _get_filtered_indices_for_advance(filtro):
+    """Return the ordered list of indices for a given filtro string.
+
+    Supports: 'nuevos', 'existentes', 'por_clasificar', 'clasificados',
+              'clasificacion:<key>' (e.g. 'clasificacion:duplicado').
+    Returns an empty list if the filtro is unrecognised or data is unavailable.
+    """
+    if shp_cache.validacion is None or shp_cache.mega is None:
+        return []
+
+    allowed = set(_get_user_allowed_indices())
+
+    if filtro in ('nuevos', 'existentes'):
+        global _indices_filtrados_cache
+        if _indices_filtrados_cache is None:
+            mega_ids = set(shp_cache.mega['ID_POLIGON'].astype(str).str.strip())
+            mask_nuevos = ~shp_cache.validacion['ID_POLIGON'].astype(str).str.strip().isin(mega_ids)
+            indices_nuevos = [int(i) for i in shp_cache.validacion.index[mask_nuevos]]
+            indices_existentes = [int(i) for i in shp_cache.validacion.index[~mask_nuevos]]
+            _indices_filtrados_cache = {
+                'nuevos': indices_nuevos,
+                'existentes': indices_existentes,
+            }
+        indices = _indices_filtrados_cache[filtro]
+        return [i for i in indices if i in allowed]
+
+    if filtro in ('por_clasificar', 'clasificados'):
+        tiene_decision = (filtro == 'clasificados')
+        records = Analizador15K.query.with_entities(Analizador15K.idx_shp).filter(
+            Analizador15K.tiene_decision == tiene_decision
+        ).order_by(Analizador15K.idx_shp).all()
+        indices = [r[0] for r in records]
+        return [i for i in indices if i in allowed]
+
+    if filtro.startswith('clasificacion:'):
+        key = filtro[len('clasificacion:'):]
+        if _clasif_nuevos_state.get('indices_por_clasif') is None:
+            return []
+        indices = _clasif_nuevos_state['indices_por_clasif'].get(key, [])
+        return [i for i in indices if i in allowed]
+
+    return []
 
 
 @app.route('/api/analizador/decisiones')
