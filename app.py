@@ -5340,7 +5340,11 @@ def api_analizador_decisiones():
             )
         ).order_by(Analizador15K.idx_shp).all()
 
-    resultados = [r.to_dict() for r in records]
+    resultados = []
+    for r in records:
+        d = r.to_dict()
+        d['decidido_por'] = r.decidido_por.username if r.decidido_por else None
+        resultados.append(d)
 
     return jsonify({
         'total': len(resultados),
@@ -6175,7 +6179,19 @@ def api_resultados_15k_exportar():
     """Export all decided polygons to Excel with original columns + 3 work fields."""
     import io as _io
 
-    records = Analizador15K.query.filter_by(tiene_decision=True).order_by(Analizador15K.idx_shp).all()
+    from flask_login import current_user
+    query = Analizador15K.query.filter_by(tiene_decision=True)
+
+    # Non-admin users only see their own assigned polygons
+    if not current_user.is_admin:
+        query = query.filter(
+            db.or_(
+                Analizador15K.usuario_asignado_id == current_user.id,
+                Analizador15K.usuario_asignado_id.is_(None)
+            )
+        )
+
+    records = query.order_by(Analizador15K.idx_shp).all()
 
     if not records:
         return jsonify({'error': 'No hay decisiones para exportar'}), 404

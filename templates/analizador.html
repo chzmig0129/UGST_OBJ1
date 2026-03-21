@@ -936,7 +936,7 @@ kbd {
                         <button class="btn btn-outline-primary btn-sm me-2" onclick="cargarResultados()">
                             <i class="bi bi-arrow-clockwise me-1"></i>Actualizar
                         </button>
-                        <a href="/api/validacion-15k/exportar" class="btn btn-success btn-sm">
+                        <a href="/api/resultados-15k/exportar" class="btn btn-success btn-sm">
                             <i class="bi bi-file-earmark-excel me-1"></i>Exportar Excel
                         </a>
                     </div>
@@ -965,10 +965,12 @@ kbd {
                                 <th>ID Polígono</th>
                                 <th>ID Crédito</th>
                                 <th>Archivo ZIP</th>
+                                <th>Región</th>
                                 <th>Estatus Chapingo</th>
                                 <th>ID Polígono Único</th>
                                 <th>Superficie (ha)</th>
-                                <th>Sup. Calculada (ha)</th>
+                                <th>Decidido por</th>
+                                <th>Fecha</th>
                                 <th>Acciones</th>
                             </tr>
                         </thead>
@@ -2422,21 +2424,26 @@ kbd {
         var html = '';
         for (var i = 0; i < datos.length; i++) {
             var d = datos[i];
-            var badgeClass = 'bg-secondary';
-            if (d.estatus_chapingo === 'VINCULAR') badgeClass = 'bg-primary';
-            else if (d.estatus_chapingo === 'NUEVO') badgeClass = 'bg-success';
-            else if (d.estatus_chapingo === 'ELIMINAR') badgeClass = 'bg-danger';
+            var estatusBadge = '';
+            if (d.estatus_chapingo === 'VINCULAR') estatusBadge = '<span class="badge bg-primary">VINCULAR</span>';
+            else if (d.estatus_chapingo === 'NUEVO') estatusBadge = '<span class="badge bg-success">NUEVO</span>';
+            else if (d.estatus_chapingo === 'ELIMINAR') estatusBadge = '<span class="badge bg-danger">ELIMINAR</span>';
+            else estatusBadge = '<span class="badge bg-secondary">' + (d.estatus_chapingo || '—') + '</span>';
+
+            var fechaStr = d.fecha_decision ? new Date(d.fecha_decision).toLocaleDateString('es-MX') : '—';
 
             html += '<tr>' +
                 '<td>' + (i + 1) + '</td>' +
                 '<td><code>' + (d.id_poligon || '—') + '</code></td>' +
                 '<td>' + (d.id_credito || '—') + '</td>' +
                 '<td><small>' + (d.nombre_zip || '—') + '</small></td>' +
-                '<td><span class="badge ' + badgeClass + '">' + (d.estatus_chapingo || '—') + '</span></td>' +
+                '<td>' + (d.region || '—') + '</td>' +
+                '<td>' + estatusBadge + '</td>' +
                 '<td><code>' + (d.id_poligono_unico || '—') + '</code></td>' +
                 '<td>' + (d.superficie_chapingo != null ? d.superficie_chapingo.toFixed(4) : '—') + '</td>' +
-                '<td>' + (d.superficie_calculada != null ? d.superficie_calculada.toFixed(4) : '—') + '</td>' +
-                '<td><button class="btn btn-outline-primary btn-sm" onclick="irAPoligono(' + d.idx + ')" title="Ver en Analizador"><i class="bi bi-eye"></i></button></td>' +
+                '<td>' + (d.decidido_por || '—') + '</td>' +
+                '<td><small>' + fechaStr + '</small></td>' +
+                '<td><button class="btn btn-outline-primary btn-sm" onclick="irAPoligono(' + d.idx_shp + ')" title="Ver en Analizador"><i class="bi bi-eye"></i></button></td>' +
                 '</tr>';
         }
         tbody.innerHTML = html;
