@@ -4590,12 +4590,45 @@ def construir_evidencia_flujo_chapingo():
     return escenarios
 
 
+def _get_user_allowed_indices():
+    """Return list of idx_shp values the current user is allowed to see.
+
+    If usuario_asignado_id is NULL, the polygon is visible to everyone.
+    If usuario_asignado_id matches current_user.id, it's visible to that user.
+    Admin users (is_admin=True) see everything.
+    """
+    if current_user.is_admin:
+        # Admin sees all
+        rows = Analizador15K.query.with_entities(Analizador15K.idx_shp).order_by(Analizador15K.idx_shp).all()
+    else:
+        # Regular user sees: assigned to them OR unassigned (NULL)
+        rows = Analizador15K.query.with_entities(Analizador15K.idx_shp).filter(
+            db.or_(
+                Analizador15K.usuario_asignado_id == current_user.id,
+                Analizador15K.usuario_asignado_id.is_(None)
+            )
+        ).order_by(Analizador15K.idx_shp).all()
+
+    return [r[0] for r in rows]
+
+
+def _user_can_access_idx(idx):
+    """Check if current user can access a specific idx_shp."""
+    if current_user.is_admin:
+        return True
+
+    record = Analizador15K.query.filter_by(idx_shp=idx).first()
+    if record is None:
+        return True  # Not in table, allow access (backward compat)
+
+    return record.usuario_asignado_id is None or record.usuario_asignado_id == current_user.id
+
+
 @app.route('/api/analizador/total')
 @login_required
 def api_analizador_total():
-    if shp_cache.validacion is None:
-        return jsonify({'error': 'Shapefiles no cargados'}), 500
-    return jsonify({'total': len(shp_cache.validacion)})
+    allowed = _get_user_allowed_indices()
+    return jsonify({'total': len(allowed)})
 
 
 def calcular_traslapes(idx):
@@ -4813,6 +4846,8 @@ def _requiere_vinculacion_chapingo(idx, estatus_chapingo):
 @app.route('/api/analizador/poligono/<int:idx>')
 @login_required
 def api_analizador_poligono(idx):
+    if not _user_can_access_idx(idx):
+        return jsonify({'error': 'No tienes acceso a este polígono'}), 403
     try:
         data = calcular_traslapes(idx)
     except RuntimeError as e:
@@ -4834,6 +4869,8 @@ def api_analizador_poligono(idx):
 @login_required
 def api_analizador_propuesta_editable(idx):
     """Return complete editable payload for Analizador proposal panel."""
+    if not _user_can_access_idx(idx):
+        return jsonify({'error': 'No tienes acceso a este polígono'}), 403
     try:
         analisis_mega = calcular_traslapes(idx)
         es_nuevo = indice_pertenece_a_nuevos(idx)
@@ -4900,6 +4937,8 @@ def api_analizador_chapingo_evidencia():
 @login_required
 def api_analizador_guardar_propuesta_editable(idx):
     """Save editable Chapingo decision values for a single index."""
+    if not _user_can_access_idx(idx):
+        return jsonify({'error': 'No tienes acceso a este polígono'}), 403
     if shp_cache.validacion is None:
         return jsonify({'error': 'Shapefiles no cargados'}), 500
     if idx < 0 or idx >= len(shp_cache.validacion):
@@ -4971,6 +5010,19 @@ def api_analizador_guardar_propuesta_editable(idx):
     finally:
         conn.close()
 
+    # Also update PostgreSQL analizador_15k table
+    pg_record = Analizador15K.query.filter_by(idx_shp=idx).first()
+    if pg_record:
+        pg_record.estatus_chapingo = estatus_chapingo
+        pg_record.id_poligono_unico = id_poligono_unico
+        pg_record.superficie_chapingo = superficie_chapingo
+        pg_record.comentario_chapingo = comentario_chapingo
+        pg_record.superficie_calculada = superficie_calculada
+        pg_record.tiene_decision = True
+        pg_record.decidido_por_id = current_user.id
+        pg_record.fecha_decision = datetime.utcnow()
+        db.session.commit()
+
     guardado = obtener_guardado_validacion_15k(idx)
     return jsonify({
         'success': True,
@@ -4988,7 +5040,10 @@ def api_analizador_guardar_propuesta_editable(idx):
 @app.route('/api/analizador/decisiones')
 @login_required
 def api_analizador_decisiones():
-    """Return all saved Chapingo decisions as JSON for the Resultados table."""
+    """Return saved Chapingo decisions for the current user as JSON for the Resultados table."""
+    # Build the set of allowed idx_shp values for this user
+    allowed_set = set(_get_user_allowed_indices())
+
     conn = get_db_connection()
     try:
         rows = conn.execute('''
@@ -5001,10 +5056,13 @@ def api_analizador_decisiones():
     finally:
         conn.close()
 
-    # Enrich with data from the validation shapefile
+    # Enrich with data from the validation shapefile, filtering to user's allowed indices
     resultados = []
     for row in rows:
         idx = row['idx']
+        # Skip indices the current user is not allowed to see
+        if allowed_set and idx not in allowed_set:
+            continue
         record = {
             'idx': idx,
             'estatus_chapingo': row['estatus_chapingo'],
@@ -5038,8 +5096,11 @@ def api_analizador_buscar():
     q = request.args.get('q', '').strip()
     if not q:
         return jsonify({'resultados': []})
+    allowed = set(_get_user_allowed_indices())
     resultados = []
     for idx, row in shp_cache.validacion.iterrows():
+        if int(idx) not in allowed:
+            continue
         if (q.lower() in str(row.get('ID_CREDITO', '')).lower() or
                 q.lower() in str(row.get('ID_POLIGON', '')).lower()):
             resultados.append({
@@ -5055,21 +5116,25 @@ def api_analizador_buscar():
 @app.route('/api/analizador/dashboard-estatus')
 @login_required
 def api_analizador_dashboard_estatus():
-    global _dashboard_cache
     if shp_cache.validacion is None or shp_cache.mega is None:
         return jsonify({'error': 'Shapefiles no cargados'}), 500
-    if _dashboard_cache is not None:
-        return jsonify(_dashboard_cache)
+
+    allowed = set(_get_user_allowed_indices())
+
     mega_ids = set(shp_cache.mega['ID_POLIGON'].astype(str).str.strip())
-    total_15k = len(shp_cache.validacion)
-    nuevos = int((~shp_cache.validacion['ID_POLIGON'].astype(str).str.strip().isin(mega_ids)).sum())
+
+    # Filter validacion to only user's allowed indices
+    user_validacion = shp_cache.validacion.iloc[sorted(allowed)]
+    total_15k = len(user_validacion)
+    nuevos = int((~user_validacion['ID_POLIGON'].astype(str).str.strip().isin(mega_ids)).sum())
     existentes = total_15k - nuevos
-    _dashboard_cache = {
+
+    result = {
         'total_15k': total_15k,
         'nuevos': nuevos,
         'existentes': existentes,
     }
-    return jsonify(_dashboard_cache)
+    return jsonify(result)
 
 
 @app.route('/api/analizador/indices-filtrados')
@@ -5091,6 +5156,9 @@ def api_analizador_indices_filtrados():
             'existentes': indices_existentes,
         }
     indices = _indices_filtrados_cache[filtro]
+    # Filter to only indices the current user is allowed to see
+    allowed = set(_get_user_allowed_indices())
+    indices = [i for i in indices if i in allowed]
     return jsonify({'filtro': filtro, 'indices': indices, 'total': len(indices)})
 
 
@@ -5287,6 +5355,9 @@ def api_clasificacion_nuevos_indices():
         return jsonify({'error': 'El parámetro subfiltro no aplica para esta clasificación'}), 400
 
     indices = _clasif_nuevos_state['indices_por_clasif'].get(indices_key, [])
+    # Filter to only indices the current user is allowed to see
+    allowed = set(_get_user_allowed_indices())
+    indices = [i for i in indices if i in allowed]
     response = {'clasif': clasif, 'indices': indices, 'total': len(indices)}
     if subfiltro not in (None, ''):
         response['subfiltro'] = subfiltro
