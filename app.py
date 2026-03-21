@@ -4627,8 +4627,27 @@ def _user_can_access_idx(idx):
 @app.route('/api/analizador/total')
 @login_required
 def api_analizador_total():
-    allowed = _get_user_allowed_indices()
-    return jsonify({'total': len(allowed)})
+    from flask_login import current_user
+
+    if current_user.is_admin:
+        base_query = Analizador15K.query
+    else:
+        base_query = Analizador15K.query.filter(
+            db.or_(
+                Analizador15K.usuario_asignado_id == current_user.id,
+                Analizador15K.usuario_asignado_id.is_(None)
+            )
+        )
+
+    total = base_query.count()
+    clasificados = base_query.filter(Analizador15K.tiene_decision == True).count()  # noqa: E712
+    por_clasificar = total - clasificados
+
+    return jsonify({
+        'total': total,
+        'clasificados': clasificados,
+        'por_clasificar': por_clasificar
+    })
 
 
 def calcular_traslapes(idx):
@@ -4879,7 +4898,34 @@ def api_analizador_propuesta_editable(idx):
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
 
-    guardado = obtener_guardado_validacion_15k(idx)
+    # Read saved state from PostgreSQL
+    pg_record = Analizador15K.query.filter_by(idx_shp=idx).first()
+    if pg_record and pg_record.tiene_decision:
+        guardado = {
+            'estatus': pg_record.estatus_chapingo or 'pendiente',
+            'estatus_chapingo': pg_record.estatus_chapingo,
+            'id_poligono_unico': pg_record.id_poligono_unico,
+            'superficie_chapingo': pg_record.superficie_chapingo,
+            'comentario_chapingo': pg_record.comentario_chapingo,
+            'superficie_calculada': pg_record.superficie_calculada,
+            'id_poligon_historico': None,
+            'mega_idx': None,
+            'overlap_pct': None,
+            'fecha_validacion': pg_record.fecha_decision.isoformat() if pg_record.fecha_decision else None,
+        }
+    else:
+        guardado = {
+            'estatus': 'pendiente',
+            'estatus_chapingo': None,
+            'id_poligono_unico': None,
+            'superficie_chapingo': None,
+            'comentario_chapingo': None,
+            'superficie_calculada': None,
+            'id_poligon_historico': None,
+            'mega_idx': None,
+            'overlap_pct': None,
+            'fecha_validacion': None,
+        }
 
     if es_nuevo:
         propuesta = generar_propuesta_chapingo_nuevo(idx, analisis_mega=analisis_mega)
@@ -4985,32 +5031,8 @@ def api_analizador_guardar_propuesta_editable(idx):
     vgeom_utm = transform(transformer.transform, vgeom)
     superficie_calculada = round(vgeom_utm.area / 10000, 4)
 
-    conn = get_db_connection()
-    try:
-        conn.execute(
-            '''INSERT INTO validacion_15k
-               (idx, estatus_chapingo, id_poligono_unico, superficie_chapingo, comentario_chapingo, superficie_calculada)
-               VALUES (?, ?, ?, ?, ?, ?)
-               ON CONFLICT(idx) DO UPDATE SET
-                   estatus_chapingo = excluded.estatus_chapingo,
-                   id_poligono_unico = excluded.id_poligono_unico,
-                   superficie_chapingo = excluded.superficie_chapingo,
-                   comentario_chapingo = excluded.comentario_chapingo,
-                   superficie_calculada = excluded.superficie_calculada''',
-            (
-                idx,
-                estatus_chapingo,
-                id_poligono_unico,
-                superficie_chapingo,
-                comentario_chapingo,
-                superficie_calculada,
-            )
-        )
-        conn.commit()
-    finally:
-        conn.close()
-
-    # Also update PostgreSQL analizador_15k table
+    # Save to PostgreSQL (analizador_15k)
+    from flask_login import current_user
     pg_record = Analizador15K.query.filter_by(idx_shp=idx).first()
     if pg_record:
         pg_record.estatus_chapingo = estatus_chapingo
@@ -5023,16 +5045,16 @@ def api_analizador_guardar_propuesta_editable(idx):
         pg_record.fecha_decision = datetime.utcnow()
         db.session.commit()
 
-    guardado = obtener_guardado_validacion_15k(idx)
+    # Return saved state
     return jsonify({
         'success': True,
         'idx': idx,
         'guardado': {
-            'estatus_chapingo': guardado['estatus_chapingo'],
-            'id_poligono_unico': guardado['id_poligono_unico'],
-            'superficie_chapingo': guardado['superficie_chapingo'],
-            'comentario_chapingo': guardado['comentario_chapingo'],
-            'superficie_calculada': guardado['superficie_calculada'],
+            'estatus_chapingo': pg_record.estatus_chapingo if pg_record else estatus_chapingo,
+            'id_poligono_unico': pg_record.id_poligono_unico if pg_record else id_poligono_unico,
+            'superficie_chapingo': pg_record.superficie_chapingo if pg_record else superficie_chapingo,
+            'comentario_chapingo': pg_record.comentario_chapingo if pg_record else comentario_chapingo,
+            'superficie_calculada': pg_record.superficie_calculada if pg_record else superficie_calculada,
         }
     })
 
@@ -5041,50 +5063,64 @@ def api_analizador_guardar_propuesta_editable(idx):
 @login_required
 def api_analizador_decisiones():
     """Return saved Chapingo decisions for the current user as JSON for the Resultados table."""
-    # Build the set of allowed idx_shp values for this user
-    allowed_set = set(_get_user_allowed_indices())
+    from flask_login import current_user
 
-    conn = get_db_connection()
-    try:
-        rows = conn.execute('''
-            SELECT idx, estatus_chapingo, id_poligono_unico,
-                   superficie_chapingo, comentario_chapingo, superficie_calculada
-            FROM validacion_15k
-            WHERE estatus_chapingo IS NOT NULL
-            ORDER BY idx ASC
-        ''').fetchall()
-    finally:
-        conn.close()
+    if current_user.is_admin:
+        records = Analizador15K.query.filter(
+            Analizador15K.tiene_decision == True  # noqa: E712
+        ).order_by(Analizador15K.idx_shp).all()
+    else:
+        records = Analizador15K.query.filter(
+            Analizador15K.tiene_decision == True,  # noqa: E712
+            db.or_(
+                Analizador15K.usuario_asignado_id == current_user.id,
+                Analizador15K.usuario_asignado_id.is_(None)
+            )
+        ).order_by(Analizador15K.idx_shp).all()
 
-    # Enrich with data from the validation shapefile, filtering to user's allowed indices
-    resultados = []
-    for row in rows:
-        idx = row['idx']
-        # Skip indices the current user is not allowed to see
-        if allowed_set and idx not in allowed_set:
-            continue
-        record = {
-            'idx': idx,
-            'estatus_chapingo': row['estatus_chapingo'],
-            'id_poligono_unico': row['id_poligono_unico'],
-            'superficie_chapingo': row['superficie_chapingo'],
-            'comentario_chapingo': row['comentario_chapingo'],
-            'superficie_calculada': row['superficie_calculada'],
-            'id_poligon': None,
-            'id_credito': None,
-            'nombre_zip': None,
-        }
-        # Add shapefile data if available
-        if shp_cache.validacion is not None and 0 <= idx < len(shp_cache.validacion):
-            vrow = shp_cache.validacion.iloc[idx]
-            record['id_poligon'] = str(vrow.get('ID_POLIGON', '')) if 'ID_POLIGON' in vrow.index else None
-            record['id_credito'] = str(vrow.get('ID_CREDITO', '')) if 'ID_CREDITO' in vrow.index else None
-            record['nombre_zip'] = str(vrow.get('NOMBRE_ZIP', '')) if 'NOMBRE_ZIP' in vrow.index else None
-        resultados.append(record)
+    resultados = [r.to_dict() for r in records]
 
     return jsonify({
         'total': len(resultados),
         'decisiones': resultados
+    })
+
+
+@app.route('/api/analizador/indices-por-estado')
+@login_required
+def api_analizador_indices_por_estado():
+    """Return indices split by por_clasificar vs clasificados for the current user."""
+    from flask_login import current_user
+
+    if current_user.is_admin:
+        base_query = Analizador15K.query
+    else:
+        base_query = Analizador15K.query.filter(
+            db.or_(
+                Analizador15K.usuario_asignado_id == current_user.id,
+                Analizador15K.usuario_asignado_id.is_(None)
+            )
+        )
+
+    filtro = request.args.get('filtro', 'todos')
+
+    if filtro == 'por_clasificar':
+        records = base_query.filter(
+            Analizador15K.tiene_decision == False  # noqa: E712
+        ).order_by(Analizador15K.idx_shp).all()
+    elif filtro == 'clasificados':
+        records = base_query.filter(
+            Analizador15K.tiene_decision == True  # noqa: E712
+        ).order_by(Analizador15K.idx_shp).all()
+    else:
+        records = base_query.order_by(Analizador15K.idx_shp).all()
+
+    indices = [r.idx_shp for r in records]
+
+    return jsonify({
+        'total': len(indices),
+        'indices': indices,
+        'filtro': filtro
     })
 
 
@@ -5116,25 +5152,47 @@ def api_analizador_buscar():
 @app.route('/api/analizador/dashboard-estatus')
 @login_required
 def api_analizador_dashboard_estatus():
-    if shp_cache.validacion is None or shp_cache.mega is None:
-        return jsonify({'error': 'Shapefiles no cargados'}), 500
+    from flask_login import current_user
 
-    allowed = set(_get_user_allowed_indices())
+    if current_user.is_admin:
+        base_query = Analizador15K.query
+    else:
+        base_query = Analizador15K.query.filter(
+            db.or_(
+                Analizador15K.usuario_asignado_id == current_user.id,
+                Analizador15K.usuario_asignado_id.is_(None)
+            )
+        )
 
-    mega_ids = set(shp_cache.mega['ID_POLIGON'].astype(str).str.strip())
+    total_15k = base_query.count()
+    con_decision = base_query.filter(Analizador15K.tiene_decision == True).count()  # noqa: E712
+    sin_decision = total_15k - con_decision
 
-    # Filter validacion to only user's allowed indices
-    user_validacion = shp_cache.validacion.iloc[sorted(allowed)]
-    total_15k = len(user_validacion)
-    nuevos = int((~user_validacion['ID_POLIGON'].astype(str).str.strip().isin(mega_ids)).sum())
-    existentes = total_15k - nuevos
+    # For nuevos/existentes, still need to check against mega
+    if shp_cache.validacion is not None and shp_cache.mega is not None:
+        allowed = [r.idx_shp for r in base_query.with_entities(Analizador15K.idx_shp).all()]
+        mega_ids = set(shp_cache.mega['ID_POLIGON'].astype(str).str.strip())
 
-    result = {
+        nuevos = 0
+        existentes = 0
+        for idx in allowed:
+            if idx < len(shp_cache.validacion):
+                id_pol = str(shp_cache.validacion.iloc[idx].get('ID_POLIGON', '')).strip()
+                if id_pol in mega_ids:
+                    existentes += 1
+                else:
+                    nuevos += 1
+    else:
+        nuevos = 0
+        existentes = 0
+
+    return jsonify({
         'total_15k': total_15k,
         'nuevos': nuevos,
         'existentes': existentes,
-    }
-    return jsonify(result)
+        'con_decision': con_decision,
+        'sin_decision': sin_decision,
+    })
 
 
 @app.route('/api/analizador/indices-filtrados')

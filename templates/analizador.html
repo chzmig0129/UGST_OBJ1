@@ -430,6 +430,22 @@
                 </h4>
                 <p class="text-muted mb-4">Resumen de polígonos del archivo de validación 15K comparados contra la Mega Capa histórica por ID Polígono.</p>
 
+                <!-- Classification state filter -->
+                <div class="d-flex gap-2 mb-4">
+                    <button class="btn btn-outline-warning btn-sm" id="btn-filtro-por-clasificar" onclick="filtrarPorEstadoClasif('por_clasificar')">
+                        <i class="bi bi-hourglass-split me-1"></i>Por Clasificar
+                        <span class="badge bg-warning text-dark ms-1" id="count-por-clasificar">—</span>
+                    </button>
+                    <button class="btn btn-outline-success btn-sm" id="btn-filtro-clasificados" onclick="filtrarPorEstadoClasif('clasificados')">
+                        <i class="bi bi-check-circle me-1"></i>Clasificados
+                        <span class="badge bg-success ms-1" id="count-clasificados">—</span>
+                    </button>
+                    <button class="btn btn-outline-secondary btn-sm" id="btn-filtro-todos" onclick="filtrarPorEstadoClasif('todos')">
+                        <i class="bi bi-grid me-1"></i>Todos
+                        <span class="badge bg-secondary ms-1" id="count-todos">—</span>
+                    </button>
+                </div>
+
                 <div class="dashboard-stats" style="grid-template-columns: repeat(3, 1fr); max-width: 700px;">
                     <!-- Card: Total 15K -->
                     <div class="stat-card stat-total" style="padding: 20px 12px;">
@@ -893,6 +909,12 @@
                 .then(function(r) { return r.json(); })
                 .then(function(data) {
                     totalPoligonos = data.total || 0;
+                    // Update filter counts if available
+                    if (data.clasificados !== undefined) {
+                        document.getElementById('count-por-clasificar').textContent = (data.por_clasificar || 0).toLocaleString('es-MX');
+                        document.getElementById('count-clasificados').textContent = (data.clasificados || 0).toLocaleString('es-MX');
+                        document.getElementById('count-todos').textContent = (data.total || 0).toLocaleString('es-MX');
+                    }
                     updateNavCounter();
                     cargarPoligono(0);
                 });
@@ -1085,6 +1107,13 @@
                 
                 document.getElementById('dash-bar-nuevos').style.width = pctNuevos + '%';
                 document.getElementById('dash-bar-existentes').style.width = pctExistentes + '%';
+
+                // Update classification state counts
+                if (data.con_decision !== undefined) {
+                    document.getElementById('count-por-clasificar').textContent = (data.sin_decision || 0).toLocaleString('es-MX');
+                    document.getElementById('count-clasificados').textContent = (data.con_decision || 0).toLocaleString('es-MX');
+                    document.getElementById('count-todos').textContent = (data.total_15k || 0).toLocaleString('es-MX');
+                }
             })
             .catch(function(err) {
                 console.error('Error cargando dashboard:', err);
@@ -1140,6 +1169,48 @@
                 currentIndex = 0;
                 updateNavCounter();
                 cargarPoligono(0);
+            });
+    }
+
+    // ── Filtro por estado de clasificación ────────────────────────────────────
+    function filtrarPorEstadoClasif(filtro) {
+        // Update button active states
+        document.getElementById('btn-filtro-por-clasificar').className =
+            'btn btn-sm ' + (filtro === 'por_clasificar' ? 'btn-warning' : 'btn-outline-warning');
+        document.getElementById('btn-filtro-clasificados').className =
+            'btn btn-sm ' + (filtro === 'clasificados' ? 'btn-success' : 'btn-outline-success');
+        document.getElementById('btn-filtro-todos').className =
+            'btn btn-sm ' + (filtro === 'todos' ? 'btn-secondary' : 'btn-outline-secondary');
+
+        fetch('/api/analizador/indices-por-estado?filtro=' + filtro)
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                filteredIndices = data.indices;
+                filteredPos = 0;
+                totalPoligonos = data.total;
+                activeFilter = filtro === 'todos' ? null : filtro;
+
+                // Show filter banner using existing filtro-activo elements
+                if (filtro !== 'todos') {
+                    var label = filtro === 'por_clasificar' ? 'Por Clasificar' : 'Clasificados';
+                    document.getElementById('filtro-label').textContent = 'Filtrando: ' + label;
+                    document.getElementById('filtro-count').textContent = data.total;
+                    document.getElementById('filtro-activo').style.display = 'block';
+                } else {
+                    filteredIndices = null;
+                    document.getElementById('filtro-activo').style.display = 'none';
+                }
+
+                // Switch to Analizador tab and load first polygon
+                var tabEl = document.getElementById('tab-analizador');
+                var tab = new bootstrap.Tab(tabEl);
+                tab.show();
+
+                if (data.indices.length > 0) {
+                    currentIndex = data.indices[0];
+                    updateNavCounter();
+                    cargarPoligono(currentIndex);
+                }
             });
     }
 
