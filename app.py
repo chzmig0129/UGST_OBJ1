@@ -53,7 +53,7 @@ setup_logging(app)
 if not app.debug:
     _csp = {
         'default-src': ["'self'"],
-        'script-src': ["'self'", "'unsafe-inline'", 'cdn.jsdelivr.net', 'unpkg.com'],
+        'script-src': ["'self'", "'unsafe-inline'", 'cdn.jsdelivr.net', 'unpkg.com', 'cdnjs.cloudflare.com'],
         'style-src': ["'self'", "'unsafe-inline'", 'cdn.jsdelivr.net', 'unpkg.com'],
         'img-src': [
             "'self'",
