@@ -61,9 +61,10 @@ if not app.debug:
             'tile.openstreetmap.org',
             '*.tile.openstreetmap.org',
             'cdn.jsdelivr.net',
+            'server.arcgisonline.com',
         ],
         'font-src': ["'self'", 'cdn.jsdelivr.net', 'unpkg.com'],
-        'connect-src': ["'self'", 'tile.openstreetmap.org', '*.tile.openstreetmap.org'],
+        'connect-src': ["'self'", 'tile.openstreetmap.org', '*.tile.openstreetmap.org', 'server.arcgisonline.com'],
     }
     Talisman(
         app,
