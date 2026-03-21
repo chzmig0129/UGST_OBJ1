@@ -5947,7 +5947,7 @@ def api_resultados_15k_decisiones():
 @app.route('/api/resultados-15k/exportar')
 @login_required
 def api_resultados_15k_exportar():
-    """Export all decided polygons to Excel."""
+    """Export all decided polygons to Excel with original columns + 3 work fields."""
     import io as _io
 
     records = Analizador15K.query.filter_by(tiene_decision=True).order_by(Analizador15K.idx_shp).all()
@@ -5961,27 +5961,44 @@ def api_resultados_15k_exportar():
         ws = wb.active
         ws.title = 'Resultados 15K'
 
-        # Headers
-        headers = ['#', 'ID Polígono', 'ID Crédito', 'Archivo ZIP', 'Región',
-                   'Estatus Chapingo', 'ID Polígono Único', 'Superficie SHP',
-                   'Superficie Calculada', 'Decidido por', 'Fecha']
+        # Headers: original Excel columns + 3 work fields
+        headers = [
+            'IF', 'ID CREDITO', 'ID DTU', 'NOMBRE_INTERMEDIARIO_1',
+            'FECHA CREACIÓN', 'FECHA AUTORIZACION', 'FECHA VENCIMIENTO',
+            'ACCION', 'DESCRIPCION ACCION', 'ID PERSONA',
+            'ESTADO', 'MUNICIPIO', 'ID_CARGA', 'ID_POLIGONO',
+            'Nombre del Archivo ZIP', 'SUPERFICIE', 'DESCRIPCION',
+            'ESTATUS', 'ESTADO_CREDITO', 'CADENA', 'COMENTARIOS',
+            'Estatus_Chapingo', 'ID_poligono_unico', 'SUPERFICIE CALCULADA',
+        ]
         ws.append(headers)
 
-        from models.user import User
-        for i, r in enumerate(records):
-            user = User.query.get(r.decidido_por_id) if r.decidido_por_id else None
+        for r in records:
             ws.append([
-                i + 1,
-                r.id_poligon,
+                r.intermediario_financiero,
                 r.id_credito,
+                r.id_dtu,
+                r.nombre_intermediario,
+                r.fecha_creacion_credito,
+                r.fecha_autorizacion,
+                r.fecha_vencimiento,
+                r.accion,
+                r.descripcion_accion,
+                r.id_persona,
+                r.estado,
+                r.municipio,
+                r.id_carga,
+                r.id_poligon,
                 r.nombre_zip,
-                r.region,
+                r.superficie_excel,
+                r.descripcion,
+                r.estatus_excel,
+                r.estado_credito,
+                r.cadena,
+                r.comentarios_excel,
                 r.estatus_chapingo,
                 r.id_poligono_unico,
-                r.superficie_shp,
                 r.superficie_calculada,
-                user.username if user else '',
-                r.fecha_decision.strftime('%Y-%m-%d %H:%M') if r.fecha_decision else '',
             ])
 
         output = _io.BytesIO()
