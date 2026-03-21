@@ -182,6 +182,7 @@ login_manager.login_message_category = 'warning'
 
 # User model — import after extensions are wired up so db is ready.
 from models.user import User  # noqa: E402
+from models.analizador_15k import Analizador15K  # noqa: E402
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -4981,6 +4982,51 @@ def api_analizador_guardar_propuesta_editable(idx):
             'comentario_chapingo': guardado['comentario_chapingo'],
             'superficie_calculada': guardado['superficie_calculada'],
         }
+    })
+
+
+@app.route('/api/analizador/decisiones')
+@login_required
+def api_analizador_decisiones():
+    """Return all saved Chapingo decisions as JSON for the Resultados table."""
+    conn = get_db_connection()
+    try:
+        rows = conn.execute('''
+            SELECT idx, estatus_chapingo, id_poligono_unico,
+                   superficie_chapingo, comentario_chapingo, superficie_calculada
+            FROM validacion_15k
+            WHERE estatus_chapingo IS NOT NULL
+            ORDER BY idx ASC
+        ''').fetchall()
+    finally:
+        conn.close()
+
+    # Enrich with data from the validation shapefile
+    resultados = []
+    for row in rows:
+        idx = row['idx']
+        record = {
+            'idx': idx,
+            'estatus_chapingo': row['estatus_chapingo'],
+            'id_poligono_unico': row['id_poligono_unico'],
+            'superficie_chapingo': row['superficie_chapingo'],
+            'comentario_chapingo': row['comentario_chapingo'],
+            'superficie_calculada': row['superficie_calculada'],
+            'id_poligon': None,
+            'id_credito': None,
+            'nombre_zip': None,
+        }
+        # Add shapefile data if available
+        if shp_cache.validacion is not None and 0 <= idx < len(shp_cache.validacion):
+            vrow = shp_cache.validacion.iloc[idx]
+            record['id_poligon'] = str(vrow.get('ID_POLIGON', '')) if 'ID_POLIGON' in vrow.index else None
+            record['id_credito'] = str(vrow.get('ID_CREDITO', '')) if 'ID_CREDITO' in vrow.index else None
+            record['nombre_zip'] = str(vrow.get('NOMBRE_ZIP', '')) if 'NOMBRE_ZIP' in vrow.index else None
+        resultados.append(record)
+
+    return jsonify({
+        'total': len(resultados),
+        'decisiones': resultados
     })
 
 
