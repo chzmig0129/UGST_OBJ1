@@ -47,26 +47,36 @@
 
                 <div class="mb-3">
                     <label for="password" class="form-label">Contraseña</label>
-                    <input
-                        type="password"
-                        class="form-control"
-                        id="password"
-                        name="password"
-                        placeholder="Mínimo 6 caracteres"
-                        required
-                    >
+                    <div class="input-group">
+                        <input
+                            type="password"
+                            class="form-control"
+                            id="password"
+                            name="password"
+                            placeholder="Mínimo 6 caracteres"
+                            required
+                        >
+                        <button class="btn btn-outline-secondary" type="button" onclick="togglePassword('password', this)">
+                            <i class="bi bi-eye"></i>
+                        </button>
+                    </div>
                 </div>
 
                 <div class="mb-3">
                     <label for="confirm_password" class="form-label">Confirmar contraseña</label>
-                    <input
-                        type="password"
-                        class="form-control"
-                        id="confirm_password"
-                        name="confirm_password"
-                        placeholder="Repite tu contraseña"
-                        required
-                    >
+                    <div class="input-group">
+                        <input
+                            type="password"
+                            class="form-control"
+                            id="confirm_password"
+                            name="confirm_password"
+                            placeholder="Repite tu contraseña"
+                            required
+                        >
+                        <button class="btn btn-outline-secondary" type="button" onclick="togglePassword('confirm_password', this)">
+                            <i class="bi bi-eye"></i>
+                        </button>
+                    </div>
                 </div>
 
                 <div class="d-grid mt-4">
@@ -84,4 +94,17 @@
         </div>
     </div>
 </div>
+<script>
+function togglePassword(inputId, btn) {
+    var input = document.getElementById(inputId);
+    var icon = btn.querySelector('i');
+    if (input.type === 'password') {
+        input.type = 'text';
+        icon.className = 'bi bi-eye-slash';
+    } else {
+        input.type = 'password';
+        icon.className = 'bi bi-eye';
+    }
+}
+</script>
 {% endblock %}
