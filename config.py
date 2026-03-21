@@ -52,22 +52,11 @@ class ProductionConfig(Config):
     SESSION_COOKIE_SAMESITE = 'Lax'
     PERMANENT_SESSION_LIFETIME = 3600  # 1 hour in seconds
 
-    @property
-    def SECRET_KEY(self):  # type: ignore[override]
-        key = os.environ.get('SECRET_KEY')
-        if not key:
-            raise RuntimeError(
-                'SECRET_KEY environment variable is not set. '
-                'Set it before starting the application in production.'
-            )
-        return key
-
-    @property
-    def SQLALCHEMY_DATABASE_URI(self):  # type: ignore[override]
-        return os.environ.get(
-            'DATABASE_URL',
-            'postgresql://valgeougst:password@localhost:5432/valgeougst',
-        )
+    SECRET_KEY = os.environ.get('SECRET_KEY', '')
+    SQLALCHEMY_DATABASE_URI = os.environ.get(
+        'DATABASE_URL',
+        'postgresql://valgeougst:password@localhost:5432/valgeougst',
+    )
 
 
 class TestingConfig(Config):
