@@ -4612,6 +4612,43 @@ def _get_user_allowed_indices():
     return [r[0] for r in rows]
 
 
+def _filter_clasif_counts_for_user():
+    """Recompute classification counts filtered by current user's allowed indices."""
+    if _clasif_nuevos_state['indices_por_clasif'] is None:
+        return {'counts': {}, 'total_processed': 0}
+
+    allowed = set(_get_user_allowed_indices())
+    indices_por_clasif = _clasif_nuevos_state['indices_por_clasif']
+
+    counts = {}
+    total = 0
+    for key, idx_list in indices_por_clasif.items():
+        filtered = [i for i in idx_list if i in allowed]
+        counts[key] = len(filtered)
+        # Only count main categories for total (not sub-categories)
+        if key in ('duplicado', 'traslape_interno', 'traslape_relevante', 'sin_conflicto', 'sin_matches'):
+            total += len(filtered)
+
+    # Map to the expected key names (the frontend expects these specific keys)
+    result = {
+        'duplicado': counts.get('duplicado', 0),
+        'duplicados_mismo_credito': counts.get('duplicado_mismo_credito', 0),
+        'duplicados_diferente_credito': counts.get('duplicado_diferente_credito', 0),
+        'traslape_interno': counts.get('traslape_interno', 0),
+        'traslape_interno_mismo_credito': counts.get('traslape_interno_mismo_credito', 0),
+        'traslape_interno_diferente_credito': counts.get('traslape_interno_diferente_credito', 0),
+        'traslape_relevante': counts.get('traslape_relevante', 0),
+        'traslape_relevante_mismo_credito': counts.get('traslape_relevante_mismo_credito', 0),
+        'traslape_relevante_diferente_credito': counts.get('traslape_relevante_diferente_credito', 0),
+        'sin_conflicto': counts.get('sin_conflicto', 0),
+        'sin_conflicto_mismo_credito': counts.get('sin_conflicto_mismo_credito', 0),
+        'sin_conflicto_diferente_credito': counts.get('sin_conflicto_diferente_credito', 0),
+        'sin_matches': counts.get('sin_matches', 0),
+    }
+
+    return {'counts': result, 'total_processed': total}
+
+
 def _user_can_access_idx(idx):
     """Check if current user can access a specific idx_shp."""
     if current_user.is_admin:
@@ -5341,12 +5378,14 @@ def api_clasificacion_nuevos_iniciar():
         return jsonify({'error': 'Cálculo en progreso'}), 409
 
     if _clasif_nuevos_state['status'] == 'done':
+        # Recompute counts filtered by user's allowed indices
+        filtered_result = _filter_clasif_counts_for_user()
         return jsonify({
             'status': 'done',
             'progress': 100,
-            'processed': _clasif_nuevos_state['processed'],
-            'total': _clasif_nuevos_state['total'],
-            'result': _clasif_nuevos_state['result'],
+            'processed': filtered_result['total_processed'],
+            'total': filtered_result['total_processed'],
+            'result': filtered_result['counts'],
         }), 200
 
     # Reset state and start background thread
@@ -5381,7 +5420,10 @@ def api_clasificacion_nuevos_estado():
         'total': state['total'],
     }
     if state['status'] == 'done':
-        response['result'] = state['result']
+        filtered = _filter_clasif_counts_for_user()
+        response['result'] = filtered['counts']
+        response['processed'] = filtered['total_processed']
+        response['total'] = filtered['total_processed']
     if state['status'] == 'error':
         response['error'] = state['error']
     return jsonify(response)
