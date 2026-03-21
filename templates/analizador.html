@@ -718,9 +718,15 @@ kbd {
                                 <strong class="small" id="filtro-label">Filtrando: Nuevos</strong>
                                 <span class="badge bg-primary ms-1" id="filtro-count">0</span>
                             </div>
-                            <button class="btn btn-sm btn-outline-secondary" id="btn-limpiar-filtro" title="Quitar filtro">
-                                <i class="bi bi-x-lg"></i>
-                            </button>
+                            <div class="d-flex align-items-center gap-2">
+                                <div class="form-check form-switch form-check-inline mb-0" style="font-size:11px;">
+                                    <input class="form-check-input" type="checkbox" id="toggle-solo-pendientes" checked>
+                                    <label class="form-check-label text-muted" for="toggle-solo-pendientes">Solo pendientes</label>
+                                </div>
+                                <button class="btn btn-sm btn-outline-secondary" id="btn-limpiar-filtro" title="Quitar filtro">
+                                    <i class="bi bi-x-lg"></i>
+                                </button>
+                            </div>
                         </div>
                     </div>
 
@@ -769,6 +775,12 @@ kbd {
                             <div class="progress-bar bg-success" id="verif-progress-bar" role="progressbar" style="width:0%; transition: width 0.3s ease;"></div>
                           </div>
                           <div class="text-end small text-muted" id="verif-progress-pct" style="font-size:10px;">0%</div>
+                        </div>
+
+                        <!-- Solo pendientes toggle (always visible) -->
+                        <div class="form-check form-switch mt-2" style="font-size:11px;">
+                            <input class="form-check-input" type="checkbox" id="toggle-pendientes-nav" checked>
+                            <label class="form-check-label text-muted" for="toggle-pendientes-nav">Saltar clasificados al avanzar</label>
                         </div>
                     </div>
 
@@ -1000,6 +1012,7 @@ kbd {
     var filteredIndices = null;  // null = no filter (show all), array = filtered indices
     var filteredPos     = 0;     // current position within filteredIndices
     var activeFilter    = null;  // 'nuevos' | 'existentes' | null
+    var soloPendientes  = true;  // Default: skip already-classified polygons
     var _currentPropuesta  = null;   // stores current polygon proposal data
     var _cercanosCargados  = false;  // whether nearby polygons are loaded for current idx
     var _verifRequestToken = 0;      // request cancellation token
@@ -1208,13 +1221,17 @@ kbd {
         btnConfirmar.disabled = true;
 
         // Build query params from current filter state
-        var params = '';
+        var paramParts = [];
         if (activeFilter !== null) {
-            params += '?filtro=' + encodeURIComponent(activeFilter);
+            paramParts.push('filtro=' + encodeURIComponent(activeFilter));
             if (filteredIndices !== null) {
-                params += '&pos=' + encodeURIComponent(filteredPos);
+                paramParts.push('pos=' + encodeURIComponent(filteredPos));
             }
         }
+        if (soloPendientes) {
+            paramParts.push('solo_pendientes=1');
+        }
+        var params = paramParts.length > 0 ? '?' + paramParts.join('&') : '';
 
         var payload = {
             estatus_chapingo:   estatus,
@@ -1547,7 +1564,9 @@ kbd {
     // ── Filtros desde Dashboard ───────────────────────────────────────────────
     function aplicarFiltro(tipo) {
         // Fetch filtered indices from API
-        fetch('/api/analizador/indices-filtrados?filtro=' + tipo)
+        var url = '/api/analizador/indices-filtrados?filtro=' + encodeURIComponent(tipo);
+        if (soloPendientes) url += '&solo_pendientes=1';
+        fetch(url)
             .then(function(r) {
                 if (!r.ok) throw new Error('HTTP ' + r.status);
                 return r.json();
@@ -1560,7 +1579,9 @@ kbd {
 
                 // Update filter badge
                 var label = tipo === 'nuevos' ? 'Nuevos' : 'Existentes en MEGA';
-                document.getElementById('filtro-label').textContent = 'Filtrando: ' + label;
+                var labelText = 'Filtrando: ' + label;
+                if (soloPendientes) labelText += ' (pendientes)';
+                document.getElementById('filtro-label').textContent = labelText;
                 document.getElementById('filtro-count').textContent = data.total;
                 document.getElementById('filtro-activo').style.display = 'block';
 
@@ -1596,6 +1617,23 @@ kbd {
             });
     }
 
+    // ── Recargar filtro actual (respetando soloPendientes) ────────────────────
+    function recargarFiltroActual() {
+        if (!activeFilter) return;
+
+        if (activeFilter === 'nuevos' || activeFilter === 'existentes') {
+            aplicarFiltro(activeFilter);
+        } else if (activeFilter === 'por_clasificar' || activeFilter === 'clasificados') {
+            filtrarPorEstadoClasif(activeFilter);
+        } else {
+            // Classification filter: e.g. 'duplicado' or 'duplicado:mismo_credito'
+            var parts = activeFilter.split(':');
+            var clasif = parts[0];
+            var subfiltro = parts.length > 1 ? parts[1] : null;
+            filtrarPorClasificacion(clasif, subfiltro);
+        }
+    }
+
     // ── Filtro por estado de clasificación ────────────────────────────────────
     function filtrarPorEstadoClasif(filtro) {
         // Update button active states
@@ -1606,7 +1644,9 @@ kbd {
         document.getElementById('btn-filtro-todos').className =
             'btn btn-sm ' + (filtro === 'todos' ? 'btn-secondary' : 'btn-outline-secondary');
 
-        fetch('/api/analizador/indices-por-estado?filtro=' + filtro)
+        var estadoUrl = '/api/analizador/indices-por-estado?filtro=' + encodeURIComponent(filtro);
+        // Note: por_clasificar already excludes decided polygons; solo_pendientes not needed here
+        fetch(estadoUrl)
             .then(function(r) { return r.json(); })
             .then(function(data) {
                 filteredIndices = data.indices;
@@ -1783,6 +1823,9 @@ kbd {
         if (subfiltro) {
             url += '&subfiltro=' + encodeURIComponent(subfiltro);
         }
+        if (soloPendientes) {
+            url += '&solo_pendientes=1';
+        }
 
         fetch(url)
             .then(function(r) {
@@ -1791,7 +1834,7 @@ kbd {
             })
             .then(function(data) {
                 if (!data.indices || data.indices.length === 0) {
-                    alert('No hay polígonos en esta clasificación.');
+                    alert('No hay polígonos pendientes en esta clasificación.');
                     return;
                 }
                 filteredIndices = data.indices;
@@ -1817,6 +1860,7 @@ kbd {
                 if (subfiltro && subLabels[subfiltro]) {
                     filterLabel += ' / ' + subLabels[subfiltro];
                 }
+                if (soloPendientes) filterLabel += ' (pendientes)';
 
                 // Update filter badge
                 document.getElementById('filtro-label').textContent = 'Filtrando: ' + filterLabel;
@@ -2348,6 +2392,19 @@ kbd {
 
     document.getElementById('btn-limpiar-filtro').addEventListener('click', function() {
         limpiarFiltro();
+    });
+
+    // ── Solo pendientes toggles ───────────────────────────────────────────────
+    document.getElementById('toggle-solo-pendientes').addEventListener('change', function() {
+        soloPendientes = this.checked;
+        document.getElementById('toggle-pendientes-nav').checked = this.checked;
+        if (activeFilter) recargarFiltroActual();
+    });
+
+    document.getElementById('toggle-pendientes-nav').addEventListener('change', function() {
+        soloPendientes = this.checked;
+        document.getElementById('toggle-solo-pendientes').checked = this.checked;
+        if (activeFilter) recargarFiltroActual();
     });
 
     document.getElementById('btn-iniciar-clasif').addEventListener('click', function() {

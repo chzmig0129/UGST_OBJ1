@@ -5211,6 +5211,34 @@ def api_analizador_confirmar_y_avanzar(idx):
             if _user_can_access_idx(candidate):
                 next_idx = candidate
 
+    # If solo_pendientes, skip forward past already-decided polygons
+    solo_pendientes = request.args.get('solo_pendientes')
+    _fi = locals().get('filtered_indices')   # may be undefined if filtro/pos branch not taken
+    _np = locals().get('next_pos')
+    if solo_pendientes == '1' and next_idx is not None:
+        if filtro and pos_str is not None and _fi:
+            # Filtered mode: walk through remaining filtered indices
+            _cur_pos = _np if _np is not None else 0
+            while next_idx is not None:
+                existing = Analizador15K.query.filter_by(idx_shp=next_idx, tiene_decision=True).first()
+                if not existing:
+                    break  # Found an undecided one
+                _cur_pos += 1
+                if _cur_pos < len(_fi):
+                    next_idx = _fi[_cur_pos]
+                else:
+                    next_idx = None  # No more undecided polygons
+        else:
+            # Unfiltered mode: skip forward sequentially
+            max_idx = len(shp_cache.validacion) if shp_cache.validacion is not None else 0
+            while next_idx is not None and next_idx < max_idx:
+                existing = Analizador15K.query.filter_by(idx_shp=next_idx, tiene_decision=True).first()
+                if not existing:
+                    break
+                next_idx += 1
+            if next_idx is not None and next_idx >= max_idx:
+                next_idx = None
+
     # Load next polygon data
     siguiente = None
     hay_siguiente = False
@@ -5383,6 +5411,21 @@ def api_analizador_indices_por_estado():
 
     indices = [r.idx_shp for r in records]
 
+    # Optional: intersect with classification filter
+    clasif = request.args.get('clasif')
+    subfiltro = request.args.get('subfiltro')
+    if clasif and _clasif_nuevos_state.get('status') == 'done' and _clasif_nuevos_state.get('indices_por_clasif'):
+        ipc = _clasif_nuevos_state['indices_por_clasif']
+        clasif_indices_set = set()
+        if subfiltro:
+            sub_key = clasif + '_' + subfiltro
+            clasif_indices_set = set(ipc.get(sub_key, []))
+        else:
+            for key, vals in ipc.items():
+                if key == clasif or key.startswith(clasif + '_'):
+                    clasif_indices_set.update(vals)
+        indices = sorted(set(indices) & clasif_indices_set)
+
     return jsonify({
         'total': len(indices),
         'indices': indices,
@@ -5483,6 +5526,13 @@ def api_analizador_indices_filtrados():
     # Filter to only indices the current user is allowed to see
     allowed = set(_get_user_allowed_indices())
     indices = [i for i in indices if i in allowed]
+
+    # Optional: exclude already-decided polygons
+    solo_pendientes = request.args.get('solo_pendientes')
+    if solo_pendientes == '1':
+        decided_indices = {r.idx_shp for r in Analizador15K.query.filter_by(tiene_decision=True).with_entities(Analizador15K.idx_shp).all()}
+        indices = [i for i in indices if i not in decided_indices]
+
     return jsonify({'filtro': filtro, 'indices': indices, 'total': len(indices)})
 
 
@@ -5687,6 +5737,13 @@ def api_clasificacion_nuevos_indices():
     # Filter to only indices the current user is allowed to see
     allowed = set(_get_user_allowed_indices())
     indices = [i for i in indices if i in allowed]
+
+    # Optional: exclude already-decided polygons
+    solo_pendientes = request.args.get('solo_pendientes')
+    if solo_pendientes == '1':
+        decided_indices = {r.idx_shp for r in Analizador15K.query.filter_by(tiene_decision=True).with_entities(Analizador15K.idx_shp).all()}
+        indices = [i for i in indices if i not in decided_indices]
+
     response = {'clasif': clasif, 'indices': indices, 'total': len(indices)}
     if subfiltro not in (None, ''):
         response['subfiltro'] = subfiltro
