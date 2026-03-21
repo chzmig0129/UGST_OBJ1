@@ -6405,6 +6405,15 @@ def api_admin_reset_decisiones():
     if not current_user.is_admin:
         return jsonify({'error': 'No autorizado'}), 403
 
+    data = request.get_json() or {}
+    password = data.get('password', '')
+
+    if not password:
+        return jsonify({'error': 'Contraseña requerida'}), 400
+
+    if not current_user.check_password(password):
+        return jsonify({'error': 'Contraseña incorrecta'}), 403
+
     # Reset all decision fields to null/false
     count = Analizador15K.query.filter_by(tiene_decision=True).count()
     Analizador15K.query.update({
@@ -6418,6 +6427,7 @@ def api_admin_reset_decisiones():
         Analizador15K.fecha_decision: None,
     })
     db.session.commit()
+    app.logger.warning('ADMIN RESET: Usuario %s reseteó %d decisiones', current_user.username, count)
     return jsonify({'success': True, 'registros_reseteados': count})
 
 

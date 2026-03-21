@@ -145,6 +145,10 @@
                 <p class="text-danger fw-bold">Esta acción NO se puede deshacer.</p>
                 <label class="form-label">Escribe <strong>RESETEAR</strong> para confirmar:</label>
                 <input type="text" class="form-control" id="reset-confirm-input" placeholder="RESETEAR">
+                <div class="mt-3">
+                    <label class="form-label">Ingresa tu contraseña de admin:</label>
+                    <input type="password" class="form-control" id="reset-password-input" placeholder="Contraseña">
+                </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
@@ -235,15 +239,24 @@ document.getElementById('form-crear-usuario').addEventListener('submit', functio
 });
 
 // Reset confirmation
-document.getElementById('reset-confirm-input').addEventListener('input', function() {
-    document.getElementById('btn-confirmar-reset').disabled = this.value !== 'RESETEAR';
-});
+function checkResetReady() {
+    var textOk = document.getElementById('reset-confirm-input').value === 'RESETEAR';
+    var passOk = document.getElementById('reset-password-input').value.length > 0;
+    document.getElementById('btn-confirmar-reset').disabled = !(textOk && passOk);
+}
+
+document.getElementById('reset-confirm-input').addEventListener('input', checkResetReady);
+document.getElementById('reset-password-input').addEventListener('input', checkResetReady);
 
 document.getElementById('btn-confirmar-reset').addEventListener('click', function() {
     var btn = this;
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Reseteando...';
-    fetch('/api/admin/reset-decisiones', { method: 'POST' })
+    fetch('/api/admin/reset-decisiones', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: document.getElementById('reset-password-input').value })
+    })
         .then(function(r) { return r.json(); })
         .then(function(data) {
             if (data.success) {
@@ -251,6 +264,7 @@ document.getElementById('btn-confirmar-reset').addEventListener('click', functio
                 modal.hide();
                 showAlert('Se resetearon ' + data.registros_reseteados + ' decisiones exitosamente', 'success');
                 document.getElementById('reset-confirm-input').value = '';
+                document.getElementById('reset-password-input').value = '';
                 btn.disabled = true;
                 btn.innerHTML = '<i class="bi bi-arrow-counterclockwise me-1"></i>Resetear Todo';
                 setTimeout(function() { location.reload(); }, 1500);
@@ -265,6 +279,12 @@ document.getElementById('btn-confirmar-reset').addEventListener('click', functio
             btn.disabled = false;
             btn.innerHTML = '<i class="bi bi-arrow-counterclockwise me-1"></i>Resetear Todo';
         });
+});
+
+document.getElementById('modal-reset').addEventListener('hidden.bs.modal', function() {
+    document.getElementById('reset-confirm-input').value = '';
+    document.getElementById('reset-password-input').value = '';
+    document.getElementById('btn-confirmar-reset').disabled = true;
 });
 </script>
 {% endblock %}
