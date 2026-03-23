@@ -4825,6 +4825,33 @@ def calcular_traslapes(idx):
     }
 
 
+# ---------------------------------------------------------------------------
+# Simple in-memory LRU cache for calcular_traslapes results.
+# Keyed by idx (int). Evicts the oldest entry when size exceeds 10 so that
+# memory usage stays bounded even with large geometries.
+# ---------------------------------------------------------------------------
+_traslapes_cache = {}
+
+
+def calcular_traslapes_cached(idx):
+    """Return cached result of calcular_traslapes(idx), computing it on miss.
+
+    The cache holds at most 10 entries (FIFO eviction of the oldest key).
+    This avoids the double computation that occurs when the frontend calls
+    /api/analizador/poligono/<idx> and /api/analizador/propuesta-editable/<idx>
+    back-to-back for the same polygon.
+    """
+    if idx in _traslapes_cache:
+        return _traslapes_cache[idx]
+    result = calcular_traslapes(idx)
+    _traslapes_cache[idx] = result
+    # Keep cache small: evict oldest entry when limit is exceeded
+    if len(_traslapes_cache) > 10:
+        oldest = next(iter(_traslapes_cache))
+        del _traslapes_cache[oldest]
+    return result
+
+
 def obtener_guardado_validacion_15k(idx):
     """Return persisted 15K validation row mapped to stable keys."""
     conn = get_db_connection()
@@ -4914,7 +4941,7 @@ def api_analizador_poligono(idx):
     if not _user_can_access_idx(idx):
         return jsonify({'error': 'No tienes acceso a este polígono'}), 403
     try:
-        data = calcular_traslapes(idx)
+        data = calcular_traslapes_cached(idx)
     except RuntimeError as e:
         return jsonify({'error': str(e)}), 500
     except ValueError as e:
@@ -4937,7 +4964,7 @@ def api_analizador_propuesta_editable(idx):
     if not _user_can_access_idx(idx):
         return jsonify({'error': 'No tienes acceso a este polígono'}), 403
     try:
-        analisis_mega = calcular_traslapes(idx)
+        analisis_mega = calcular_traslapes_cached(idx)
         es_nuevo = indice_pertenece_a_nuevos(idx)
     except RuntimeError as e:
         return jsonify({'error': str(e)}), 500

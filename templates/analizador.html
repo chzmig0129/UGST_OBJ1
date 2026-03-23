@@ -1048,8 +1048,11 @@ kbd {
         map.invalidateSize();
         actualizarProgreso();
         if (filteredIndices !== null) {
-            // Filtered mode: load the first filtered polygon
-            if (filteredIndices.length > 0) {
+            // Filtered mode: only auto-load if no polygon was already loaded directly
+            // (filtrarPorClasificacion and filtrarPorEstadoClasif call cargarPoligono
+            //  directly after tab.show(), so currentIndex is already set — skip here
+            //  to avoid a duplicate API call)
+            if (filteredIndices.length > 0 && currentIndex === null) {
                 filteredPos = 0;
                 currentIndex = filteredIndices[0];
                 updateNavCounter();
@@ -1867,10 +1870,16 @@ kbd {
                 document.getElementById('filtro-count').textContent = data.total;
                 document.getElementById('filtro-activo').style.display = 'block';
 
-                // Switch to Analizador tab
+                // Switch to Analizador tab and load first polygon
                 var tabEl = document.getElementById('tab-analizador');
                 var tab = new bootstrap.Tab(tabEl);
                 tab.show();
+
+                if (data.indices.length > 0) {
+                    currentIndex = data.indices[0];
+                    updateNavCounter();
+                    cargarPoligono(currentIndex);
+                }
             })
             .catch(function(err) {
                 console.error('Error filtrando por clasificación:', err);
