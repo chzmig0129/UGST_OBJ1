@@ -4511,15 +4511,24 @@ def generar_propuesta_chapingo_nuevo(idx, analisis_mega=None):
     mega_same_credit = worst_match.get('same_credit', False)
 
     if clasificacion == 'duplicado':
-        # Superficie >=85% + traslape >=85% → VINCULAR al ID_POLIGONO de mega
-        propuesta['estatus_chapingo_propuesto'] = 'VINCULAR'
-        propuesta['id_poligono_unico_propuesto'] = mega_id_poligon
-        credito_tipo = 'mismo credito' if mega_same_credit else 'diferente credito'
-        propuesta['comentario_chapingo_propuesto'] = (
-            f'Duplicado en Mega ({credito_tipo}). '
-            f'Traslape: {mega_overlap:.1f}%, similitud superficie: {mega_area_ratio:.1f}%. '
-            f'Vinculado a {mega_id_poligon}.'
-        )
+        if mega_same_credit:
+            # Duplicado mismo crédito → ELIMINAR
+            propuesta['estatus_chapingo_propuesto'] = 'ELIMINAR'
+            propuesta['id_poligono_unico_propuesto'] = mega_id_poligon
+            propuesta['comentario_chapingo_propuesto'] = (
+                f'Duplicado en Mega (mismo crédito). '
+                f'Traslape: {mega_overlap:.1f}%, similitud superficie: {mega_area_ratio:.1f}%. '
+                f'Se elimina por duplicado con {mega_id_poligon}.'
+            )
+        else:
+            # Duplicado diferente crédito → VINCULAR
+            propuesta['estatus_chapingo_propuesto'] = 'VINCULAR'
+            propuesta['id_poligono_unico_propuesto'] = mega_id_poligon
+            propuesta['comentario_chapingo_propuesto'] = (
+                f'Duplicado en Mega (diferente crédito). '
+                f'Traslape: {mega_overlap:.1f}%, similitud superficie: {mega_area_ratio:.1f}%. '
+                f'Vinculado a {mega_id_poligon}.'
+            )
 
     elif clasificacion == 'traslape_interno':
         # Mismo credito, traslape 10-85% → ELIMINAR
