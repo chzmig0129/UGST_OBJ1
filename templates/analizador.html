@@ -1017,6 +1017,8 @@ kbd {
     var _cercanosCargados  = false;  // whether nearby polygons are loaded for current idx
     var _verifRequestToken = 0;      // request cancellation token
     var _verifSaveInFlight = false;  // save in progress flag
+    var _cargarPoligonoController = null;  // AbortController for cargarPoligono fetch
+    var _verifPanelController     = null;  // AbortController for actualizarPanelVerificacion fetch
 
     // ── Variables para capas de fondo ─────────────────────────────────────────
     let validacionBgLayer  = null;
@@ -1117,6 +1119,8 @@ kbd {
     }
 
     function actualizarPanelVerificacion(idx) {
+        if (_verifPanelController) _verifPanelController.abort();
+        _verifPanelController = new AbortController();
         var token = ++_verifRequestToken;
         var loadingEl  = document.getElementById('verif-loading');
         var propuestaEl = document.getElementById('verif-propuesta');
@@ -1134,7 +1138,7 @@ kbd {
         document.getElementById('cercanos-dropdown').style.display = 'none';
         document.getElementById('verif-estatus-select').value = '';
 
-        fetch('/api/analizador/propuesta-editable/' + idx)
+        fetch('/api/analizador/propuesta-editable/' + idx, { signal: _verifPanelController.signal })
             .then(function(r) {
                 if (!r.ok) throw new Error('HTTP ' + r.status);
                 return r.json();
@@ -1189,6 +1193,7 @@ kbd {
                 propuestaEl.style.display = 'block';
             })
             .catch(function(err) {
+                if (err.name === 'AbortError') return; // Silently ignore aborted requests
                 if (token !== _verifRequestToken) return;
                 noAplicaEl.textContent = 'No fue posible cargar la propuesta: ' + err.message;
                 noAplicaEl.className = 'alert alert-warning py-2 px-2 mb-0';
@@ -1911,9 +1916,11 @@ kbd {
 
     // ── Cargar polígono ───────────────────────────────────────────────────────
     function cargarPoligono(idx) {
+        if (_cargarPoligonoController) _cargarPoligonoController.abort();
+        _cargarPoligonoController = new AbortController();
         showSpinner();
 
-        fetch('/api/analizador/poligono/' + idx)
+        fetch('/api/analizador/poligono/' + idx, { signal: _cargarPoligonoController.signal })
             .then(function (r) {
                 if (!r.ok) throw new Error('HTTP ' + r.status);
                 return r.json();
@@ -2018,6 +2025,7 @@ kbd {
                 hideSpinner();
             })
             .catch(function (err) {
+                if (err.name === 'AbortError') return; // Silently ignore aborted requests
                 console.error('Error cargando polígono:', err);
                 hideSpinner();
                 document.getElementById('matches-list').innerHTML =
