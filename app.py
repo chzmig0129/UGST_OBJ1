@@ -83,9 +83,21 @@ if not app.debug:
 limiter = Limiter(
     get_remote_address,
     app=app,
-    default_limits=["200 per day", "50 per hour"],
+    default_limits=["10000 per day", "5000 per hour"],
     storage_uri="memory://",
 )
+
+@app.errorhandler(429)
+def ratelimit_handler(e):
+    """Return JSON with Retry-After header for rate-limited requests."""
+    response = jsonify({
+        "error": "rate_limit_exceeded",
+        "message": "Demasiadas solicitudes. Por favor espere antes de intentar de nuevo.",
+        "retry_after": 60
+    })
+    response.status_code = 429
+    response.headers["Retry-After"] = "60"
+    return response
 
 # Añadir filtro personalizado para slice
 @app.template_filter('slice')
@@ -1310,6 +1322,7 @@ def diagnostico_poligono(db_id):
 
 @app.route('/get-historico-poligonos')
 @login_required
+@limiter.exempt
 def get_historico_poligonos():
     """Endpoint para cargar y devolver los polígonos históricos como GeoJSON"""
     try:
@@ -1349,6 +1362,7 @@ def get_historico_poligonos():
 
 @app.route('/get-historico-poligonos-radio/<int:polygon_id>')
 @login_required
+@limiter.exempt
 def get_historico_poligonos_radio(polygon_id):
     """Endpoint para cargar y devolver los polígonos históricos dentro de un radio de 5km"""
     try:
@@ -4079,6 +4093,7 @@ def clean_none(value):
 
 @app.route('/get-poligonos-actuales-traslapes/<int:polygon_id>')
 @login_required
+@limiter.exempt
 def get_poligonos_actuales_traslapes(polygon_id):
     """Endpoint para detectar y devolver polígonos actuales que traslapan con el polígono dado"""
     try:
@@ -4260,6 +4275,7 @@ def validacion_15k():
 
 @app.route('/api/mapa-15k/validacion')
 @login_required
+@limiter.exempt
 def api_mapa_15k_validacion():
     try:
         gdf = gpd.read_file('data/VALIDACION_UNIFICADO.shp')
@@ -4310,6 +4326,7 @@ def api_mapa_15k_validacion():
 
 @app.route('/api/mapa-15k/historico')
 @login_required
+@limiter.exempt
 def api_mapa_15k_historico():
     try:
         gdf = gpd.read_file('data/MEGA_CAPA_V1_OL.shp')
@@ -4360,6 +4377,7 @@ def api_mapa_15k_historico():
 
 @app.route('/api/mapa-15k/estados')
 @login_required
+@limiter.exempt
 def api_mapa_15k_estados():
     """Retorna lista de estados y municipios disponibles en los shapefiles."""
     try:
@@ -4672,6 +4690,7 @@ def _user_can_access_idx(idx):
 
 @app.route('/api/analizador/total')
 @login_required
+@limiter.exempt
 def api_analizador_total():
     from flask_login import current_user
 
@@ -4937,6 +4956,7 @@ def _requiere_vinculacion_chapingo(idx, estatus_chapingo):
 
 @app.route('/api/analizador/poligono/<int:idx>')
 @login_required
+@limiter.exempt
 def api_analizador_poligono(idx):
     if not _user_can_access_idx(idx):
         return jsonify({'error': 'No tienes acceso a este polígono'}), 403
@@ -4959,6 +4979,7 @@ def api_analizador_poligono(idx):
 
 @app.route('/api/analizador/propuesta-editable/<int:idx>')
 @login_required
+@limiter.exempt
 def api_analizador_propuesta_editable(idx):
     """Return complete editable payload for Analizador proposal panel."""
     if not _user_can_access_idx(idx):
@@ -5029,6 +5050,7 @@ def api_analizador_propuesta_editable(idx):
 
 @app.route('/api/analizador/chapingo-evidencia')
 @login_required
+@limiter.exempt
 def api_analizador_chapingo_evidencia():
     """Expose reproducible evidence for critical Chapingo flow scenarios."""
     try:
@@ -5054,6 +5076,7 @@ def api_analizador_chapingo_evidencia():
 
 @app.route('/api/analizador/propuesta-editable/<int:idx>/guardar', methods=['POST'])
 @login_required
+@limiter.exempt
 def api_analizador_guardar_propuesta_editable(idx):
     """Save editable Chapingo decision values for a single index."""
     if not _user_can_access_idx(idx):
@@ -5074,6 +5097,7 @@ def api_analizador_guardar_propuesta_editable(idx):
 
 @app.route('/api/analizador/poligonos-cercanos/<int:idx>')
 @login_required
+@limiter.exempt
 def api_analizador_poligonos_cercanos(idx):
     """Return MEGA polygon IDs spatially near the current validation polygon."""
     if shp_cache.validacion is None or shp_cache.mega is None:
@@ -5207,6 +5231,7 @@ def _guardar_decision_chapingo(idx, data):
 
 @app.route('/api/analizador/confirmar-y-avanzar/<int:idx>', methods=['POST'])
 @login_required
+@limiter.exempt
 def api_analizador_confirmar_y_avanzar(idx):
     """Save current polygon decision and return next polygon data in one request."""
     if not _user_can_access_idx(idx):
@@ -5387,6 +5412,7 @@ def _get_filtered_indices_for_advance(filtro):
 
 @app.route('/api/analizador/decisiones')
 @login_required
+@limiter.exempt
 def api_analizador_decisiones():
     """Return saved Chapingo decisions for the current user as JSON for the Resultados table."""
     from flask_login import current_user
@@ -5418,6 +5444,7 @@ def api_analizador_decisiones():
 
 @app.route('/api/analizador/indices-por-estado')
 @login_required
+@limiter.exempt
 def api_analizador_indices_por_estado():
     """Return indices split by por_clasificar vs clasificados for the current user."""
     from flask_login import current_user
@@ -5471,6 +5498,7 @@ def api_analizador_indices_por_estado():
 
 @app.route('/api/analizador/buscar')
 @login_required
+@limiter.exempt
 def api_analizador_buscar():
     if shp_cache.validacion is None:
         return jsonify({'error': 'Shapefiles no cargados'}), 500
@@ -5496,6 +5524,7 @@ def api_analizador_buscar():
 
 @app.route('/api/analizador/dashboard-estatus')
 @login_required
+@limiter.exempt
 def api_analizador_dashboard_estatus():
     from flask_login import current_user
 
@@ -5542,6 +5571,7 @@ def api_analizador_dashboard_estatus():
 
 @app.route('/api/analizador/indices-filtrados')
 @login_required
+@limiter.exempt
 def api_analizador_indices_filtrados():
     global _indices_filtrados_cache
     if shp_cache.validacion is None or shp_cache.mega is None:
@@ -5684,6 +5714,7 @@ def _run_clasificacion_nuevos():
 
 @app.route('/api/analizador/clasificacion-nuevos/iniciar', methods=['POST'])
 @login_required
+@limiter.exempt
 def api_clasificacion_nuevos_iniciar():
     global _clasif_nuevos_state
     if shp_cache.validacion is None or shp_cache.mega is None:
@@ -5726,6 +5757,7 @@ def api_clasificacion_nuevos_iniciar():
 
 @app.route('/api/analizador/clasificacion-nuevos/estado')
 @login_required
+@limiter.exempt
 def api_clasificacion_nuevos_estado():
     state = _clasif_nuevos_state
     response = {
@@ -5746,6 +5778,7 @@ def api_clasificacion_nuevos_estado():
 
 @app.route('/api/analizador/clasificacion-nuevos/indices')
 @login_required
+@limiter.exempt
 def api_clasificacion_nuevos_indices():
     clasif = request.args.get('clasif')
     subfiltro = request.args.get('subfiltro')
@@ -5792,6 +5825,7 @@ def api_clasificacion_nuevos_indices():
 
 @app.route('/api/validacion-15k/guardar', methods=['POST'])
 @login_required
+@limiter.exempt
 def api_validacion_15k_guardar():
     """Save or update the validation status for a single 15K polygon (upsert)."""
     if shp_cache.validacion is None:
@@ -5862,6 +5896,7 @@ def api_validacion_15k_guardar():
 
 @app.route('/api/validacion-15k/progreso')
 @login_required
+@limiter.exempt
 def api_validacion_15k_progreso():
     """Return overall validation progress stats."""
     if shp_cache.validacion is None:
@@ -5894,6 +5929,7 @@ def api_validacion_15k_progreso():
 
 @app.route('/api/validacion-15k/estado/<int:idx>')
 @login_required
+@limiter.exempt
 def api_validacion_15k_estado(idx):
     """Return the saved validation status for a specific polygon index."""
     if shp_cache.validacion is None:
@@ -5907,6 +5943,7 @@ def api_validacion_15k_estado(idx):
 
 @app.route('/api/validacion-15k/poligono/<int:idx>')
 @login_required
+@limiter.exempt
 def api_validacion_15k_poligono(idx):
     """Return enhanced polygon detail with overlap analysis, saved status, and auto-suggestion."""
     try:
@@ -5963,6 +6000,7 @@ def api_validacion_15k_poligono(idx):
 
 @app.route('/api/validacion-15k/siguiente-pendiente')
 @login_required
+@limiter.exempt
 def api_validacion_15k_siguiente_pendiente():
     """Return the next unvalidated polygon index, optionally starting from ?desde=<idx>."""
     if shp_cache.validacion is None:
@@ -5998,6 +6036,7 @@ def api_validacion_15k_siguiente_pendiente():
 
 @app.route('/api/validacion-15k/buscar')
 @login_required
+@limiter.exempt
 def api_validacion_15k_buscar():
     """Search shp_cache.validacion by ID_POLIGON or ID_CREDITO, including saved estatus."""
     if shp_cache.validacion is None:
@@ -6034,6 +6073,7 @@ def api_validacion_15k_buscar():
 
 @app.route('/api/validacion-15k/exportar')
 @login_required
+@limiter.exempt
 def api_validacion_15k_exportar():
     """Generate and download an Excel file with all 15K validation results."""
     if shp_cache.validacion is None or shp_cache.mega is None:

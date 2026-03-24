@@ -128,5 +128,146 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+        /**
+         * showRateLimitWarning
+         * Creates a fixed-position toast/banner at the top of the page warning the user
+         * that the server is rate-limiting requests. Only one toast is shown at a time;
+         * it auto-dismisses after 5 seconds.
+         */
+        function showRateLimitWarning() {
+            var existingToast = document.getElementById('rate-limit-toast');
+            if (existingToast) {
+                return; // Already visible — do not create a duplicate
+            }
+
+            var toast = document.createElement('div');
+            toast.id = 'rate-limit-toast';
+            toast.textContent = '\u26a0\ufe0f El servidor est\u00e1 procesando muchas solicitudes. Reintentando autom\u00e1ticamente...';
+            toast.style.cssText = [
+                'position: fixed',
+                'top: 16px',
+                'left: 50%',
+                'transform: translateX(-50%)',
+                'background-color: #fff3cd',
+                'color: #856404',
+                'border: 1px solid #ffc107',
+                'border-radius: 6px',
+                'padding: 12px 24px',
+                'font-size: 14px',
+                'font-weight: 500',
+                'z-index: 10000',
+                'box-shadow: 0 2px 8px rgba(0,0,0,0.15)',
+                'white-space: nowrap'
+            ].join('; ');
+
+            document.body.appendChild(toast);
+
+            setTimeout(function () {
+                var el = document.getElementById('rate-limit-toast');
+                if (el) {
+                    el.parentNode.removeChild(el);
+                }
+            }, 5000);
+        }
+
+        /**
+         * fetchWithRetry
+         * Wraps the native fetch() API with automatic retry logic for HTTP 429 and 5xx
+         * responses, as well as transient network errors.
+         *
+         * @param {string}  url        - The URL to fetch.
+         * @param {object}  options    - Standard fetch options (method, headers, body, signal, …).
+         * @param {number}  maxRetries - Maximum number of retry attempts (default: 3).
+         * @param {number}  baseDelay  - Base delay in milliseconds for exponential backoff (default: 1000).
+         * @returns {Promise<Response>}
+         */
+        function fetchWithRetry(url, options, maxRetries, baseDelay) {
+            maxRetries = (maxRetries !== undefined) ? maxRetries : 3;
+            baseDelay  = (baseDelay  !== undefined) ? baseDelay  : 1000;
+
+            // Internal recursive helper that tracks the current attempt number (0-based).
+            function attempt(attemptNumber) {
+                // If an AbortSignal is already aborted before we even start, reject immediately.
+                if (options && options.signal && options.signal.aborted) {
+                    return Promise.reject(new DOMException('Aborted', 'AbortError'));
+                }
+
+                return fetch(url, options).then(function (response) {
+                    // ── HTTP 429 Rate-Limited ──────────────────────────────────────────────
+                    if (response.status === 429) {
+                        if (attemptNumber >= maxRetries) {
+                            throw new Error(
+                                'Rate limit exceeded after ' + maxRetries + ' retries (HTTP 429)'
+                            );
+                        }
+
+                        // Show the warning toast only on the FIRST 429 retry.
+                        if (attemptNumber === 0) {
+                            showRateLimitWarning();
+                        }
+
+                        // Honour Retry-After header when present and numeric.
+                        var retryAfterHeader = response.headers.get('Retry-After');
+                        var delay;
+                        if (retryAfterHeader && !isNaN(Number(retryAfterHeader))) {
+                            delay = Number(retryAfterHeader) * 1000;
+                        } else {
+                            delay = baseDelay * Math.pow(2, attemptNumber);
+                        }
+
+                        return new Promise(function (resolve) {
+                            setTimeout(resolve, delay);
+                        }).then(function () {
+                            return attempt(attemptNumber + 1);
+                        });
+                    }
+
+                    // ── HTTP 5xx Server Error ──────────────────────────────────────────────
+                    if (response.status >= 500) {
+                        if (attemptNumber >= maxRetries) {
+                            // Return the failed response so the caller can inspect it.
+                            return response;
+                        }
+
+                        var delay5xx = baseDelay * Math.pow(2, attemptNumber);
+                        return new Promise(function (resolve) {
+                            setTimeout(resolve, delay5xx);
+                        }).then(function () {
+                            return attempt(attemptNumber + 1);
+                        });
+                    }
+
+                    // ── All other responses (2xx, 3xx, 4xx except 429) ────────────────────
+                    return response;
+
+                }, function (networkError) {
+                    // ── Network / fetch-level error ────────────────────────────────────────
+                    // If the request was aborted, do NOT retry — re-throw immediately.
+                    if (
+                        networkError &&
+                        (networkError.name === 'AbortError' ||
+                         (options && options.signal && options.signal.aborted))
+                    ) {
+                        throw networkError;
+                    }
+
+                    if (attemptNumber >= maxRetries) {
+                        throw networkError;
+                    }
+
+                    var delayNet = baseDelay * Math.pow(2, attemptNumber);
+                    return new Promise(function (resolve) {
+                        setTimeout(resolve, delayNet);
+                    }).then(function () {
+                        return attempt(attemptNumber + 1);
+                    });
+                });
+            }
+
+            return attempt(0);
+        }
+    </script>
 </body>
 </html>
