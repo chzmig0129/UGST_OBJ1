@@ -1062,7 +1062,7 @@ kbd {
             }
         } else if (!totalPoligonos) {
             // Normal mode: first time opening tab
-            fetch('/api/analizador/total')
+            fetchWithRetry('/api/analizador/total')
                 .then(function(r) { return r.json(); })
                 .then(function(data) {
                     totalPoligonos = data.total || 0;
@@ -1138,7 +1138,7 @@ kbd {
         document.getElementById('cercanos-dropdown').style.display = 'none';
         document.getElementById('verif-estatus-select').value = '';
 
-        fetch('/api/analizador/propuesta-editable/' + idx, { signal: _verifPanelController.signal })
+        fetchWithRetry('/api/analizador/propuesta-editable/' + idx, { signal: _verifPanelController.signal })
             .then(function(r) {
                 if (!r.ok) throw new Error('HTTP ' + r.status);
                 return r.json();
@@ -1466,7 +1466,7 @@ kbd {
         var dropdown = document.getElementById('cercanos-dropdown');
         dropdown.innerHTML = '<div class="cercano-item text-muted">Cargando...</div>';
 
-        fetch('/api/analizador/poligonos-cercanos/' + idx)
+        fetchWithRetry('/api/analizador/poligonos-cercanos/' + idx)
             .then(function(r) {
                 if (!r.ok) throw new Error('HTTP ' + r.status);
                 return r.json();
@@ -1534,7 +1534,7 @@ kbd {
 
     // ── Dashboard de Estatus ──────────────────────────────────────────────────
     function cargarDashboard() {
-        fetch('/api/analizador/dashboard-estatus')
+        fetchWithRetry('/api/analizador/dashboard-estatus')
             .then(function(r) {
                 if (!r.ok) throw new Error('HTTP ' + r.status);
                 return r.json();
@@ -1615,7 +1615,7 @@ kbd {
         document.getElementById('filtro-activo').style.display = 'none';
 
         // Restore total count
-        fetch('/api/analizador/total')
+        fetchWithRetry('/api/analizador/total')
             .then(function(r) { return r.json(); })
             .then(function(data) {
                 totalPoligonos = data.total || 0;
@@ -1712,7 +1712,7 @@ kbd {
     function iniciarPolling() {
         if (clasifPollingTimer) clearInterval(clasifPollingTimer);
         clasifPollingTimer = setInterval(function() {
-            fetch('/api/analizador/clasificacion-nuevos/estado')
+            fetchWithRetry('/api/analizador/clasificacion-nuevos/estado')
                 .then(function(r) { return r.json(); })
                 .then(function(data) {
                     document.getElementById('clasif-progress-text').textContent =
@@ -1920,7 +1920,7 @@ kbd {
         _cargarPoligonoController = new AbortController();
         showSpinner();
 
-        fetch('/api/analizador/poligono/' + idx, { signal: _cargarPoligonoController.signal })
+        fetchWithRetry('/api/analizador/poligono/' + idx, { signal: _cargarPoligonoController.signal })
             .then(function (r) {
                 if (!r.ok) throw new Error('HTTP ' + r.status);
                 return r.json();
@@ -2231,7 +2231,7 @@ kbd {
         var q = document.getElementById('search-input').value.trim();
         if (!q) return;
 
-        fetch('/api/analizador/buscar?q=' + encodeURIComponent(q))
+        fetchWithRetry('/api/analizador/buscar?q=' + encodeURIComponent(q))
             .then(function (r) { return r.json(); })
             .then(function (data) {
                 searchDropdown.innerHTML = '';
@@ -2325,7 +2325,7 @@ kbd {
             } else {
                 // Cargar por primera vez
                 document.getElementById('capas-loading').style.display = 'block';
-                fetch('/api/mapa-15k/validacion')
+                fetchWithRetry('/api/mapa-15k/validacion')
                     .then(function(r) { return r.json(); })
                     .then(function(data) {
                         validacionBgLayer = L.geoJSON(data.geojson, {
@@ -2367,7 +2367,7 @@ kbd {
             } else {
                 // Cargar por primera vez
                 document.getElementById('capas-loading').style.display = 'block';
-                fetch('/api/mapa-15k/historico')
+                fetchWithRetry('/api/mapa-15k/historico')
                     .then(function(r) { return r.json(); })
                     .then(function(data) {
                         historicoBgLayer = L.geoJSON(data.geojson, {
@@ -2472,7 +2472,7 @@ kbd {
         document.getElementById('resultados-empty').style.display = 'none';
         document.getElementById('resultados-table-wrapper').style.display = 'none';
 
-        fetch('/api/analizador/decisiones')
+        fetchWithRetry('/api/analizador/decisiones')
             .then(function(r) { return r.json(); })
             .then(function(data) {
                 document.getElementById('resultados-loading').style.display = 'none';
@@ -2566,7 +2566,7 @@ kbd {
     var _progresoTotal = 0;
 
     function actualizarProgreso() {
-        fetch('/api/analizador/dashboard-estatus')
+        fetchWithRetry('/api/analizador/dashboard-estatus')
             .then(function(r) { return r.json(); })
             .then(function(data) {
                 _progresoConDecision = data.con_decision || 0;
@@ -2600,7 +2600,7 @@ kbd {
     cargarDashboard();
 
     // Check if classification already done (after cargarDashboard call)
-    fetch('/api/analizador/clasificacion-nuevos/estado')
+    fetchWithRetry('/api/analizador/clasificacion-nuevos/estado')
         .then(function(r) { return r.json(); })
         .then(function(data) {
             if (data.status === 'done' && data.result) {

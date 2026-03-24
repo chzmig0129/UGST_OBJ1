@@ -651,7 +651,7 @@
         showSpinner();
         selectedMatchIdx = null;
 
-        fetch('/api/validacion-15k/poligono/' + idx)
+        fetchWithRetry('/api/validacion-15k/poligono/' + idx)
             .then(function (r) {
                 if (!r.ok) throw new Error('HTTP ' + r.status);
                 return r.json();
@@ -771,8 +771,11 @@
             .catch(function (err) {
                 console.error('Error cargando polígono:', err);
                 hideSpinner();
+                var msg = (err.message && err.message.indexOf('429') !== -1)
+                    ? 'Demasiadas solicitudes. Espere un momento e intente de nuevo.'
+                    : err.message;
                 document.getElementById('matches-list').innerHTML =
-                    '<div class="empty-state text-danger">Error al cargar: ' + err.message + '</div>';
+                    '<div class="empty-state text-danger">Error al cargar: ' + msg + '</div>';
             });
     }
 
@@ -981,7 +984,7 @@
 
     // ── Cargar progreso ───────────────────────────────────────────────────────
     function cargarProgreso() {
-        fetch('/api/validacion-15k/progreso')
+        fetchWithRetry('/api/validacion-15k/progreso')
             .then(function (r) { return r.json(); })
             .then(function (data) {
                 var total     = data.total     || TOTAL_POLIGONOS;
@@ -1109,7 +1112,7 @@
         var q = document.getElementById('search-input').value.trim();
         if (!q) return;
 
-        fetch('/api/validacion-15k/buscar?q=' + encodeURIComponent(q))
+        fetchWithRetry('/api/validacion-15k/buscar?q=' + encodeURIComponent(q))
             .then(function (r) { return r.json(); })
             .then(function (data) {
                 searchDropdown.innerHTML = '';

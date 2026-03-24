@@ -392,7 +392,7 @@
 
         // Fetch validación
         updateLoadingMessage('Cargando capa de validación (15K)...');
-        fetch('/api/mapa-15k/validacion' + qs)
+        fetchWithRetry('/api/mapa-15k/validacion' + qs)
             .then(function (response) {
                 if (!response.ok) {
                     throw new Error('Error HTTP ' + response.status + ' al cargar validación');
@@ -427,7 +427,7 @@
             });
 
         // Fetch histórico
-        fetch('/api/mapa-15k/historico' + qs)
+        fetchWithRetry('/api/mapa-15k/historico' + qs)
             .then(function (response) {
                 if (!response.ok) {
                     throw new Error('Error HTTP ' + response.status + ' al cargar histórico');
@@ -484,7 +484,7 @@
     // ── Initial load ──────────────────────────────────────────────────────────
     updateLoadingMessage('Cargando capa de validación (15K)...');
 
-    fetch('/api/mapa-15k/validacion')
+    fetchWithRetry('/api/mapa-15k/validacion')
         .then(function (response) {
             if (!response.ok) {
                 throw new Error('Error HTTP ' + response.status + ' al cargar validación');
@@ -508,7 +508,7 @@
             onLayerReady(); // still unblock the UI
         });
 
-    fetch('/api/mapa-15k/historico')
+    fetchWithRetry('/api/mapa-15k/historico')
         .then(function (response) {
             if (!response.ok) {
                 throw new Error('Error HTTP ' + response.status + ' al cargar histórico');
@@ -551,7 +551,7 @@
     });
 
     // ── Filter: load estados on DOMContentLoaded ──────────────────────────────
-    fetch('/api/mapa-15k/estados')
+    fetchWithRetry('/api/mapa-15k/estados')
         .then(function (r) { return r.json(); })
         .then(function (data) {
             var select = document.getElementById('filtro-estado');

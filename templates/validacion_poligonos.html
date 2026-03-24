@@ -1225,7 +1225,7 @@
                     console.log(`Cargando polígonos históricos en un radio de 5km alrededor del polígono ${polygon_id}...`);
                 }
                 
-                fetch(url)
+                fetchWithRetry(url)
                     .then(response => response.json())
                     .then(data => {
                         if (data.error) {
@@ -1382,6 +1382,16 @@
                     })
                     .catch(error => {
                         console.error("Error al cargar polígonos históricos:", error);
+                        var msg = (error && error.message && error.message.indexOf('429') !== -1)
+                            ? "Límite de solicitudes alcanzado. Reintentando..."
+                            : "Error al cargar polígonos históricos.";
+                        var descripcionIdSelect = document.getElementById('DescripcionIdSelect');
+                        if (descripcionIdSelect) {
+                            var errOption = document.createElement('option');
+                            errOption.disabled = true;
+                            errOption.textContent = msg;
+                            descripcionIdSelect.appendChild(errOption);
+                        }
                     });
             }
             
@@ -1396,7 +1406,7 @@
                 
                 var url = `/get-poligonos-actuales-traslapes/${polygon_id}`;
                 
-                fetch(url)
+                fetchWithRetry(url)
                     .then(response => response.json())
                     .then(data => {
                         if (data.error) {
