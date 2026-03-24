@@ -2479,6 +2479,53 @@ kbd {
         if (dropdown) dropdown.style.display = 'none';
     });
 
+    // verif-estatus-select: auto-update verif-id-unico based on selected estatus
+    document.getElementById("verif-estatus-select").addEventListener("change", function() {
+        var selected = this.value;
+        var idUnicoInput = document.getElementById("verif-id-unico");
+
+        if (selected === "NUEVO") {
+            // When user overrides to NUEVO, the id_poligono_unico should be
+            // the current polygon own ID, not the megacapa ID
+            var idPoligonActual = document.getElementById("info-id-poligon").textContent.trim();
+            if (idPoligonActual && idPoligonActual !== "—") {
+                idUnicoInput.value = idPoligonActual;
+            }
+        } else {
+            // For VINCULAR, ELIMINAR, or empty ("Usar propuesto"):
+            // Revert to the propuesta id_poligono_unico_propuesto
+            if (_currentPropuesta) {
+                var propuesta = _currentPropuesta.propuesta || {};
+                var guardado = _currentPropuesta.guardado || {};
+                var tieneDecision = guardado && guardado.tiene_decision;
+
+                if (selected === "") {
+                    // "Usar propuesto" — use guardado if exists, else propuesta
+                    var revertId = tieneDecision
+                        ? (guardado.id_poligono_unico || propuesta.id_poligono_unico_propuesto)
+                        : propuesta.id_poligono_unico_propuesto;
+                    idUnicoInput.value = revertId || "";
+                } else {
+                    // VINCULAR or ELIMINAR — use propuesta megacapa ID
+                    idUnicoInput.value = propuesta.id_poligono_unico_propuesto || "";
+                }
+            }
+        }
+
+        // Also update the badge to reflect the new estatus
+        if (selected) {
+            setEstatusBadge(selected);
+        } else if (_currentPropuesta) {
+            var propuesta = _currentPropuesta.propuesta || {};
+            var guardado = _currentPropuesta.guardado || {};
+            var tieneDecision = guardado && guardado.tiene_decision;
+            var displayEstatus = tieneDecision
+                ? (guardado.estatus_chapingo || propuesta.estatus_chapingo_propuesto)
+                : propuesta.estatus_chapingo_propuesto;
+            setEstatusBadge(displayEstatus);
+        }
+    });
+
     // ── Resultados Tab ──────────────────────────────────────────────────────
     var _resultadosData = [];
 
