@@ -215,6 +215,7 @@
     var map = L.map('map', {
         center: [24.0, -102.0],
         zoom: 6,
+        maxZoom: 22,
         preferCanvas: true,          // CRITICAL for 70K+ polygons
         fullscreenControl: true,
         fullscreenControlOptions: {
@@ -227,19 +228,19 @@
     // ── Base layers ───────────────────────────────────────────────────────────
     var osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-        maxZoom: 19
+        maxZoom: 22
     });
 
     var esriLayer = L.tileLayer(
         'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
         attribution: 'Tiles &copy; Esri &mdash; Source: Esri',
-        maxZoom: 18
+        maxZoom: 22
     });
 
     var cartoLayer = L.tileLayer(
         'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, &copy; <a href="https://carto.com/attributions">CARTO</a>',
-        maxZoom: 19
+        maxZoom: 22
     });
 
     // Default base layer: Esri World Imagery (same as Validar module)

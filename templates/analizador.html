@@ -1032,14 +1032,29 @@ kbd {
         map = L.map('map', {
             center: [24.0, -102.0],
             zoom: 6,
-            preferCanvas: true   // CRITICAL for performance
+            maxZoom: 22,
+            preferCanvas: true,   // CRITICAL for performance
+            fullscreenControl: true,
+            fullscreenControlOptions: { position: "topleft", title: "Pantalla Completa", titleCancel: "Salir de Pantalla Completa" }
         });
 
-        // Capa base: Esri World Imagery
-        L.tileLayer(
-            'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-            { attribution: 'Tiles &copy; Esri', maxZoom: 18 }
-        ).addTo(map);
+        // Capas base
+        var osmLayer = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+            attribution: "&copy; OpenStreetMap", maxZoom: 22
+        });
+        var esriLayer = L.tileLayer(
+            "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+            { attribution: "Tiles &copy; Esri", maxZoom: 22 }
+        );
+        var cartoLayer = L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+            attribution: "&copy; OpenStreetMap, &copy; CARTO", maxZoom: 22
+        });
+        esriLayer.addTo(map);
+        L.control.layers({
+            "OpenStreetMap": osmLayer,
+            "Esri World Imagery": esriLayer,
+            "CartoDB Dark": cartoLayer
+        }).addTo(map);
 
         mapInitialized = true;
     }
