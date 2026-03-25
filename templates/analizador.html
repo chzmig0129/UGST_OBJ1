@@ -1226,7 +1226,9 @@ kbd {
         if (!_currentPropuesta) return;
 
         var propuesta = _currentPropuesta.propuesta || {};
+        var guardado = _currentPropuesta.guardado || {};
         var estatus = document.getElementById('verif-estatus-select').value ||
+                      (guardado.tiene_decision ? guardado.estatus_chapingo : null) ||
                       propuesta.estatus_chapingo_propuesto;
         var idUnico = document.getElementById('verif-id-unico').value;
         var superficie = document.getElementById('verif-superficie').value;
