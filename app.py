@@ -4731,8 +4731,12 @@ def calcular_traslapes(idx):
     import shapely
     from shapely.ops import transform
 
+    from shapely.validation import make_valid
+
     vrow = shp_cache.validacion.iloc[idx]
     vgeom = vrow.geometry
+    if not vgeom.is_valid:
+        vgeom = make_valid(vgeom)
 
     # Calcular área en hectáreas (proyectar a UTM zona basada en el centroide)
     centroid = vgeom.centroid
@@ -4749,11 +4753,17 @@ def calcular_traslapes(idx):
     for ci in candidates:
         mrow = shp_cache.mega.iloc[ci]
         mgeom = mrow.geometry
+        if not mgeom.is_valid:
+            mgeom = make_valid(mgeom)
 
         if not vgeom.intersects(mgeom):
             continue
 
-        intersection = vgeom.intersection(mgeom)
+        try:
+            intersection = vgeom.intersection(mgeom)
+        except Exception as e:
+            app.logger.warning(f"Skipping intersection for idx={idx}, mega_idx={ci}: {e}")
+            continue
 
         # Calcular áreas en UTM
         mgeom_utm = transform(transformer.transform, mgeom)

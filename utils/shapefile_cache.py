@@ -7,6 +7,7 @@ to force-load everything up front and avoid first-request latency.
 """
 
 import geopandas as gpd
+from shapely.validation import make_valid
 
 
 class ShapefileCache:
@@ -53,6 +54,9 @@ class ShapefileCache:
         gdf = gpd.read_file('data/VALIDACION_UNIFICADO.shp')
         if gdf.crs != 'EPSG:4326':
             gdf = gdf.to_crs(epsg=4326)
+        invalid_mask = ~gdf.geometry.is_valid
+        if invalid_mask.any():
+            gdf.loc[invalid_mask, "geometry"] = gdf.loc[invalid_mask, "geometry"].apply(make_valid)
         print("ShapefileCache: validacion cargado. Columnas:", gdf.columns.tolist())
         return gdf
 
@@ -60,6 +64,9 @@ class ShapefileCache:
         gdf = gpd.read_file('data/MEGA_CAPA_V1_OL.shp')
         if gdf.crs != 'EPSG:4326':
             gdf = gdf.to_crs(epsg=4326)
+        invalid_mask = ~gdf.geometry.is_valid
+        if invalid_mask.any():
+            gdf.loc[invalid_mask, "geometry"] = gdf.loc[invalid_mask, "geometry"].apply(make_valid)
         print("ShapefileCache: mega cargado. Columnas:", gdf.columns.tolist())
         return gdf
 
