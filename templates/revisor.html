@@ -542,8 +542,8 @@
                 var usuarios = data.usuarios || [];
                 usuarios.forEach(function (u) {
                     var opt = document.createElement('option');
-                    opt.value = u;
-                    opt.textContent = u;
+                    opt.value = u.id;
+                    opt.textContent = u.username + ' (' + u.decisiones + ')';
                     select.appendChild(opt);
                 });
             })
