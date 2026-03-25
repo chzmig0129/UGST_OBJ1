@@ -754,7 +754,7 @@
 
                 // fitBounds al polígono actual
                 try {
-                    map.fitBounds(poligonoLayer.getBounds(), { padding: [50, 50] });
+                    map.fitBounds(poligonoLayer.getBounds(), { padding: [50, 50], maxZoom: 18 });
                 } catch (e) { /* ignore */ }
 
                 // ── Actualizar UI ─────────────────────────────────────────
@@ -920,7 +920,7 @@
         var orig  = entry.originalStyle;
 
         try {
-            map.fitBounds(layer.getBounds(), { padding: [40, 40] });
+            map.fitBounds(layer.getBounds(), { padding: [40, 40], maxZoom: 18 });
         } catch (e) { /* ignore */ }
 
         layer.setStyle({ weight: 4, fillOpacity: 0.65, color: '#e96b00' });

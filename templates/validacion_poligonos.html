@@ -1006,7 +1006,7 @@
                     // Ajustar el mapa para mostrar todo el polígono
                     try {
                         console.log("Ajustando vista al polígono");
-                        map.fitBounds(polygon.getBounds());
+                        map.fitBounds(polygon.getBounds(), { maxZoom: 18 });
                     } catch (e) {
                         console.error("Error al ajustar vista:", e);
                         // Fallback: centrar en la primera coordenada
@@ -1081,7 +1081,7 @@
                     
                     // Crear bounds para abarcar ambos puntos
                     var bounds = L.latLngBounds([coordenadas[0], coordenadas[1]]);
-                    map.fitBounds(bounds, {padding: [50, 50]});
+                    map.fitBounds(bounds, {padding: [50, 50], maxZoom: 18});
                     
                     // Establecer área a 0 ya que son solo dos puntos
                     document.getElementById('Area_digitalizada').value = "0.0000";
@@ -2873,7 +2873,7 @@
                     setTimeout(function() {
                         map.invalidateSize();
                         if (polygon) {
-                            map.fitBounds(polygon.getBounds());
+                            map.fitBounds(polygon.getBounds(), { maxZoom: 18 });
                         }
                     }, 200);
                 } else {
@@ -2882,7 +2882,7 @@
                     setTimeout(function() {
                         map.invalidateSize();
                         if (polygon) {
-                            map.fitBounds(polygon.getBounds());
+                            map.fitBounds(polygon.getBounds(), { maxZoom: 18 });
                         }
                     }, 200);
                 }
@@ -2931,10 +2931,10 @@
                 zoomToPoligono.addEventListener('click', function() {
                     // Hacer zoom al polígono actual si existe
                     if (polygon && polygon.getBounds) {
-                        map.fitBounds(polygon.getBounds(), {padding: [20, 20]});
+                        map.fitBounds(polygon.getBounds(), {padding: [20, 20], maxZoom: 18});
                     } else if (editableLayers.getLayers().length > 0) {
                         // Si hay capas en editableLayers, hacer zoom a esas
-                        map.fitBounds(editableLayers.getBounds(), {padding: [20, 20]});
+                        map.fitBounds(editableLayers.getBounds(), {padding: [20, 20], maxZoom: 18});
                     } else {
                         console.log("No hay polígono actual para hacer zoom");
                         

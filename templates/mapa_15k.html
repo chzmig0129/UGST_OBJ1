@@ -476,7 +476,7 @@
                     for (var i = 1; i < allBounds.length; i++) {
                         combined = combined.extend(allBounds[i]);
                     }
-                    map.fitBounds(combined, { padding: [20, 20] });
+                    map.fitBounds(combined, { padding: [20, 20], maxZoom: 18 });
                 } catch (e) { /* ignore if bounds invalid */ }
             }
         }

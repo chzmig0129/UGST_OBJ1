@@ -733,7 +733,7 @@
                     editableLayers.addLayer(polygon);
                     
                     // Ajustar vista al polígono
-                    map.fitBounds(polygon.getBounds());
+                    map.fitBounds(polygon.getBounds(), { maxZoom: 18 });
                     
                     // Añadir popup con información
                     polygon.bindPopup(`

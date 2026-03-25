@@ -697,7 +697,7 @@
         for (var i = 0; i < matchLayerMap.length; i++) {
             if (matchLayerMap[i].mega_index === megaIndex) {
                 try {
-                    map.fitBounds(matchLayerMap[i].layer.getBounds(), { padding: [40, 40] });
+                    map.fitBounds(matchLayerMap[i].layer.getBounds(), { padding: [40, 40], maxZoom: 18 });
                 } catch (e) { /* ignore */ }
                 return;
             }
@@ -748,7 +748,7 @@
 
                     // 5. Fit map bounds to current polygon
                     try {
-                        map.fitBounds(poligonoLayer.getBounds(), { padding: [50, 50] });
+                        map.fitBounds(poligonoLayer.getBounds(), { padding: [50, 50], maxZoom: 18 });
                     } catch (e) { /* ignore */ }
                 }
 
