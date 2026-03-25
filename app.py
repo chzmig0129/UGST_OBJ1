@@ -6534,5 +6534,161 @@ def api_admin_eliminar_usuario(user_id):
     return jsonify({'success': True})
 
 
+@app.route("/revisor")
+@login_required
+@limiter.exempt
+def revisor():
+    """Admin-only page to review validated polygons."""
+    if not current_user.is_admin:
+        flash("Acceso denegado", "danger")
+        return redirect(url_for("index"))
+    return render_template("revisor.html")
+
+
+@app.route("/api/revisor/indices")
+@login_required
+@limiter.exempt
+def api_revisor_indices():
+    if not current_user.is_admin:
+        return jsonify({"error": "No autorizado"}), 403
+
+    query = Analizador15K.query.filter(Analizador15K.tiene_decision == True)
+
+    estatus = request.args.get("estatus")
+    if estatus:
+        query = query.filter(Analizador15K.estatus_chapingo == estatus.upper())
+
+    usuario_id = request.args.get("usuario")
+    if usuario_id:
+        try:
+            query = query.filter(Analizador15K.decidido_por_id == int(usuario_id))
+        except (TypeError, ValueError):
+            pass
+
+    records = query.order_by(Analizador15K.idx_shp).all()
+    indices = [r.idx_shp for r in records]
+
+    return jsonify({
+        "indices": indices,
+        "total": len(indices)
+    })
+
+
+@app.route("/api/revisor/poligono/<int:idx>")
+@login_required
+@limiter.exempt
+def api_revisor_poligono(idx):
+    if not current_user.is_admin:
+        return jsonify({"error": "No autorizado"}), 403
+
+    if shp_cache.validacion is None:
+        return jsonify({"error": "Shapefiles no cargados"}), 500
+    if idx < 0 or idx >= len(shp_cache.validacion):
+        return jsonify({"error": f"idx fuera de rango (0-{len(shp_cache.validacion)-1})"}), 400
+
+    # Get polygon geometry and overlaps
+    try:
+        data = calcular_traslapes(idx)
+    except (RuntimeError, ValueError) as e:
+        return jsonify({"error": str(e)}), 500
+
+    # Get saved decision from PostgreSQL
+    record = Analizador15K.query.filter_by(idx_shp=idx).first()
+    decision = None
+    if record and record.tiene_decision:
+        decision = {
+            "estatus_chapingo": record.estatus_chapingo,
+            "id_poligono_unico": record.id_poligono_unico,
+            "superficie_chapingo": record.superficie_chapingo,
+            "superficie_calculada": record.superficie_calculada,
+            "comentario_chapingo": record.comentario_chapingo,
+            "decidido_por": record.decidido_por.username if record.decidido_por else None,
+            "fecha_decision": record.fecha_decision.strftime("%Y-%m-%d %H:%M") if record.fecha_decision else None,
+        }
+
+    return jsonify({
+        "index": idx,
+        "total": len(shp_cache.validacion),
+        "poligono": data["poligono"],
+        "matches": data["matches"],
+        "match_features": data["match_features"],
+        "decision": decision,
+    })
+
+
+@app.route("/api/revisor/estadisticas")
+@login_required
+@limiter.exempt
+def api_revisor_estadisticas():
+    if not current_user.is_admin:
+        return jsonify({"error": "No autorizado"}), 403
+
+    from sqlalchemy import func
+
+    total_validados = Analizador15K.query.filter(Analizador15K.tiene_decision == True).count()
+    total_poligonos = len(shp_cache.validacion) if shp_cache.validacion is not None else 0
+
+    por_estatus = dict(
+        db.session.query(
+            Analizador15K.estatus_chapingo, func.count()
+        ).filter(
+            Analizador15K.tiene_decision == True
+        ).group_by(Analizador15K.estatus_chapingo).all()
+    )
+
+    por_usuario = []
+    user_rows = db.session.query(
+        Analizador15K.decidido_por_id,
+        func.count()
+    ).filter(
+        Analizador15K.tiene_decision == True
+    ).group_by(Analizador15K.decidido_por_id).all()
+
+    for uid, cnt in user_rows:
+        user = User.query.get(uid) if uid else None
+        por_usuario.append({
+            "usuario_id": uid,
+            "username": user.username if user else "desconocido",
+            "total": cnt
+        })
+
+    return jsonify({
+        "total_validados": total_validados,
+        "total_poligonos": total_poligonos,
+        "por_estatus": por_estatus,
+        "por_usuario": por_usuario
+    })
+
+
+@app.route("/api/revisor/usuarios")
+@login_required
+@limiter.exempt
+def api_revisor_usuarios():
+    if not current_user.is_admin:
+        return jsonify({"error": "No autorizado"}), 403
+
+    from sqlalchemy import func
+
+    user_rows = db.session.query(
+        Analizador15K.decidido_por_id,
+        func.count()
+    ).filter(
+        Analizador15K.tiene_decision == True,
+        Analizador15K.decidido_por_id.isnot(None)
+    ).group_by(Analizador15K.decidido_por_id).all()
+
+    usuarios = []
+    for uid, cnt in user_rows:
+        user = User.query.get(uid)
+        if user:
+            usuarios.append({
+                "id": uid,
+                "username": user.username,
+                "decisiones": cnt
+            })
+
+    return jsonify({"usuarios": usuarios})
+
+
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)

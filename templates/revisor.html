@@ -1,0 +1,881 @@
+{% extends "base.html" %}
+
+{% block title %}Revisor - UGST{% endblock %}
+
+{% block head %}
+<style>
+    /* ── Layout ─────────────────────────────────────────────────────────────── */
+    #revisor-container {
+        display: flex;
+        height: calc(100vh - 60px);
+        overflow: hidden;
+    }
+
+    /* ── Panel lateral ──────────────────────────────────────────────────────── */
+    #panel-lateral {
+        width: 400px;
+        min-width: 400px;
+        overflow-y: auto;
+        padding: 15px;
+        background: #f8f9fa;
+        border-right: 1px solid #dee2e6;
+        box-shadow: 2px 0 6px rgba(0,0,0,0.07);
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    /* ── Secciones del panel ────────────────────────────────────────────────── */
+    .panel-section {
+        background: #fff;
+        border-radius: 8px;
+        border: 1px solid #dee2e6;
+        padding: 12px;
+    }
+
+    .panel-section-title {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #6c757d;
+        margin-bottom: 10px;
+    }
+
+    /* ── Stats bar ──────────────────────────────────────────────────────────── */
+    .stats-bar {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr 1fr;
+        gap: 6px;
+    }
+
+    .stat-mini {
+        text-align: center;
+        padding: 8px 4px;
+        border-radius: 6px;
+        border: 1px solid #dee2e6;
+        background: #fff;
+    }
+
+    .stat-mini .stat-num {
+        font-size: 20px;
+        font-weight: 800;
+        line-height: 1.1;
+    }
+
+    .stat-mini .stat-lbl {
+        font-size: 9px;
+        font-weight: 600;
+        text-transform: uppercase;
+        color: #6c757d;
+        margin-top: 2px;
+    }
+
+    .stat-total-bg  { background: #e8f4fd; border-color: #b6d4fe !important; }
+    .stat-total-bg  .stat-num { color: #0d6efd; }
+
+    .stat-vincular-bg { background: #e8f4fd; border-color: #b6d4fe !important; }
+    .stat-vincular-bg .stat-num { color: #0d6efd; }
+
+    .stat-nuevo-bg  { background: #d1f5d9; border-color: #a3cfbb !important; }
+    .stat-nuevo-bg  .stat-num { color: #198754; }
+
+    .stat-eliminar-bg { background: #fde8e8; border-color: #f5b6b6 !important; }
+    .stat-eliminar-bg .stat-num { color: #dc3545; }
+
+    /* ── Navegación ─────────────────────────────────────────────────────────── */
+    #nav-counter {
+        font-size: 13px;
+        font-weight: 600;
+        color: #495057;
+        text-align: center;
+        flex: 1;
+    }
+
+    #goto-input {
+        width: 70px;
+    }
+
+    /* ── Info polígono ──────────────────────────────────────────────────────── */
+    .info-label {
+        font-size: 11px;
+        color: #6c757d;
+        margin-bottom: 1px;
+    }
+
+    .info-value {
+        font-size: 13px;
+        font-weight: 600;
+        color: #212529;
+        margin-bottom: 8px;
+        word-break: break-all;
+    }
+
+    #info-id-poligon {
+        font-size: 16px;
+        font-weight: 700;
+        color: #0d6efd;
+    }
+
+    /* ── Decision panel ─────────────────────────────────────────────────────── */
+    #decision-panel {
+        border-left: 4px solid #dee2e6;
+        transition: border-left-color 0.2s;
+    }
+
+    /* ── Lista de matches ───────────────────────────────────────────────────── */
+    #matches-list {
+        max-height: 300px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .match-card {
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
+        padding: 10px 12px;
+        cursor: pointer;
+        transition: background 0.15s, box-shadow 0.15s;
+        border-left-width: 4px;
+        background: #fff;
+        font-size: 12px;
+    }
+
+    .match-card:hover {
+        background: #f0f4ff;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    }
+
+    .match-card .match-id {
+        font-weight: 700;
+        font-size: 13px;
+        color: #212529;
+        margin-bottom: 2px;
+    }
+
+    .match-card .match-meta {
+        color: #6c757d;
+        margin-bottom: 4px;
+    }
+
+    .match-card .match-badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 12px;
+        font-size: 11px;
+        font-weight: 600;
+        color: #fff;
+        margin-top: 4px;
+    }
+
+    /* ── Spinner ────────────────────────────────────────────────────────────── */
+    #panel-spinner {
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    #panel-spinner.active {
+        display: flex;
+    }
+
+    /* ── Empty state ────────────────────────────────────────────────────────── */
+    .empty-state {
+        text-align: center;
+        color: #adb5bd;
+        padding: 16px 0;
+        font-size: 13px;
+    }
+
+    /* ── Mapa ───────────────────────────────────────────────────────────────── */
+    #map-container {
+        flex: 1;
+        position: relative;
+        overflow: hidden;
+    }
+
+    #map {
+        width: 100%;
+        height: 100%;
+    }
+
+    /* ── Tooltip del mapa ───────────────────────────────────────────────────── */
+    .revisor-tooltip {
+        background: rgba(0,0,0,0.82) !important;
+        color: #fff !important;
+        border: none !important;
+        border-radius: 5px !important;
+        padding: 6px 10px !important;
+        font-size: 12px !important;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.35) !important;
+        line-height: 1.5 !important;
+    }
+
+    .revisor-tooltip::before {
+        border-color: transparent !important;
+    }
+
+    /* ── Keyboard hint ──────────────────────────────────────────────────────── */
+    kbd {
+        background: #e9ecef;
+        border: 1px solid #ced4da;
+        border-radius: 3px;
+        padding: 1px 4px;
+        font-size: 10px;
+        font-family: inherit;
+        color: #495057;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="revisor-container">
+
+    <!-- ══════════════════════════════════════════════════════════════════════ -->
+    <!-- PANEL LATERAL                                                           -->
+    <!-- ══════════════════════════════════════════════════════════════════════ -->
+    <div id="panel-lateral">
+
+        <!-- ── Header ───────────────────────────────────────────────────────── -->
+        <div>
+            <h5 class="mb-1"><i class="bi bi-shield-check text-primary me-1"></i>Revisor de Validaciones</h5>
+            <p class="text-muted small mb-0">Revisión de polígonos validados por el equipo</p>
+        </div>
+
+        <!-- ── Stats bar ─────────────────────────────────────────────────────── -->
+        <div class="panel-section" style="padding: 10px;">
+            <div class="panel-section-title"><i class="bi bi-bar-chart me-1"></i>Estadísticas</div>
+            <div class="stats-bar">
+                <div class="stat-mini stat-total-bg">
+                    <div class="stat-num" id="stat-total">—</div>
+                    <div class="stat-lbl">Total</div>
+                </div>
+                <div class="stat-mini stat-vincular-bg">
+                    <div class="stat-num" id="stat-vincular">—</div>
+                    <div class="stat-lbl">Vincular</div>
+                </div>
+                <div class="stat-mini stat-nuevo-bg">
+                    <div class="stat-num" id="stat-nuevo">—</div>
+                    <div class="stat-lbl">Nuevo</div>
+                </div>
+                <div class="stat-mini stat-eliminar-bg">
+                    <div class="stat-num" id="stat-eliminar">—</div>
+                    <div class="stat-lbl">Eliminar</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── Filtros ───────────────────────────────────────────────────────── -->
+        <div class="panel-section">
+            <div class="panel-section-title"><i class="bi bi-funnel me-1"></i>Filtros</div>
+            <div class="row g-2 mb-2">
+                <div class="col">
+                    <label class="form-label small text-muted mb-1">Estatus</label>
+                    <select id="filter-estatus" class="form-select form-select-sm">
+                        <option value="">Todos</option>
+                        <option value="NUEVO">NUEVO</option>
+                        <option value="VINCULAR">VINCULAR</option>
+                        <option value="ELIMINAR">ELIMINAR</option>
+                    </select>
+                </div>
+                <div class="col">
+                    <label class="form-label small text-muted mb-1">Usuario</label>
+                    <select id="filter-usuario" class="form-select form-select-sm">
+                        <option value="">Todos</option>
+                    </select>
+                </div>
+            </div>
+            <button class="btn btn-primary btn-sm w-100" onclick="applyFilters()">
+                <i class="bi bi-funnel-fill me-1"></i>Filtrar
+            </button>
+        </div>
+
+        <!-- ── Navegación ────────────────────────────────────────────────────── -->
+        <div class="panel-section">
+            <div class="panel-section-title"><i class="bi bi-compass me-1"></i>Navegación <kbd>←</kbd> <kbd>→</kbd></div>
+            <div class="d-flex align-items-center gap-2 mb-2">
+                <button class="btn btn-sm btn-outline-secondary" id="btn-prev" onclick="prev()" title="Anterior (←)">
+                    <i class="bi bi-chevron-left"></i>
+                </button>
+                <div id="nav-counter">— de —</div>
+                <button class="btn btn-sm btn-outline-secondary" id="btn-next" onclick="next()" title="Siguiente (→)">
+                    <i class="bi bi-chevron-right"></i>
+                </button>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                <label class="form-label mb-0 small text-muted" style="white-space:nowrap;">Ir a #</label>
+                <input type="number" id="goto-input" class="form-control form-control-sm" min="0" placeholder="idx">
+                <button class="btn btn-sm btn-outline-primary" id="btn-goto" onclick="goTo()">Ir</button>
+            </div>
+        </div>
+
+        <!-- ── Spinner ───────────────────────────────────────────────────────── -->
+        <div id="panel-spinner">
+            <div class="spinner-border text-primary" role="status" style="width:2rem;height:2rem;">
+                <span class="visually-hidden">Cargando...</span>
+            </div>
+            <div class="small text-muted">Cargando polígono...</div>
+        </div>
+
+        <!-- ── Info del polígono ─────────────────────────────────────────────── -->
+        <div class="panel-section" id="section-info">
+            <div class="panel-section-title"><i class="bi bi-geo-alt me-1"></i>Polígono Actual</div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px 12px;">
+                <div>
+                    <div class="info-label">ID Polígono</div>
+                    <div class="info-value" id="info-id-poligon">—</div>
+                </div>
+                <div>
+                    <div class="info-label">ID Crédito</div>
+                    <div class="info-value" id="info-id-credito" style="font-size:12px;">—</div>
+                </div>
+                <div>
+                    <div class="info-label">Archivo ZIP</div>
+                    <div class="info-value" id="info-nombre-zip" style="font-size:11px;">—</div>
+                </div>
+                <div>
+                    <div class="info-label">Área</div>
+                    <div class="info-value" id="info-area" style="font-size:12px;">—</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── Panel de Decisión ─────────────────────────────────────────────── -->
+        <div class="panel-section" id="section-decision">
+            <div class="panel-section-title"><i class="bi bi-clipboard-check me-1"></i>Decisión Guardada</div>
+
+            <!-- No decision state -->
+            <div id="decision-empty" class="alert alert-secondary py-2 px-3 mb-0 small" style="display:none;">
+                <i class="bi bi-clock me-1"></i>Este polígono no ha sido validado aún.
+            </div>
+
+            <!-- Decision card -->
+            <div class="card" id="decision-panel" style="display:none; border-left-width:4px;">
+                <div class="card-header d-flex justify-content-between align-items-center py-2">
+                    <span class="small fw-bold"><i class="bi bi-clipboard-check me-1"></i>Decisión Guardada</span>
+                    <span id="decision-badge" class="badge bg-secondary">—</span>
+                </div>
+                <div class="card-body py-2 px-3">
+                    <div class="mb-2">
+                        <label class="form-label small text-muted mb-0">Estatus Chapingo</label>
+                        <div id="decision-estatus" class="fw-bold">—</div>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small text-muted mb-0">ID Polígono Único</label>
+                        <div id="decision-id-unico" class="fw-bold" style="font-family:monospace; font-size:12px;">—</div>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small text-muted mb-0">Superficie Chapingo</label>
+                        <div id="decision-superficie">—</div>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small text-muted mb-0">Superficie Calculada</label>
+                        <div id="decision-superficie-calc">—</div>
+                    </div>
+                    <hr class="my-2">
+                    <div class="mb-1">
+                        <label class="form-label small text-muted mb-0">Validado por</label>
+                        <div id="decision-usuario" class="small">—</div>
+                    </div>
+                    <div>
+                        <label class="form-label small text-muted mb-0">Fecha</label>
+                        <div id="decision-fecha" class="small">—</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── Matches (polígonos traslapados) ──────────────────────────────── -->
+        <div class="panel-section" id="section-matches">
+            <div class="panel-section-title"><i class="bi bi-layers me-1"></i>Polígonos Traslapados (Mega Capa)</div>
+            <div id="matches-list">
+                <div class="empty-state">Seleccione un polígono para ver matches</div>
+            </div>
+        </div>
+
+    </div><!-- /#panel-lateral -->
+
+    <!-- ══════════════════════════════════════════════════════════════════════ -->
+    <!-- MAPA                                                                    -->
+    <!-- ══════════════════════════════════════════════════════════════════════ -->
+    <div id="map-container">
+        <div id="map"></div>
+    </div>
+
+</div><!-- /#revisor-container -->
+
+<script>
+(function () {
+    'use strict';
+
+    // ── Variables globales ────────────────────────────────────────────────────
+    var map, poligonoLayer, matchesLayer;
+    var matchLayerMap   = [];
+    var currentIndices  = [];   // filtered list of idx_shp values
+    var currentPos      = 0;    // position in currentIndices
+
+    // ── Clasificación → color ─────────────────────────────────────────────────
+    var CLASIF_COLORS = {
+        'duplicado':          '#dc3545',
+        'traslape_interno':   '#ffc107',
+        'traslape_relevante': '#fd7e14',
+        'sin_conflicto':      '#28a745'
+    };
+
+    var CLASIF_LABELS = {
+        'duplicado':          'Duplicado',
+        'traslape_interno':   'Traslape interno',
+        'traslape_relevante': 'Traslape relevante',
+        'sin_conflicto':      'Sin conflicto'
+    };
+
+    function clasifColor(c) {
+        return CLASIF_COLORS[c] || '#6c757d';
+    }
+
+    function clasifLabel(c) {
+        return CLASIF_LABELS[c] || (c || '—');
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+    function safeVal(v) {
+        return (v !== null && v !== undefined && v !== '') ? v : '—';
+    }
+
+    function fmt(n, decimals) {
+        return (typeof n === 'number') ? n.toFixed(decimals) : '—';
+    }
+
+    function formatSuperficie(v) {
+        if (typeof v === 'number') return v.toFixed(4) + ' ha';
+        if (v === null || v === undefined || v === '') return '—';
+        var n = Number(v);
+        return isNaN(n) ? safeVal(v) : n.toFixed(4) + ' ha';
+    }
+
+    // ── Spinner ───────────────────────────────────────────────────────────────
+    function showSpinner() {
+        document.getElementById('panel-spinner').classList.add('active');
+    }
+
+    function hideSpinner() {
+        document.getElementById('panel-spinner').classList.remove('active');
+    }
+
+    // ── Inicializar mapa ──────────────────────────────────────────────────────
+    function initMap() {
+        map = L.map('map', {
+            center: [24.0, -102.0],
+            zoom: 6,
+            maxZoom: 22,
+            preferCanvas: true,
+            fullscreenControl: true,
+            fullscreenControlOptions: {
+                position: 'topleft',
+                title: 'Pantalla Completa',
+                titleCancel: 'Salir de Pantalla Completa'
+            }
+        });
+
+        var osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap',
+            maxZoom: 22
+        });
+        var esriLayer = L.tileLayer(
+            'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+            { attribution: 'Tiles &copy; Esri', maxZoom: 22 }
+        );
+        var cartoLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; OpenStreetMap, &copy; CARTO',
+            maxZoom: 22
+        });
+
+        esriLayer.addTo(map);
+        L.control.layers({
+            'OpenStreetMap': osmLayer,
+            'Esri World Imagery': esriLayer,
+            'CartoDB Dark': cartoLayer
+        }).addTo(map);
+    }
+
+    // ── Actualizar contador de navegación ─────────────────────────────────────
+    function updateNavCounter() {
+        var total = currentIndices.length;
+        var cur   = total > 0 ? (currentPos + 1) : 0;
+        document.getElementById('nav-counter').textContent =
+            'Polígono ' + cur.toLocaleString('es-MX') + ' de ' + total.toLocaleString('es-MX');
+    }
+
+    // ── loadEstadisticas ──────────────────────────────────────────────────────
+    function loadEstadisticas() {
+        fetchWithRetry('/api/revisor/estadisticas')
+            .then(function (r) {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.json();
+            })
+            .then(function (data) {
+                document.getElementById('stat-total').textContent    = (data.total    || 0).toLocaleString('es-MX');
+                document.getElementById('stat-vincular').textContent = (data.vincular || 0).toLocaleString('es-MX');
+                document.getElementById('stat-nuevo').textContent    = (data.nuevo    || 0).toLocaleString('es-MX');
+                document.getElementById('stat-eliminar').textContent = (data.eliminar || 0).toLocaleString('es-MX');
+            })
+            .catch(function (err) {
+                console.error('Error cargando estadísticas:', err);
+            });
+    }
+
+    // ── loadUsuarios ──────────────────────────────────────────────────────────
+    function loadUsuarios() {
+        fetchWithRetry('/api/revisor/usuarios')
+            .then(function (r) {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.json();
+            })
+            .then(function (data) {
+                var select = document.getElementById('filter-usuario');
+                var usuarios = data.usuarios || [];
+                usuarios.forEach(function (u) {
+                    var opt = document.createElement('option');
+                    opt.value = u;
+                    opt.textContent = u;
+                    select.appendChild(opt);
+                });
+            })
+            .catch(function (err) {
+                console.error('Error cargando usuarios:', err);
+            });
+    }
+
+    // ── loadIndices ───────────────────────────────────────────────────────────
+    function loadIndices(estatus, usuario) {
+        var params = [];
+        if (estatus) params.push('estatus=' + encodeURIComponent(estatus));
+        if (usuario) params.push('usuario=' + encodeURIComponent(usuario));
+        var url = '/api/revisor/indices' + (params.length ? '?' + params.join('&') : '');
+
+        fetchWithRetry(url)
+            .then(function (r) {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.json();
+            })
+            .then(function (data) {
+                currentIndices = data.indices || [];
+                currentPos     = 0;
+                updateNavCounter();
+                if (currentIndices.length > 0) {
+                    loadPoligono(currentIndices[0]);
+                } else {
+                    // Clear map and panels
+                    clearMapLayers();
+                    clearInfoPanel();
+                    clearDecisionPanel();
+                    document.getElementById('matches-list').innerHTML =
+                        '<div class="empty-state">No hay polígonos validados con los filtros seleccionados</div>';
+                }
+            })
+            .catch(function (err) {
+                console.error('Error cargando índices:', err);
+            });
+    }
+
+    // ── applyFilters (called by Filtrar button) ───────────────────────────────
+    function applyFilters() {
+        var estatus = document.getElementById('filter-estatus').value;
+        var usuario = document.getElementById('filter-usuario').value;
+        loadIndices(estatus || null, usuario || null);
+    }
+
+    // ── clearMapLayers ────────────────────────────────────────────────────────
+    function clearMapLayers() {
+        if (poligonoLayer) { map.removeLayer(poligonoLayer); poligonoLayer = null; }
+        if (matchesLayer)  { map.removeLayer(matchesLayer);  matchesLayer  = null; }
+        matchLayerMap.forEach(function (ml) { if (ml.layer) map.removeLayer(ml.layer); });
+        matchLayerMap = [];
+    }
+
+    // ── clearInfoPanel ────────────────────────────────────────────────────────
+    function clearInfoPanel() {
+        document.getElementById('info-id-poligon').textContent = '—';
+        document.getElementById('info-id-credito').textContent = '—';
+        document.getElementById('info-nombre-zip').textContent = '—';
+        document.getElementById('info-area').textContent       = '—';
+    }
+
+    // ── clearDecisionPanel ────────────────────────────────────────────────────
+    function clearDecisionPanel() {
+        document.getElementById('decision-panel').style.display = 'none';
+        document.getElementById('decision-empty').style.display = 'none';
+    }
+
+    // ── updateDecisionPanel ───────────────────────────────────────────────────
+    function updateDecisionPanel(decision) {
+        var panelEl = document.getElementById('decision-panel');
+        var emptyEl = document.getElementById('decision-empty');
+        var badgeEl = document.getElementById('decision-badge');
+
+        if (!decision) {
+            panelEl.style.display = 'none';
+            emptyEl.style.display = 'block';
+            return;
+        }
+
+        emptyEl.style.display = 'none';
+        panelEl.style.display = 'block';
+
+        var estatus = decision.estatus_chapingo || '—';
+
+        // Badge color based on estatus
+        if (estatus === 'NUEVO') {
+            badgeEl.className = 'badge bg-success';
+            panelEl.style.borderLeftColor = '#198754';
+        } else if (estatus === 'VINCULAR') {
+            badgeEl.className = 'badge bg-primary';
+            panelEl.style.borderLeftColor = '#0d6efd';
+        } else if (estatus === 'ELIMINAR') {
+            badgeEl.className = 'badge bg-danger';
+            panelEl.style.borderLeftColor = '#dc3545';
+        } else {
+            badgeEl.className = 'badge bg-secondary';
+            panelEl.style.borderLeftColor = '#dee2e6';
+        }
+
+        badgeEl.textContent = estatus;
+
+        document.getElementById('decision-estatus').textContent        = safeVal(decision.estatus_chapingo);
+        document.getElementById('decision-id-unico').textContent       = safeVal(decision.id_poligono_unico);
+        document.getElementById('decision-superficie').textContent     = formatSuperficie(decision.superficie_chapingo);
+        document.getElementById('decision-superficie-calc').textContent = formatSuperficie(decision.superficie_calculada);
+        document.getElementById('decision-usuario').textContent        = safeVal(decision.usuario);
+        document.getElementById('decision-fecha').textContent          = safeVal(decision.fecha);
+    }
+
+    // ── poblarListaMatches ────────────────────────────────────────────────────
+    function poblarListaMatches(matches) {
+        var container = document.getElementById('matches-list');
+
+        if (!matches || matches.length === 0) {
+            container.innerHTML = '<div class="empty-state"><i class="bi bi-check-circle text-success me-1"></i>Sin matches en Mega Capa</div>';
+            return;
+        }
+
+        container.innerHTML = '';
+
+        matches.forEach(function (m) {
+            var color     = m.color || clasifColor(m.clasificacion);
+            var badgeText = clasifLabel(m.clasificacion);
+            var textColor = (m.clasificacion === 'traslape_interno') ? '#212529' : '#fff';
+
+            var card = document.createElement('div');
+            card.className = 'match-card';
+            card.style.borderLeftColor = color;
+            card.style.borderLeftWidth = '4px';
+
+            card.innerHTML =
+                '<div class="match-id">' + safeVal(m.id_poligon) + '</div>' +
+                '<div class="match-meta">Crédito: ' + safeVal(m.id_credito) + '</div>' +
+                '<div class="match-meta">Overlap: <strong>' + fmt(m.overlap_pct, 1) + '%</strong></div>' +
+                '<div style="margin-top:4px;">' +
+                    '<span class="match-badge" style="background:' + color + '; color:' + textColor + ';">' + badgeText + '</span>' +
+                '</div>';
+
+            card.addEventListener('click', function () {
+                zoomToMatch(m.mega_index);
+            });
+
+            container.appendChild(card);
+        });
+    }
+
+    // ── zoomToMatch ───────────────────────────────────────────────────────────
+    function zoomToMatch(megaIndex) {
+        for (var i = 0; i < matchLayerMap.length; i++) {
+            if (matchLayerMap[i].mega_index === megaIndex) {
+                try {
+                    map.fitBounds(matchLayerMap[i].layer.getBounds(), { padding: [40, 40] });
+                } catch (e) { /* ignore */ }
+                return;
+            }
+        }
+    }
+
+    // ── loadPoligono ──────────────────────────────────────────────────────────
+    function loadPoligono(idx) {
+        showSpinner();
+        clearDecisionPanel();
+
+        fetchWithRetry('/api/revisor/poligono/' + idx)
+            .then(function (r) {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.json();
+            })
+            .then(function (data) {
+                // 1. Update polygon info fields
+                var props = data.poligono ? data.poligono.properties : {};
+                document.getElementById('info-id-poligon').textContent = safeVal(props.ID_POLIGON);
+                document.getElementById('info-id-credito').textContent = safeVal(props.ID_CREDITO);
+                document.getElementById('info-nombre-zip').textContent = safeVal(props.NOMBRE_ZIP);
+                document.getElementById('info-area').textContent =
+                    (typeof props.area_ha === 'number') ? props.area_ha.toFixed(4) + ' ha' : '—';
+
+                // 2. Clear previous map layers
+                clearMapLayers();
+
+                // 3. Draw current polygon in blue
+                if (data.poligono) {
+                    var stylePoligono = {
+                        color:       '#0d6efd',
+                        fillColor:   '#0d6efd',
+                        weight:      3,
+                        fillOpacity: 0.25
+                    };
+                    poligonoLayer = L.geoJSON(data.poligono, { style: stylePoligono });
+                    poligonoLayer.eachLayer(function (layer) {
+                        layer.bindTooltip(
+                            '<b>ACTUAL</b><br>' +
+                            '<b>ID:</b> ' + safeVal(props.ID_POLIGON) + '<br>' +
+                            '<b>Crédito:</b> ' + safeVal(props.ID_CREDITO) + '<br>' +
+                            '<b>Área:</b> ' + (typeof props.area_ha === 'number' ? props.area_ha.toFixed(4) + ' ha' : '—'),
+                            { permanent: false, direction: 'auto', opacity: 0.95, className: 'revisor-tooltip' }
+                        );
+                    });
+                    poligonoLayer.addTo(map);
+
+                    // 5. Fit map bounds to current polygon
+                    try {
+                        map.fitBounds(poligonoLayer.getBounds(), { padding: [50, 50] });
+                    } catch (e) { /* ignore */ }
+                }
+
+                // 4. Draw match polygons with classification colors
+                var matchFeatures = (data.match_features && data.match_features.features) || [];
+                matchFeatures.forEach(function (feature) {
+                    var mp    = feature.properties;
+                    var color = mp.color || clasifColor(mp.clasificacion) || '#6c757d';
+                    var style = {
+                        color:       color,
+                        fillColor:   color,
+                        weight:      2,
+                        fillOpacity: 0.25
+                    };
+
+                    var layer = L.geoJSON(feature, { style: function () { return style; } });
+                    layer.eachLayer(function (l) {
+                        l.bindTooltip(
+                            '<b>MEGA</b><br>' +
+                            '<b>ID:</b> ' + safeVal(mp.id_poligon) + '<br>' +
+                            '<b>Crédito:</b> ' + safeVal(mp.id_credito) + '<br>' +
+                            '<b>Overlap:</b> ' + fmt(mp.overlap_pct, 1) + '%<br>' +
+                            '<b>Clasificación:</b> ' + clasifLabel(mp.clasificacion),
+                            { permanent: false, direction: 'auto', opacity: 0.95, className: 'revisor-tooltip' }
+                        );
+                    });
+                    layer.addTo(map);
+
+                    matchLayerMap.push({
+                        mega_index:    mp.mega_index,
+                        layer:         layer,
+                        originalStyle: style,
+                        id_poligon:    mp.id_poligon,
+                        color:         color
+                    });
+                });
+
+                // 6. Update decision panel with saved decision data
+                updateDecisionPanel(data.decision || null);
+
+                // 7. Update navigation counter
+                updateNavCounter();
+
+                // Populate matches list
+                poblarListaMatches(data.matches || []);
+
+                hideSpinner();
+            })
+            .catch(function (err) {
+                console.error('Error cargando polígono:', err);
+                hideSpinner();
+                document.getElementById('matches-list').innerHTML =
+                    '<div class="empty-state text-danger">Error al cargar polígono: ' + err.message + '</div>';
+            });
+    }
+
+    // ── Navegación ────────────────────────────────────────────────────────────
+    function prev() {
+        if (currentIndices.length === 0) return;
+        if (currentPos > 0) {
+            currentPos--;
+            loadPoligono(currentIndices[currentPos]);
+        }
+    }
+
+    function next() {
+        if (currentIndices.length === 0) return;
+        if (currentPos < currentIndices.length - 1) {
+            currentPos++;
+            loadPoligono(currentIndices[currentPos]);
+        }
+    }
+
+    function goTo() {
+        var val = parseInt(document.getElementById('goto-input').value, 10);
+        if (isNaN(val)) return;
+
+        // Try to find the idx in currentIndices
+        var found = -1;
+        for (var i = 0; i < currentIndices.length; i++) {
+            if (currentIndices[i] === val) {
+                found = i;
+                break;
+            }
+        }
+
+        if (found >= 0) {
+            currentPos = found;
+            loadPoligono(currentIndices[currentPos]);
+        } else {
+            // Treat as position (1-based)
+            var pos = val - 1;
+            if (pos >= 0 && pos < currentIndices.length) {
+                currentPos = pos;
+                loadPoligono(currentIndices[currentPos]);
+            }
+        }
+    }
+
+    // ── Keyboard navigation ───────────────────────────────────────────────────
+    document.addEventListener('keydown', function (e) {
+        // Ignore if focus is on an input/select/textarea
+        var tag = document.activeElement ? document.activeElement.tagName : '';
+        if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+
+        if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            prev();
+        } else if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            next();
+        }
+    });
+
+    // ── Expose functions needed by inline onclick handlers ────────────────────
+    window.applyFilters = applyFilters;
+    window.prev         = prev;
+    window.next         = next;
+    window.goTo         = goTo;
+
+    // ── Inicialización ────────────────────────────────────────────────────────
+    document.addEventListener('DOMContentLoaded', function () {
+        initMap();
+        loadEstadisticas();
+        loadUsuarios();
+        loadIndices();
+    });
+
+}());
+</script>
+{% endblock %}

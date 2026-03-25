@@ -78,6 +78,13 @@
                     <span>Resultados 15K</span>
                 </a>
                 {% if current_user.is_authenticated and current_user.is_admin %}
+                <a href="{{ url_for('revisor') }}" class="nav-link text-white {{ 'active' if request.endpoint == 'revisor' else '' }}">
+                    <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M9 11l3 3L22 4"></path>
+                        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+                    </svg>
+                    Revisor
+                </a>
                 <a href="{{ url_for('admin_usuarios') }}" class="nav-link text-white {{ 'active' if request.endpoint == 'admin_usuarios' else '' }}">
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-gear me-2" viewBox="0 0 16 16">
                         <path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492zM5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0z"/>
