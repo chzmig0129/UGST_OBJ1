@@ -519,10 +519,11 @@
                 return r.json();
             })
             .then(function (data) {
-                document.getElementById('stat-total').textContent    = (data.total    || 0).toLocaleString('es-MX');
-                document.getElementById('stat-vincular').textContent = (data.vincular || 0).toLocaleString('es-MX');
-                document.getElementById('stat-nuevo').textContent    = (data.nuevo    || 0).toLocaleString('es-MX');
-                document.getElementById('stat-eliminar').textContent = (data.eliminar || 0).toLocaleString('es-MX');
+                var pe = data.por_estatus || {};
+                document.getElementById('stat-total').textContent    = (data.total_validados || 0).toLocaleString('es-MX');
+                document.getElementById('stat-vincular').textContent = (pe['VINCULAR'] || 0).toLocaleString('es-MX');
+                document.getElementById('stat-nuevo').textContent    = (pe['NUEVO']    || 0).toLocaleString('es-MX');
+                document.getElementById('stat-eliminar').textContent = (pe['ELIMINAR'] || 0).toLocaleString('es-MX');
             })
             .catch(function (err) {
                 console.error('Error cargando estadísticas:', err);
@@ -650,8 +651,8 @@
         document.getElementById('decision-id-unico').textContent       = safeVal(decision.id_poligono_unico);
         document.getElementById('decision-superficie').textContent     = formatSuperficie(decision.superficie_chapingo);
         document.getElementById('decision-superficie-calc').textContent = formatSuperficie(decision.superficie_calculada);
-        document.getElementById('decision-usuario').textContent        = safeVal(decision.usuario);
-        document.getElementById('decision-fecha').textContent          = safeVal(decision.fecha);
+        document.getElementById('decision-usuario').textContent        = safeVal(decision.decidido_por);
+        document.getElementById('decision-fecha').textContent          = safeVal(decision.fecha_decision);
     }
 
     // ── poblarListaMatches ────────────────────────────────────────────────────
