@@ -6763,6 +6763,7 @@ def agrupar_y_decidir_nuevos(pairs):
         principal_id_credito = principal_info["id_credito"]
 
         members = []
+        seen_credits = {principal_id_credito}
         for idx in members_idxs:
             info = node_info[idx]
             if idx == principal_idx:
@@ -6777,9 +6778,13 @@ def agrupar_y_decidir_nuevos(pairs):
                 if info["id_credito"] == principal_id_credito:
                     decision = "ELIMINAR"
                     reason = f"Duplicado mismo crédito que principal {principal_id_poligon}"
+                elif info["id_credito"] in seen_credits:
+                    decision = "ELIMINAR"
+                    reason = f'Crédito {info["id_credito"]} ya vinculado en este grupo. Eliminado a favor de {principal_id_poligon}'
                 else:
                     decision = "VINCULAR"
                     reason = f"Diferente crédito, vinculado a {principal_id_poligon}"
+                    seen_credits.add(info["id_credito"])
 
             members.append({
                 "idx_shp": idx,
@@ -7314,8 +7319,8 @@ def api_segunda_validacion_grupo_geometrias():
     except ValueError:
         return jsonify({'error': 'Indices inválidos'}), 400
 
-    if len(indices) > 50:
-        return jsonify({'error': 'Máximo 50 índices'}), 400
+    if len(indices) > 200:
+        return jsonify({'error': 'Máximo 200 índices'}), 400
 
     if shp_cache.validacion is None:
         return jsonify({'error': 'Shapefiles no cargados'}), 500

@@ -1022,7 +1022,14 @@ function initGrupoMap(members, colors) {
 
     // Fetch geometries
     fetch('/api/segunda-validacion/grupo-geometrias?indices=' + indices.join(','))
-        .then(function(r) { return r.json(); })
+        .then(function(r) {
+            if (!r.ok) {
+                return r.json().then(function(errData) {
+                    throw new Error(errData.error || 'Error del servidor: ' + r.status);
+                });
+            }
+            return r.json();
+        })
         .then(function(fc) {
             var allBounds = [];
             var features = fc.features || [];
@@ -1078,6 +1085,14 @@ function initGrupoMap(members, colors) {
         })
         .catch(function(err) {
             console.error('Error cargando geometrías del grupo:', err);
+            var mapEl = document.getElementById('grupo-map');
+            if (mapEl) {
+                var overlay = document.createElement('div');
+                overlay.style.cssText = 'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:1000;background:rgba(0,0,0,0.8);color:white;padding:20px;border-radius:8px;text-align:center;max-width:80%;';
+                overlay.innerHTML = '<i class="bi bi-exclamation-triangle text-warning fs-3"></i><br><strong>Error al cargar geometrías</strong><br><small>' + err.message + '</small>';
+                mapEl.style.position = 'relative';
+                mapEl.appendChild(overlay);
+            }
         });
 }
 
