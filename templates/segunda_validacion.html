@@ -253,6 +253,19 @@
                     <div class="spinner-border text-primary"></div>
                     <p class="mt-2 text-muted">Cargando grupos...</p>
                 </div>
+                <div id="grupos-filter-bar" class="mb-3" style="display:none;">
+                    <div class="btn-group btn-group-sm" role="group">
+                        <button type="button" class="btn btn-outline-secondary active" id="filter-todos" onclick="filtrarGrupos('todos')">
+                            <i class="bi bi-grid-3x3-gap me-1"></i>Todos <span class="badge bg-secondary ms-1" id="filter-count-todos">0</span>
+                        </button>
+                        <button type="button" class="btn btn-outline-primary" id="filter-vincular" onclick="filtrarGrupos('vincular')">
+                            <i class="bi bi-link-45deg me-1"></i>Con VINCULAR <span class="badge bg-primary ms-1" id="filter-count-vincular">0</span>
+                        </button>
+                        <button type="button" class="btn btn-outline-danger" id="filter-eliminar" onclick="filtrarGrupos('eliminar')">
+                            <i class="bi bi-trash me-1"></i>Con ELIMINAR <span class="badge bg-danger ms-1" id="filter-count-eliminar">0</span>
+                        </button>
+                    </div>
+                </div>
                 <div id="grupos-content"></div>
                 <div class="text-muted small mt-2" id="grupos-summary"></div>
             </div>
@@ -345,6 +358,8 @@ var _gruposLoaded = false;
 var _allGrupos = [];
 var _gruposPage = 0;
 var _gruposPageSize = 50;
+var _gruposFilter = 'todos'; // 'todos' | 'vincular' | 'eliminar'
+var _gruposFiltered = [];    // filtered subset of _allGrupos
 var _grupoMap = null;
 var _grupoLayers = {};
 var _modalGrupoMapa = null;
@@ -746,6 +761,29 @@ function cargarGrupos() {
                 return;
             }
 
+            // Count groups by type for filter badges
+            var countVincular = 0, countEliminar = 0;
+            for (var gi = 0; gi < groups.length; gi++) {
+                var mems = groups[gi].members || [];
+                var hasV = false, hasE = false;
+                for (var mi = 0; mi < mems.length; mi++) {
+                    var est = (mems[mi].decision || mems[mi].estatus_chapingo || '').toUpperCase();
+                    if (est === 'VINCULAR') hasV = true;
+                    if (est === 'ELIMINAR') hasE = true;
+                }
+                if (hasV) countVincular++;
+                if (hasE) countEliminar++;
+            }
+            document.getElementById('filter-count-todos').textContent = groups.length;
+            document.getElementById('filter-count-vincular').textContent = countVincular;
+            document.getElementById('filter-count-eliminar').textContent = countEliminar;
+            document.getElementById('grupos-filter-bar').style.display = 'block';
+
+            _gruposFilter = 'todos';
+            document.getElementById('filter-todos').className = 'btn btn-secondary';
+            document.getElementById('filter-vincular').className = 'btn btn-outline-primary';
+            document.getElementById('filter-eliminar').className = 'btn btn-outline-danger';
+            applyGruposFilter();
             renderGruposPage();
         })
         .catch(function(err) {
@@ -754,13 +792,49 @@ function cargarGrupos() {
         });
 }
 
+function filtrarGrupos(filter) {
+    _gruposFilter = filter;
+    _gruposPage = 0;
+
+    // Also toggle btn style
+    document.getElementById('filter-todos').className = 'btn btn-' + (filter === 'todos' ? '' : 'outline-') + 'secondary';
+    document.getElementById('filter-vincular').className = 'btn btn-' + (filter === 'vincular' ? '' : 'outline-') + 'primary';
+    document.getElementById('filter-eliminar').className = 'btn btn-' + (filter === 'eliminar' ? '' : 'outline-') + 'danger';
+
+    applyGruposFilter();
+    renderGruposPage();
+}
+
+function applyGruposFilter() {
+    if (_gruposFilter === 'todos') {
+        _gruposFiltered = _allGrupos.map(function(g, idx) { g._origIdx = idx; return g; });
+    } else {
+        _gruposFiltered = [];
+        for (var i = 0; i < _allGrupos.length; i++) {
+            var g = _allGrupos[i];
+            var members = g.members || [];
+            var match = false;
+            for (var j = 0; j < members.length; j++) {
+                var est = (members[j].decision || members[j].estatus_chapingo || '').toUpperCase();
+                if (_gruposFilter === 'vincular' && est === 'VINCULAR') { match = true; break; }
+                if (_gruposFilter === 'eliminar' && est === 'ELIMINAR') { match = true; break; }
+            }
+            if (match) {
+                g._origIdx = i;
+                _gruposFiltered.push(g);
+            }
+        }
+    }
+}
+
 function renderGruposPage() {
     var contentEl = document.getElementById('grupos-content');
     var summaryEl = document.getElementById('grupos-summary');
-    var totalGroups = _allGrupos.length;
+    var source = _gruposFiltered;
+    var totalGroups = source.length;
     var start = _gruposPage * _gruposPageSize;
     var end = Math.min(start + _gruposPageSize, totalGroups);
-    var shown = _allGrupos.slice(start, end);
+    var shown = source.slice(start, end);
     var totalPages = Math.ceil(totalGroups / _gruposPageSize);
 
     if (shown.length === 0 && _gruposPage > 0) {
@@ -784,9 +858,9 @@ function renderGruposPage() {
             else if (est === 'ELIMINAR') countEliminar++;
         }
 
-        html += '<div class="card border-0 shadow-sm mb-3" style="cursor:pointer;" onclick="abrirGrupoMapa(' + globalIdx + ')">' +
+        html += '<div class="card border-0 shadow-sm mb-3" style="cursor:pointer;" onclick="abrirGrupoMapa(' + (g._origIdx != null ? g._origIdx : globalIdx) + ')">' +
             '<div class="card-header d-flex align-items-center gap-2 py-2">' +
-            '<span class="fw-semibold">Grupo ' + (globalIdx + 1) + '</span>' +
+            '<span class="fw-semibold">Grupo ' + (g.group_id || (g._origIdx != null ? g._origIdx + 1 : globalIdx + 1)) + '</span>' +
             '<span class="badge bg-success">Principal: ' + (g.principal_id_poligon || '—') + '</span>';
 
         // Show status counts as small badges
@@ -845,7 +919,7 @@ function renderGruposPage() {
 }
 
 function cambiarPaginaGrupos(page) {
-    var totalPages = Math.ceil(_allGrupos.length / _gruposPageSize);
+    var totalPages = Math.ceil(_gruposFiltered.length / _gruposPageSize);
     if (page < 0 || page >= totalPages) return;
     _gruposPage = page;
     renderGruposPage();
