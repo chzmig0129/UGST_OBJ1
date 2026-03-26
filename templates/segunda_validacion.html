@@ -25,7 +25,7 @@
     </div>
 
     <!-- Section 1: Control Panel -->
-    <div class="card border-0 shadow-sm mb-4">
+    <div class="card border-0 shadow-sm mb-4" id="control-panel-card">
         <div class="card-body">
             <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
                 <div>
@@ -54,6 +54,14 @@
 
             <!-- Alert area -->
             <div id="alert-area" class="mt-3"></div>
+
+            <!-- Results info banner (shown after validation has been run) -->
+            <div id="results-info-banner" class="mt-3" style="display:none;">
+                <div class="alert alert-info mb-0">
+                    <i class="bi bi-info-circle me-2"></i>
+                    <span id="results-info-text">La segunda validación ya fue ejecutada.</span>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -468,13 +476,31 @@ function cargarBackups(autoSelectLatest) {
             var backups = data.backups || [];
             var select = document.getElementById('backup-select');
             var card = document.getElementById('backup-selector-card');
+            var controlPanel = document.getElementById('control-panel-card');
+            var btnEjecutar = document.getElementById('btn-ejecutar');
+            var infoBanner = document.getElementById('results-info-banner');
 
             if (backups.length === 0) {
                 card.style.display = 'none';
+                // Show control panel with execute button
+                if (controlPanel) controlPanel.style.display = '';
+                if (infoBanner) infoBanner.style.display = 'none';
                 return;
             }
 
+            // Backups exist — already ran
             card.style.display = 'block';
+
+            // Hide the execute button (already ran)
+            if (btnEjecutar) btnEjecutar.style.display = 'none';
+
+            // Show info banner
+            if (infoBanner) {
+                var latestFecha = backups[0].fecha || '';
+                document.getElementById('results-info-text').innerHTML =
+                    'La segunda validación fue ejecutada el <strong>' + latestFecha + '</strong>. Mostrando resultados.';
+                infoBanner.style.display = 'block';
+            }
 
             // Rebuild options
             select.innerHTML = '<option value="">— Selecciona un backup —</option>';
@@ -486,10 +512,9 @@ function cargarBackups(autoSelectLatest) {
                 select.appendChild(opt);
             });
 
-            if (autoSelectLatest || backups.length === 1) {
-                select.value = backups[0].backup_id;
-                cargarDashboard();
-            }
+            // Auto-select latest and load dashboard
+            select.value = backups[0].backup_id;
+            cargarDashboard();
         })
         .catch(function(err) {
             console.warn('Error cargando backups:', err);
