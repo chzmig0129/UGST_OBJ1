@@ -6866,6 +6866,29 @@ def _run_segunda_validacion():
             _segunda_val_state["result"] = {"backup_id": backup_id}
 
             # ------------------------------------------------------------------
+            # Step 1b: Reset previous segunda-validación decisions
+            # ------------------------------------------------------------------
+            _segunda_val_state["phase"] = "reset"
+
+            # Reset previous segunda-validación decisions before applying new ones
+            prev_modified = Analizador15K.query.filter(
+                Analizador15K.estatus_chapingo.in_(["VINCULAR", "ELIMINAR"]),
+                db.or_(
+                    Analizador15K.comentario_chapingo.ilike("%Duplicado%"),
+                    Analizador15K.comentario_chapingo.ilike("%vinculado%"),
+                    Analizador15K.comentario_chapingo.ilike("%Eliminado a favor%"),
+                    Analizador15K.comentario_chapingo.ilike("%ya vinculado en este grupo%"),
+                )
+            ).all()
+            for row in prev_modified:
+                row.estatus_chapingo = "NUEVO"
+                row.id_poligono_unico = row.id_poligon
+                row.comentario_chapingo = None
+                row.tiene_decision = False
+            db.session.commit()
+            app.logger.info(f"Segunda validación re-run: reset {len(prev_modified)} previous decisions")
+
+            # ------------------------------------------------------------------
             # Step 2: Traslape engine
             # ------------------------------------------------------------------
             _segunda_val_state["phase"] = "traslape"
@@ -6890,24 +6913,6 @@ def _run_segunda_validacion():
             # Step 4: Apply decisions to DB
             # ------------------------------------------------------------------
             _segunda_val_state["phase"] = "aplicando"
-
-            # Reset previous segunda-validación decisions before applying new ones
-            prev_modified = Analizador15K.query.filter(
-                Analizador15K.estatus_chapingo.in_(["VINCULAR", "ELIMINAR"]),
-                db.or_(
-                    Analizador15K.comentario_chapingo.ilike("%Duplicado%"),
-                    Analizador15K.comentario_chapingo.ilike("%vinculado%"),
-                    Analizador15K.comentario_chapingo.ilike("%Eliminado a favor%"),
-                    Analizador15K.comentario_chapingo.ilike("%ya vinculado en este grupo%"),
-                )
-            ).all()
-            for row in prev_modified:
-                row.estatus_chapingo = "NUEVO"
-                row.id_poligono_unico = row.id_poligon
-                row.comentario_chapingo = None
-                row.tiene_decision = False
-            db.session.commit()
-            app.logger.info(f"Segunda validación re-run: reset {len(prev_modified)} previous decisions")
 
             vinculados = 0
             eliminados = 0
