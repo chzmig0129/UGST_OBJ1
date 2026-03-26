@@ -6801,6 +6801,275 @@ def agrupar_y_decidir_nuevos(pairs):
     return groups
 
 
+# ==============================================
+# Segunda Validación — Background runner + API
+# ==============================================
+
+def _run_segunda_validacion():
+    """Background thread: runs full segunda validación pipeline.
+
+    Steps:
+    1. Create backup (phase="backup")
+    2. Run traslape engine (phase="traslape")
+    3. Group and decide (phase="agrupamiento")
+    4. Apply decisions to DB (phase="aplicando")
+    5. Done (phase="done")
+    """
+    global _segunda_val_state
+    try:
+        with app.app_context():
+            # ------------------------------------------------------------------
+            # Step 1: Backup
+            # ------------------------------------------------------------------
+            _segunda_val_state["phase"] = "backup"
+
+            rows = Analizador15K.query.filter_by(tiene_decision=True).all()
+            backup_id = None
+            if rows:
+                backup_id = f"backup_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_seg_val"
+                batch_size = 500
+                for i in range(0, len(rows), batch_size):
+                    batch = rows[i:i + batch_size]
+                    for r in batch:
+                        entry = BackupAnalizador15K(
+                            backup_id=backup_id,
+                            idx_shp=r.idx_shp,
+                            id_poligon=r.id_poligon,
+                            id_credito=r.id_credito,
+                            nombre_zip=r.nombre_zip,
+                            estatus_chapingo=r.estatus_chapingo,
+                            id_poligono_unico=r.id_poligono_unico,
+                            superficie_chapingo=r.superficie_chapingo,
+                            comentario_chapingo=r.comentario_chapingo,
+                            superficie_calculada=r.superficie_calculada,
+                            tiene_decision=r.tiene_decision,
+                            region=r.region,
+                        )
+                        db.session.add(entry)
+                    db.session.commit()
+            _segunda_val_state["result"] = {"backup_id": backup_id}
+
+            # ------------------------------------------------------------------
+            # Step 2: Traslape engine
+            # ------------------------------------------------------------------
+            _segunda_val_state["phase"] = "traslape"
+            _segunda_val_state["processed"] = 0
+            _segunda_val_state["total"] = 0
+            _segunda_val_state["progress"] = 0
+
+            def on_progress(processed, total):
+                _segunda_val_state["processed"] = processed
+                _segunda_val_state["total"] = total
+                _segunda_val_state["progress"] = int(processed / total * 100) if total > 0 else 0
+
+            pairs = calcular_traslapes_nuevos_entre_si(on_progress=on_progress)
+
+            # ------------------------------------------------------------------
+            # Step 3: Group and decide
+            # ------------------------------------------------------------------
+            _segunda_val_state["phase"] = "agrupamiento"
+            groups = agrupar_y_decidir_nuevos(pairs)
+
+            # ------------------------------------------------------------------
+            # Step 4: Apply decisions to DB
+            # ------------------------------------------------------------------
+            _segunda_val_state["phase"] = "aplicando"
+
+            vinculados = 0
+            eliminados = 0
+            sin_cambio = 0
+            batch_count = 0
+            batch_size = 100
+
+            for group in groups:
+                principal_id_poligon = group["principal_id_poligon"]
+                for member in group["members"]:
+                    decision = member["decision"]
+                    if decision == "NUEVO":
+                        sin_cambio += 1
+                        continue
+
+                    record = Analizador15K.query.filter_by(idx_shp=member["idx_shp"]).first()
+                    if record is None:
+                        continue
+
+                    if decision == "VINCULAR":
+                        record.estatus_chapingo = "VINCULAR"
+                        record.id_poligono_unico = principal_id_poligon
+                        record.comentario_chapingo = member["reason"]
+                        record.tiene_decision = True
+                        vinculados += 1
+                    elif decision == "ELIMINAR":
+                        record.estatus_chapingo = "ELIMINAR"
+                        record.id_poligono_unico = principal_id_poligon
+                        record.comentario_chapingo = member["reason"]
+                        record.tiene_decision = True
+                        eliminados += 1
+
+                    batch_count += 1
+                    if batch_count % batch_size == 0:
+                        db.session.commit()
+
+            # Commit any remaining changes
+            db.session.commit()
+
+            # ------------------------------------------------------------------
+            # Step 5: Done
+            # ------------------------------------------------------------------
+            total_nuevos_analizados = _segunda_val_state.get("total", 0)
+            _segunda_val_state["result"] = {
+                "backup_id": backup_id,
+                "total_nuevos_analizados": total_nuevos_analizados,
+                "total_pairs_found": len(pairs),
+                "total_groups": len(groups),
+                "vinculados": vinculados,
+                "eliminados": eliminados,
+                "sin_cambio": sin_cambio,
+            }
+            _segunda_val_state["phase"] = "done"
+            _segunda_val_state["progress"] = 100
+            _segunda_val_state["status"] = "done"
+
+    except Exception as e:
+        _segunda_val_state["status"] = "error"
+        _segunda_val_state["error"] = str(e)
+
+
+@app.route('/api/segunda-validacion/ejecutar', methods=['POST'])
+@login_required
+@limiter.exempt
+def api_segunda_validacion_ejecutar():
+    """Start the full segunda validación pipeline in a background thread."""
+    global _segunda_val_state
+    if not current_user.is_admin:
+        return jsonify({'error': 'No autorizado'}), 403
+
+    if _segunda_val_state["status"] == "running":
+        return jsonify({'error': 'Segunda validación ya en progreso'}), 409
+
+    # Reset state
+    _segunda_val_state["status"] = "running"
+    _segunda_val_state["phase"] = "backup"
+    _segunda_val_state["processed"] = 0
+    _segunda_val_state["total"] = 0
+    _segunda_val_state["progress"] = 0
+    _segunda_val_state["error"] = None
+    _segunda_val_state["result"] = None
+
+    threading.Thread(target=_run_segunda_validacion, daemon=True).start()
+    return jsonify({"ok": True, "message": "Segunda validación iniciada"})
+
+
+@app.route('/api/segunda-validacion/estado', methods=['GET'])
+@login_required
+@limiter.exempt
+def api_segunda_validacion_estado():
+    """Return the current state of the segunda validación pipeline."""
+    return jsonify(_segunda_val_state)
+
+
+@app.route('/api/segunda-validacion/resultado', methods=['GET'])
+@login_required
+@limiter.exempt
+def api_segunda_validacion_resultado():
+    """Return the final result summary when the pipeline is done."""
+    if _segunda_val_state["status"] != "done":
+        return jsonify({'error': 'Segunda validación no completada aún'}), 404
+    return jsonify(_segunda_val_state["result"])
+
+
+@app.route('/api/segunda-validacion/dashboard/<backup_id>', methods=['GET'])
+@login_required
+@limiter.exempt
+def api_segunda_validacion_dashboard(backup_id):
+    """Compare backup snapshot (ANTES) with current Analizador15K (DESPUES) to produce a before/after dashboard."""
+
+    # --- ANTES: load backup rows ---
+    backup_rows = BackupAnalizador15K.query.filter_by(backup_id=backup_id).all()
+    if not backup_rows:
+        return jsonify({'error': f'Backup no encontrado: {backup_id}'}), 404
+
+    # Determine backup_fecha from the first row
+    backup_fecha = backup_rows[0].backup_fecha.isoformat() if backup_rows[0].backup_fecha else None
+
+    # Build ANTES stats
+    antes_por_estatus = {"NUEVO": 0, "VINCULAR": 0, "ELIMINAR": 0}
+    backup_dict = {}  # keyed by idx_shp for O(1) lookup
+    for br in backup_rows:
+        estatus = br.estatus_chapingo or ""
+        if estatus in antes_por_estatus:
+            antes_por_estatus[estatus] += 1
+        backup_dict[br.idx_shp] = br
+
+    antes = {
+        "total_con_decision": len(backup_rows),
+        "por_estatus": antes_por_estatus,
+    }
+
+    # --- DESPUES: load current rows with tiene_decision == True ---
+    current_rows = Analizador15K.query.filter_by(tiene_decision=True).all()
+
+    # Build DESPUES stats
+    despues_por_estatus = {"NUEVO": 0, "VINCULAR": 0, "ELIMINAR": 0}
+    for cr in current_rows:
+        estatus = cr.estatus_chapingo or ""
+        if estatus in despues_por_estatus:
+            despues_por_estatus[estatus] += 1
+
+    despues = {
+        "total_con_decision": len(current_rows),
+        "por_estatus": despues_por_estatus,
+    }
+
+    # --- CAMBIOS: diff between backup and current ---
+    nuevos_a_vincular = 0
+    nuevos_a_eliminar = 0
+    sin_cambio = 0
+    detalle_cambios = []
+
+    for cr in current_rows:
+        br = backup_dict.get(cr.idx_shp)
+        estatus_antes = br.estatus_chapingo if br else None
+        estatus_despues = cr.estatus_chapingo or ""
+
+        if estatus_antes == estatus_despues:
+            sin_cambio += 1
+        else:
+            # Count specific transitions from NUEVO
+            if estatus_antes == "NUEVO" and estatus_despues == "VINCULAR":
+                nuevos_a_vincular += 1
+            elif estatus_antes == "NUEVO" and estatus_despues == "ELIMINAR":
+                nuevos_a_eliminar += 1
+
+            # Collect detail (limit 500)
+            if len(detalle_cambios) < 500:
+                detalle_cambios.append({
+                    "idx_shp": cr.idx_shp,
+                    "id_poligon": cr.id_poligon,
+                    "id_credito": cr.id_credito,
+                    "estatus_antes": estatus_antes,
+                    "estatus_despues": estatus_despues,
+                    "id_poligono_unico_antes": br.id_poligono_unico if br else None,
+                    "id_poligono_unico_despues": cr.id_poligono_unico,
+                    "comentario": cr.comentario_chapingo,
+                })
+
+    cambios = {
+        "nuevos_a_vincular": nuevos_a_vincular,
+        "nuevos_a_eliminar": nuevos_a_eliminar,
+        "sin_cambio": sin_cambio,
+        "detalle_cambios": detalle_cambios,
+    }
+
+    return jsonify({
+        "backup_id": backup_id,
+        "backup_fecha": backup_fecha,
+        "antes": antes,
+        "despues": despues,
+        "cambios": cambios,
+    })
+
+
 shp_cache.preload_all()  # Preload in production for gunicorn preload_app
 
 
