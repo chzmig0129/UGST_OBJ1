@@ -6828,30 +6828,41 @@ def _run_segunda_validacion():
             # ------------------------------------------------------------------
             _segunda_val_state["phase"] = "backup"
 
-            rows = Analizador15K.query.filter_by(tiene_decision=True).all()
-            backup_id = None
-            if rows:
-                backup_id = f"backup_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_seg_val"
-                batch_size = 500
-                for i in range(0, len(rows), batch_size):
-                    batch = rows[i:i + batch_size]
-                    for r in batch:
-                        entry = BackupAnalizador15K(
-                            backup_id=backup_id,
-                            idx_shp=r.idx_shp,
-                            id_poligon=r.id_poligon,
-                            id_credito=r.id_credito,
-                            nombre_zip=r.nombre_zip,
-                            estatus_chapingo=r.estatus_chapingo,
-                            id_poligono_unico=r.id_poligono_unico,
-                            superficie_chapingo=r.superficie_chapingo,
-                            comentario_chapingo=r.comentario_chapingo,
-                            superficie_calculada=r.superficie_calculada,
-                            tiene_decision=r.tiene_decision,
-                            region=r.region,
-                        )
-                        db.session.add(entry)
-                    db.session.commit()
+            # Check if a segunda-validación backup already exists
+            existing_backup = db.session.query(BackupAnalizador15K.backup_id).filter(
+                BackupAnalizador15K.backup_id.like('%_seg_val')
+            ).order_by(BackupAnalizador15K.backup_fecha.asc()).first()
+
+            if existing_backup:
+                # Reuse original backup — don't overwrite pre-segunda-validación state
+                backup_id = existing_backup[0]
+                app.logger.info(f'Segunda validación re-run: preserving original backup {backup_id}')
+            else:
+                # First run — create backup
+                rows = Analizador15K.query.filter_by(tiene_decision=True).all()
+                backup_id = None
+                if rows:
+                    backup_id = f"backup_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_seg_val"
+                    batch_size = 500
+                    for i in range(0, len(rows), batch_size):
+                        batch = rows[i:i + batch_size]
+                        for r in batch:
+                            entry = BackupAnalizador15K(
+                                backup_id=backup_id,
+                                idx_shp=r.idx_shp,
+                                id_poligon=r.id_poligon,
+                                id_credito=r.id_credito,
+                                nombre_zip=r.nombre_zip,
+                                estatus_chapingo=r.estatus_chapingo,
+                                id_poligono_unico=r.id_poligono_unico,
+                                superficie_chapingo=r.superficie_chapingo,
+                                comentario_chapingo=r.comentario_chapingo,
+                                superficie_calculada=r.superficie_calculada,
+                                tiene_decision=r.tiene_decision,
+                                region=r.region,
+                            )
+                            db.session.add(entry)
+                        db.session.commit()
             _segunda_val_state["result"] = {"backup_id": backup_id}
 
             # ------------------------------------------------------------------
@@ -6879,6 +6890,24 @@ def _run_segunda_validacion():
             # Step 4: Apply decisions to DB
             # ------------------------------------------------------------------
             _segunda_val_state["phase"] = "aplicando"
+
+            # Reset previous segunda-validación decisions before applying new ones
+            prev_modified = Analizador15K.query.filter(
+                Analizador15K.estatus_chapingo.in_(["VINCULAR", "ELIMINAR"]),
+                db.or_(
+                    Analizador15K.comentario_chapingo.ilike("%Duplicado%"),
+                    Analizador15K.comentario_chapingo.ilike("%vinculado%"),
+                    Analizador15K.comentario_chapingo.ilike("%Eliminado a favor%"),
+                    Analizador15K.comentario_chapingo.ilike("%ya vinculado en este grupo%"),
+                )
+            ).all()
+            for row in prev_modified:
+                row.estatus_chapingo = "NUEVO"
+                row.id_poligono_unico = row.id_poligon
+                row.comentario_chapingo = None
+                row.tiene_decision = False
+            db.session.commit()
+            app.logger.info(f"Segunda validación re-run: reset {len(prev_modified)} previous decisions")
 
             vinculados = 0
             eliminados = 0
