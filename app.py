@@ -195,6 +195,7 @@ login_manager.login_message_category = 'warning'
 # User model — import after extensions are wired up so db is ready.
 from models.user import User  # noqa: E402
 from models.analizador_15k import Analizador15K  # noqa: E402
+from models.backup_analizador import BackupAnalizador15K  # noqa: E402
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -6403,6 +6404,81 @@ def api_resultados_15k_exportar():
 @login_required
 def analizador():
     return render_template('analizador.html')
+
+
+@app.route("/segunda-validacion")
+@login_required
+def segunda_validacion():
+    return render_template("segunda_validacion.html")
+
+
+# ==============================================
+# Segunda Validación — Backup API
+# ==============================================
+
+@app.route('/api/segunda-validacion/backup', methods=['POST'])
+@login_required
+@limiter.exempt
+def api_segunda_validacion_backup():
+    """Create a backup snapshot of all Analizador15K rows with tiene_decision=True."""
+    if not current_user.is_admin:
+        return jsonify({'error': 'No autorizado'}), 403
+
+    rows = Analizador15K.query.filter_by(tiene_decision=True).all()
+    if not rows:
+        return jsonify({'ok': True, 'backup_id': None, 'rows_backed_up': 0})
+
+    backup_id = f"backup_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+    batch_size = 500
+    total = 0
+
+    for i in range(0, len(rows), batch_size):
+        batch = rows[i:i + batch_size]
+        for r in batch:
+            entry = BackupAnalizador15K(
+                backup_id=backup_id,
+                idx_shp=r.idx_shp,
+                id_poligon=r.id_poligon,
+                id_credito=r.id_credito,
+                nombre_zip=r.nombre_zip,
+                estatus_chapingo=r.estatus_chapingo,
+                id_poligono_unico=r.id_poligono_unico,
+                superficie_chapingo=r.superficie_chapingo,
+                comentario_chapingo=r.comentario_chapingo,
+                superficie_calculada=r.superficie_calculada,
+                tiene_decision=r.tiene_decision,
+                region=r.region,
+            )
+            db.session.add(entry)
+        db.session.commit()
+        total += len(batch)
+
+    app.logger.info('BACKUP: Usuario %s creó backup %s con %d filas', current_user.username, backup_id, total)
+    return jsonify({'ok': True, 'backup_id': backup_id, 'rows_backed_up': total})
+
+
+@app.route('/api/segunda-validacion/backups', methods=['GET'])
+@login_required
+@limiter.exempt
+def api_segunda_validacion_backups():
+    """Return list of distinct backup_ids with their fecha and row count."""
+    from sqlalchemy import func
+
+    results = db.session.query(
+        BackupAnalizador15K.backup_id,
+        db.func.min(BackupAnalizador15K.backup_fecha).label('fecha'),
+        func.count(BackupAnalizador15K.id).label('total_rows'),
+    ).group_by(BackupAnalizador15K.backup_id).order_by(db.func.min(BackupAnalizador15K.backup_fecha).desc()).all()
+
+    backups = [
+        {
+            'backup_id': row.backup_id,
+            'fecha': row.fecha.isoformat() if row.fecha else None,
+            'total_rows': row.total_rows,
+        }
+        for row in results
+    ]
+    return jsonify({'backups': backups})
 
 
 shp_cache.preload_all()  # Preload in production for gunicorn preload_app
