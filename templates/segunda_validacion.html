@@ -343,6 +343,8 @@ var _modalConfirmacion = null;
 var _modalRestaurar = null;
 var _gruposLoaded = false;
 var _allGrupos = [];
+var _gruposPage = 0;
+var _gruposPageSize = 50;
 var _grupoMap = null;
 var _grupoLayers = {};
 var _modalGrupoMapa = null;
@@ -734,56 +736,122 @@ function cargarGrupos() {
         .then(function(r) { return r.json(); })
         .then(function(data) {
             loadingEl.style.display = 'none';
-            var totalGroups = data.total_groups || 0;
             var groups = data.groups || [];
             _allGrupos = groups;
-            var limit = 50;
-            var shown = groups.slice(0, limit);
+            _gruposPage = 0;
 
-            if (shown.length === 0) {
+            if (groups.length === 0) {
                 contentEl.innerHTML = '<p class="text-muted">No hay grupos de duplicados registrados.</p>';
                 summaryEl.textContent = '';
                 return;
             }
 
-            var html = '';
-            for (var i = 0; i < shown.length; i++) {
-                var g = shown[i];
-                var members = g.members || [];
-                html += '<div class="card border-0 shadow-sm mb-3" style="cursor:pointer;" onclick="abrirGrupoMapa(' + i + ')">' +
-                    '<div class="card-header d-flex align-items-center gap-2 py-2">' +
-                    '<span class="fw-semibold">Grupo ' + (i + 1) + '</span>' +
-                    '<span class="badge bg-success">Principal: ' + (g.principal_id_poligon || '—') + '</span>' +
-                    '<i class="bi bi-geo-alt text-primary ms-auto" title="Ver en mapa"></i>' +
-                    '</div>' +
-                    '<div class="card-body py-2">' +
-                    '<ul class="list-unstyled mb-0">';
-                for (var j = 0; j < members.length; j++) {
-                    var m = members[j];
-                    var badgeCls = 'bg-secondary';
-                    if (m.estatus_chapingo === 'VINCULAR') { badgeCls = 'bg-primary'; }
-                    else if (m.estatus_chapingo === 'ELIMINAR') { badgeCls = 'bg-danger'; }
-                    else if (m.estatus_chapingo === 'NUEVO') { badgeCls = 'bg-success'; }
-                    html += '<li class="d-flex align-items-center gap-2 py-1 border-bottom">' +
-                        '<code class="small">' + (m.id_poligon || '—') + '</code>' +
-                        '<span class="text-muted small">Crédito: ' + (m.id_credito || '—') + '</span>' +
-                        '<span class="badge ' + badgeCls + ' ms-auto">' + (m.estatus_chapingo || '—') + '</span>' +
-                        '</li>';
-                }
-                html += '</ul></div></div>';
-            }
-            contentEl.innerHTML = html;
-
-            if (totalGroups > limit) {
-                summaryEl.textContent = 'Mostrando ' + limit + ' de ' + totalGroups + ' grupos';
-            } else {
-                summaryEl.textContent = 'Mostrando ' + shown.length + ' grupo' + (shown.length !== 1 ? 's' : '');
-            }
+            renderGruposPage();
         })
         .catch(function(err) {
             loadingEl.style.display = 'none';
             contentEl.innerHTML = '<p class="text-danger"><i class="bi bi-x-circle me-1"></i>Error cargando grupos: ' + err.message + '</p>';
         });
+}
+
+function renderGruposPage() {
+    var contentEl = document.getElementById('grupos-content');
+    var summaryEl = document.getElementById('grupos-summary');
+    var totalGroups = _allGrupos.length;
+    var start = _gruposPage * _gruposPageSize;
+    var end = Math.min(start + _gruposPageSize, totalGroups);
+    var shown = _allGrupos.slice(start, end);
+    var totalPages = Math.ceil(totalGroups / _gruposPageSize);
+
+    if (shown.length === 0 && _gruposPage > 0) {
+        _gruposPage--;
+        renderGruposPage();
+        return;
+    }
+
+    var html = '';
+    for (var i = 0; i < shown.length; i++) {
+        var globalIdx = start + i;
+        var g = shown[i];
+        var members = g.members || [];
+
+        // Count by status
+        var countNuevo = 0, countVincular = 0, countEliminar = 0;
+        for (var k = 0; k < members.length; k++) {
+            var est = members[k].decision || members[k].estatus_chapingo || '';
+            if (est === 'NUEVO') countNuevo++;
+            else if (est === 'VINCULAR') countVincular++;
+            else if (est === 'ELIMINAR') countEliminar++;
+        }
+
+        html += '<div class="card border-0 shadow-sm mb-3" style="cursor:pointer;" onclick="abrirGrupoMapa(' + globalIdx + ')">' +
+            '<div class="card-header d-flex align-items-center gap-2 py-2">' +
+            '<span class="fw-semibold">Grupo ' + (globalIdx + 1) + '</span>' +
+            '<span class="badge bg-success">Principal: ' + (g.principal_id_poligon || '—') + '</span>';
+
+        // Show status counts as small badges
+        if (countVincular > 0) html += '<span class="badge bg-primary badge-sm">' + countVincular + ' vincular</span>';
+        if (countEliminar > 0) html += '<span class="badge bg-danger badge-sm">' + countEliminar + ' eliminar</span>';
+
+        html += '<i class="bi bi-geo-alt text-primary ms-auto" title="Ver en mapa"></i>' +
+            '</div>' +
+            '<div class="card-body py-2">' +
+            '<ul class="list-unstyled mb-0">';
+
+        for (var j = 0; j < members.length; j++) {
+            var m = members[j];
+            var estatus = m.decision || m.estatus_chapingo || '—';
+            var badgeCls = 'bg-secondary';
+            if (estatus === 'VINCULAR') { badgeCls = 'bg-primary'; }
+            else if (estatus === 'ELIMINAR') { badgeCls = 'bg-danger'; }
+            else if (estatus === 'NUEVO') { badgeCls = 'bg-success'; }
+            html += '<li class="d-flex align-items-center gap-2 py-1 border-bottom">' +
+                '<code class="small">' + (m.id_poligon || '—') + '</code>' +
+                '<span class="text-muted small">Crédito: ' + (m.id_credito || '—') + '</span>' +
+                '<span class="badge ' + badgeCls + ' ms-auto">' + estatus + '</span>' +
+                '</li>';
+        }
+        html += '</ul></div></div>';
+    }
+
+    contentEl.innerHTML = html;
+
+    // Pagination controls
+    var paginationHtml = '<nav class="mt-3"><ul class="pagination pagination-sm justify-content-center flex-wrap">';
+
+    // Previous button
+    paginationHtml += '<li class="page-item ' + (_gruposPage === 0 ? 'disabled' : '') + '">' +
+        '<a class="page-link" href="#" onclick="event.preventDefault(); cambiarPaginaGrupos(' + (_gruposPage - 1) + ')">« Anterior</a></li>';
+
+    // Page numbers — show max 7 pages around current
+    var startPage = Math.max(0, _gruposPage - 3);
+    var endPage = Math.min(totalPages, startPage + 7);
+    if (endPage - startPage < 7) startPage = Math.max(0, endPage - 7);
+
+    for (var p = startPage; p < endPage; p++) {
+        paginationHtml += '<li class="page-item ' + (p === _gruposPage ? 'active' : '') + '">' +
+            '<a class="page-link" href="#" onclick="event.preventDefault(); cambiarPaginaGrupos(' + p + ')">' + (p + 1) + '</a></li>';
+    }
+
+    // Next button
+    paginationHtml += '<li class="page-item ' + (_gruposPage >= totalPages - 1 ? 'disabled' : '') + '">' +
+        '<a class="page-link" href="#" onclick="event.preventDefault(); cambiarPaginaGrupos(' + (_gruposPage + 1) + ')">Siguiente »</a></li>';
+
+    paginationHtml += '</ul></nav>';
+
+    summaryEl.innerHTML = '<div class="text-center">' +
+        '<span>Mostrando grupos ' + (start + 1) + '–' + end + ' de ' + totalGroups + '</span>' +
+        '</div>' + paginationHtml;
+}
+
+function cambiarPaginaGrupos(page) {
+    var totalPages = Math.ceil(_allGrupos.length / _gruposPageSize);
+    if (page < 0 || page >= totalPages) return;
+    _gruposPage = page;
+    renderGruposPage();
+    // Scroll to top of groups section
+    var gruposCollapse = document.getElementById('grupos-collapse');
+    if (gruposCollapse) gruposCollapse.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 // ── Group Map Viewer ──────────────────────────────────────────────────────────
