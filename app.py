@@ -6656,6 +6656,151 @@ def calcular_traslapes_nuevos_entre_si(on_progress=None):
     return results
 
 
+def agrupar_y_decidir_nuevos(pairs):
+    """Groups overlapping NUEVO polygons and assigns decisions.
+
+    Args:
+        pairs: list of dicts from calcular_traslapes_nuevos_entre_si()
+
+    Returns:
+        list of group dicts:
+        [
+            {
+                "group_id": int,          # sequential 1, 2, 3...
+                "principal_idx": int,     # idx_shp chosen as the principal polygon
+                "principal_id_poligon": str,
+                "principal_id_credito": str,
+                "members": [
+                    {
+                        "idx_shp": int,
+                        "id_poligon": str,
+                        "id_credito": str,
+                        "decision": str,       # "NUEVO" | "VINCULAR" | "ELIMINAR"
+                        "reason": str,         # human-readable explanation
+                    }
+                ]
+            }
+        ]
+    """
+    # ------------------------------------------------------------------
+    # 1. Collect all unique node indices and build adjacency from pairs
+    # ------------------------------------------------------------------
+    # node_info maps idx_shp -> {"id_poligon": ..., "id_credito": ...}
+    node_info = {}
+    edges = []
+
+    for pair in pairs:
+        idx_a = pair["idx_a"]
+        idx_b = pair["idx_b"]
+        node_info[idx_a] = {
+            "id_poligon": pair["id_poligon_a"],
+            "id_credito": pair["id_credito_a"],
+        }
+        node_info[idx_b] = {
+            "id_poligon": pair["id_poligon_b"],
+            "id_credito": pair["id_credito_b"],
+        }
+        edges.append((idx_a, idx_b))
+
+    if not node_info:
+        return []
+
+    # ------------------------------------------------------------------
+    # 2. Union-Find with iterative path compression
+    # ------------------------------------------------------------------
+    parent = {idx: idx for idx in node_info}
+
+    def find(x):
+        # Iterative path compression (no recursion)
+        root = x
+        while parent[root] != root:
+            root = parent[root]
+        # Path compression: point every node on the path directly to root
+        while parent[x] != root:
+            next_node = parent[x]
+            parent[x] = root
+            x = next_node
+        return root
+
+    def union(a, b):
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            # Attach smaller root to larger root (union by index for determinism)
+            if ra < rb:
+                parent[rb] = ra
+            else:
+                parent[ra] = rb
+
+    for idx_a, idx_b in edges:
+        union(idx_a, idx_b)
+
+    # ------------------------------------------------------------------
+    # 3. Build connected components (groups)
+    # ------------------------------------------------------------------
+    # component_map: root_idx -> list of member idx_shp values
+    component_map = {}
+    for idx in node_info:
+        root = find(idx)
+        component_map.setdefault(root, []).append(idx)
+
+    # ------------------------------------------------------------------
+    # 4. Assign decisions for each group
+    # ------------------------------------------------------------------
+    groups = []
+    group_id = 1
+
+    # Sort components by their root for deterministic ordering
+    for root in sorted(component_map.keys()):
+        members_idxs = sorted(component_map[root])  # sort by idx_shp ascending
+
+        # Collect unique id_credito values in this group
+        unique_credits = set(node_info[idx]["id_credito"] for idx in members_idxs)
+
+        # Principal = member with the LOWEST idx_shp
+        principal_idx = members_idxs[0]
+        principal_info = node_info[principal_idx]
+        principal_id_poligon = principal_info["id_poligon"]
+        principal_id_credito = principal_info["id_credito"]
+
+        members = []
+        for idx in members_idxs:
+            info = node_info[idx]
+            if idx == principal_idx:
+                decision = "NUEVO"
+                reason = "Polígono principal del grupo"
+            elif len(unique_credits) == 1:
+                # All same credit
+                decision = "ELIMINAR"
+                reason = f"Duplicado mismo crédito. Eliminado a favor de {principal_id_poligon}"
+            else:
+                # Multiple credits
+                if info["id_credito"] == principal_id_credito:
+                    decision = "ELIMINAR"
+                    reason = f"Duplicado mismo crédito que principal {principal_id_poligon}"
+                else:
+                    decision = "VINCULAR"
+                    reason = f"Diferente crédito, vinculado a {principal_id_poligon}"
+
+            members.append({
+                "idx_shp": idx,
+                "id_poligon": info["id_poligon"],
+                "id_credito": info["id_credito"],
+                "decision": decision,
+                "reason": reason,
+            })
+
+        groups.append({
+            "group_id": group_id,
+            "principal_idx": principal_idx,
+            "principal_id_poligon": principal_id_poligon,
+            "principal_id_credito": principal_id_credito,
+            "members": members,
+        })
+        group_id += 1
+
+    return groups
+
+
 shp_cache.preload_all()  # Preload in production for gunicorn preload_app
 
 
