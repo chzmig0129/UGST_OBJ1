@@ -7070,6 +7070,189 @@ def api_segunda_validacion_dashboard(backup_id):
     })
 
 
+# ==============================================
+# Segunda Validación — Restaurar, Exportar, Grupos
+# ==============================================
+
+@app.route('/api/segunda-validacion/restaurar/<backup_id>', methods=['POST'])
+@login_required
+@limiter.exempt
+def api_segunda_validacion_restaurar(backup_id):
+    """Restore Analizador15K rows to the state captured in the given backup."""
+    if not current_user.is_admin:
+        return jsonify({'error': 'No autorizado'}), 403
+
+    backup_rows = BackupAnalizador15K.query.filter_by(backup_id=backup_id).all()
+    if not backup_rows:
+        return jsonify({'error': f'Backup no encontrado: {backup_id}'}), 404
+
+    rows_restored = 0
+    batch_size = 200
+
+    for i in range(0, len(backup_rows), batch_size):
+        batch = backup_rows[i:i + batch_size]
+        for br in batch:
+            record = Analizador15K.query.filter_by(idx_shp=br.idx_shp).first()
+            if record is None:
+                continue
+            record.estatus_chapingo = br.estatus_chapingo
+            record.id_poligono_unico = br.id_poligono_unico
+            record.superficie_chapingo = br.superficie_chapingo
+            record.comentario_chapingo = br.comentario_chapingo
+            record.tiene_decision = br.tiene_decision
+            rows_restored += 1
+        db.session.commit()
+
+    app.logger.info(
+        'RESTAURAR: Usuario %s restauró backup %s (%d filas)',
+        current_user.username, backup_id, rows_restored,
+    )
+    return jsonify({'ok': True, 'rows_restored': rows_restored})
+
+
+@app.route('/api/segunda-validacion/exportar-grupos', methods=['GET'])
+@login_required
+@limiter.exempt
+def api_segunda_validacion_exportar_grupos():
+    """Export segunda validación results as a downloadable Excel file."""
+    import io as _io
+
+    # Determine changed rows: prefer in-memory result, fall back to DB query
+    result = _segunda_val_state.get("result") if _segunda_val_state.get("status") == "done" else None
+
+    changed_rows = Analizador15K.query.filter(
+        db.or_(
+            Analizador15K.comentario_chapingo.ilike('%Duplicado%'),
+            Analizador15K.comentario_chapingo.ilike('%vinculado%'),
+        )
+    ).order_by(Analizador15K.idx_shp).all()
+
+    # Build backup lookup for "estatus anterior" if we have a backup_id
+    backup_dict = {}
+    if result and result.get("backup_id"):
+        backup_rows = BackupAnalizador15K.query.filter_by(
+            backup_id=result["backup_id"]
+        ).all()
+        for br in backup_rows:
+            backup_dict[br.idx_shp] = br
+
+    try:
+        import openpyxl
+        wb = openpyxl.Workbook()
+
+        # ------------------------------------------------------------------
+        # Sheet 1: Resumen
+        # ------------------------------------------------------------------
+        ws_resumen = wb.active
+        ws_resumen.title = "Resumen"
+        ws_resumen.append(["Métrica", "Valor"])
+
+        if result:
+            ws_resumen.append(["Total NUEVOS analizados", result.get("total_nuevos_analizados", 0)])
+            ws_resumen.append(["Pares encontrados", result.get("total_pairs_found", 0)])
+            ws_resumen.append(["Grupos", result.get("total_groups", 0)])
+            ws_resumen.append(["Vinculados", result.get("vinculados", 0)])
+            ws_resumen.append(["Eliminados", result.get("eliminados", 0)])
+            ws_resumen.append(["Sin cambio", result.get("sin_cambio", 0)])
+        else:
+            vincular_count = sum(1 for r in changed_rows if r.estatus_chapingo == "VINCULAR")
+            eliminar_count = sum(1 for r in changed_rows if r.estatus_chapingo == "ELIMINAR")
+            ws_resumen.append(["Total NUEVOS analizados", len(changed_rows)])
+            ws_resumen.append(["Pares encontrados", 0])
+            ws_resumen.append(["Grupos", 0])
+            ws_resumen.append(["Vinculados", vincular_count])
+            ws_resumen.append(["Eliminados", eliminar_count])
+            ws_resumen.append(["Sin cambio", 0])
+
+        # ------------------------------------------------------------------
+        # Sheet 2: Cambios Detallados
+        # ------------------------------------------------------------------
+        ws_cambios = wb.create_sheet("Cambios Detallados")
+        ws_cambios.append([
+            "idx_shp", "ID Polígono", "ID Crédito",
+            "Estatus Anterior (backup)", "Estatus Actual",
+            "ID Polígono Único", "Comentario",
+        ])
+
+        for r in changed_rows:
+            br = backup_dict.get(r.idx_shp)
+            estatus_anterior = br.estatus_chapingo if br else None
+            ws_cambios.append([
+                r.idx_shp,
+                r.id_poligon,
+                r.id_credito,
+                estatus_anterior,
+                r.estatus_chapingo,
+                r.id_poligono_unico,
+                r.comentario_chapingo,
+            ])
+
+        output = _io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+
+        return send_file(
+            output,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name='segunda_validacion_grupos.xlsx',
+        )
+    except ImportError:
+        return jsonify({'error': 'openpyxl no está instalado'}), 500
+
+
+@app.route('/api/segunda-validacion/grupos', methods=['GET'])
+@login_required
+@limiter.exempt
+def api_segunda_validacion_grupos():
+    """Return group structure from in-memory state or reconstruct from DB."""
+
+    # Try to return groups from in-memory result if available
+    result = _segunda_val_state.get("result") if _segunda_val_state.get("status") == "done" else None
+    if result and result.get("groups"):
+        groups = result["groups"]
+        return jsonify({
+            "total_groups": len(groups),
+            "groups": groups,
+        })
+
+    # Reconstruct groups from current DB state
+    rows = Analizador15K.query.filter(
+        Analizador15K.estatus_chapingo.in_(["VINCULAR", "ELIMINAR"]),
+        db.or_(
+            Analizador15K.comentario_chapingo.ilike('%Duplicado%'),
+            Analizador15K.comentario_chapingo.ilike('%vinculado%'),
+            Analizador15K.comentario_chapingo.ilike('%Eliminado a favor%'),
+        )
+    ).order_by(Analizador15K.idx_shp).all()
+
+    # Group by id_poligono_unico
+    groups_dict = {}
+    for r in rows:
+        key = r.id_poligono_unico or ""
+        if key not in groups_dict:
+            groups_dict[key] = []
+        groups_dict[key].append({
+            "idx_shp": r.idx_shp,
+            "id_poligon": r.id_poligon,
+            "id_credito": r.id_credito,
+            "estatus_chapingo": r.estatus_chapingo,
+        })
+
+    groups = [
+        {
+            "principal_id_poligon": principal,
+            "members": members,
+        }
+        for principal, members in groups_dict.items()
+    ]
+
+    return jsonify({
+        "total_groups": len(groups),
+        "groups": groups,
+    })
+
+
 shp_cache.preload_all()  # Preload in production for gunicorn preload_app
 
 

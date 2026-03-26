@@ -1,0 +1,562 @@
+{% extends "base.html" %}
+{% block title %}Segunda Validación{% endblock %}
+
+{% block head %}
+<style>
+  #dashboard-section { display: none; }
+  #progress-section { display: none; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4 px-4">
+
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h3><i class="bi bi-arrow-repeat me-2"></i>Segunda Validación — Deduplicación de NUEVOS</h3>
+            <p class="text-muted mb-0">Compara polígonos NUEVO entre sí (traslape ≥90%) y resuelve duplicados automáticamente</p>
+        </div>
+    </div>
+
+    <!-- Section 1: Control Panel -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body">
+            <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                <div>
+                    <h5 class="mb-1"><i class="bi bi-play-circle me-2"></i>Panel de Control</h5>
+                    <p class="text-muted mb-0 small">Ejecuta el proceso de deduplicación sobre todos los polígonos con estatus NUEVO</p>
+                </div>
+                {% if current_user.is_admin %}
+                <button class="btn btn-danger" id="btn-ejecutar" onclick="mostrarModalConfirmacion()">
+                    <i class="bi bi-lightning-charge me-1"></i>Ejecutar Segunda Validación
+                </button>
+                {% endif %}
+            </div>
+
+            <!-- Progress Section -->
+            <div id="progress-section" class="mt-4">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="fw-semibold" id="progress-phase-label">Iniciando...</span>
+                    <span class="text-muted small" id="progress-pct-label">0%</span>
+                </div>
+                <div class="progress mb-2" style="height: 20px;">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated bg-danger"
+                         id="progress-bar" role="progressbar" style="width: 0%"></div>
+                </div>
+                <p class="text-muted small mb-0" id="progress-detail"></p>
+            </div>
+
+            <!-- Alert area -->
+            <div id="alert-area" class="mt-3"></div>
+        </div>
+    </div>
+
+    <!-- Section 2: Backup Selector -->
+    <div class="card border-0 shadow-sm mb-4" id="backup-selector-card" style="display:none;">
+        <div class="card-body">
+            <div class="row align-items-center">
+                <div class="col-auto">
+                    <label class="form-label fw-semibold mb-0"><i class="bi bi-archive me-1"></i>Ver backup:</label>
+                </div>
+                <div class="col-md-4">
+                    <select class="form-select" id="backup-select" onchange="cargarDashboard()">
+                        <option value="">— Selecciona un backup —</option>
+                    </select>
+                </div>
+                <div class="col-auto">
+                    <span class="text-muted small" id="backup-fecha-label"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Section 2: Dashboard Antes/Después -->
+    <div id="dashboard-section">
+
+        <!-- ANTES / DESPUÉS side by side -->
+        <div class="row g-4 mb-4">
+
+            <!-- ANTES -->
+            <div class="col-md-6">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-header bg-secondary text-white">
+                        <h6 class="mb-0"><i class="bi bi-clock-history me-2"></i>Antes de la validación</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-2 mb-3">
+                            <div class="col-4">
+                                <div class="card border-0 bg-light text-center p-2">
+                                    <span class="badge bg-success mb-1">NUEVO</span>
+                                    <h5 class="mb-0" id="antes-nuevo">—</h5>
+                                </div>
+                            </div>
+                            <div class="col-4">
+                                <div class="card border-0 bg-light text-center p-2">
+                                    <span class="badge bg-primary mb-1">VINCULAR</span>
+                                    <h5 class="mb-0" id="antes-vincular">—</h5>
+                                </div>
+                            </div>
+                            <div class="col-4">
+                                <div class="card border-0 bg-light text-center p-2">
+                                    <span class="badge bg-danger mb-1">ELIMINAR</span>
+                                    <h5 class="mb-0" id="antes-eliminar">—</h5>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="text-muted small">
+                            Total con decisión: <strong id="antes-total">—</strong>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- DESPUÉS -->
+            <div class="col-md-6">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-header bg-primary text-white">
+                        <h6 class="mb-0"><i class="bi bi-check-circle me-2"></i>Después de la validación</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-2 mb-3">
+                            <div class="col-4">
+                                <div class="card border-0 bg-light text-center p-2">
+                                    <span class="badge bg-success mb-1">NUEVO</span>
+                                    <h5 class="mb-0" id="despues-nuevo">—</h5>
+                                </div>
+                            </div>
+                            <div class="col-4">
+                                <div class="card border-0 bg-light text-center p-2">
+                                    <span class="badge bg-primary mb-1">VINCULAR</span>
+                                    <h5 class="mb-0" id="despues-vincular">—</h5>
+                                </div>
+                            </div>
+                            <div class="col-4">
+                                <div class="card border-0 bg-light text-center p-2">
+                                    <span class="badge bg-danger mb-1">ELIMINAR</span>
+                                    <h5 class="mb-0" id="despues-eliminar">—</h5>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="text-muted small">
+                            Total con decisión: <strong id="despues-total">—</strong>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- CAMBIOS summary cards -->
+        <h5 class="mb-3"><i class="bi bi-arrow-left-right me-2"></i>Cambios Aplicados</h5>
+        <div class="row g-3 mb-4">
+            <div class="col-md-4">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-body d-flex align-items-center">
+                        <span class="badge bg-primary me-3 p-2" style="font-size: 1.1rem;">NUEVO → VINCULAR</span>
+                        <h4 class="mb-0" id="cambios-vincular">—</h4>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-body d-flex align-items-center">
+                        <span class="badge bg-danger me-3 p-2" style="font-size: 1.1rem;">NUEVO → ELIMINAR</span>
+                        <h4 class="mb-0" id="cambios-eliminar">—</h4>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-body d-flex align-items-center">
+                        <span class="badge bg-secondary me-3 p-2" style="font-size: 1.1rem;">Sin cambio</span>
+                        <h4 class="mb-0" id="cambios-sin-cambio">—</h4>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- CAMBIOS detail table -->
+        <h5 class="mb-3"><i class="bi bi-table me-2"></i>Detalle de Cambios</h5>
+        <div class="mb-3">
+            <input type="text" class="form-control" id="search-cambios"
+                   placeholder="Buscar por ID polígono, ID crédito, estatus, comentario..."
+                   oninput="filtrarCambios()">
+        </div>
+
+        <div id="cambios-loading" class="text-center py-4" style="display:none;">
+            <div class="spinner-border text-primary"></div>
+            <p class="mt-2 text-muted">Cargando cambios...</p>
+        </div>
+
+        <div id="cambios-wrapper">
+            <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+                <table class="table table-striped table-hover table-sm">
+                    <thead class="table-dark" style="position: sticky; top: 0; z-index: 1;">
+                        <tr>
+                            <th>#</th>
+                            <th>ID Polígono</th>
+                            <th>ID Crédito</th>
+                            <th>Estatus Antes</th>
+                            <th>Estatus Después</th>
+                            <th>ID Polígono Único (después)</th>
+                            <th>Comentario</th>
+                        </tr>
+                    </thead>
+                    <tbody id="cambios-tbody">
+                        <tr>
+                            <td colspan="7" class="text-center text-muted py-4">Selecciona un backup para ver los cambios</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="text-muted mt-2 small" id="cambios-summary"></div>
+        </div>
+
+    </div><!-- /#dashboard-section -->
+
+</div><!-- /.container-fluid -->
+
+<!-- Confirmation Modal -->
+<div class="modal fade" id="modal-confirmacion" tabindex="-1" aria-labelledby="modal-confirmacion-label" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title" id="modal-confirmacion-label">
+                    <i class="bi bi-exclamation-triangle me-2"></i>Confirmar Ejecución
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <p>¿Estás seguro? Se creará un backup y se modificarán los estatus de los polígonos duplicados.</p>
+                <p class="text-muted small mb-0">Este proceso puede tardar varios minutos dependiendo del volumen de datos.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-danger" id="btn-confirmar-ejecutar" onclick="ejecutarValidacion()">
+                    <i class="bi bi-lightning-charge me-1"></i>Sí, ejecutar
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+var _allCambios = [];
+var _pollingInterval = null;
+var _modalConfirmacion = null;
+
+// Phase label translations
+var PHASE_LABELS = {
+    'backup':       'Creando backup...',
+    'traslape':     'Analizando traslapes...',
+    'agrupamiento': 'Agrupando duplicados...',
+    'aplicando':    'Aplicando decisiones...'
+};
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+
+document.addEventListener('DOMContentLoaded', function() {
+    _modalConfirmacion = new bootstrap.Modal(document.getElementById('modal-confirmacion'));
+    cargarBackups();
+    verificarEstadoInicial();
+});
+
+// ── Modal ─────────────────────────────────────────────────────────────────────
+
+function mostrarModalConfirmacion() {
+    _modalConfirmacion.show();
+}
+
+// ── Execute ───────────────────────────────────────────────────────────────────
+
+function ejecutarValidacion() {
+    _modalConfirmacion.hide();
+
+    var btnEjecutar = document.getElementById('btn-ejecutar');
+    if (btnEjecutar) { btnEjecutar.disabled = true; }
+    var btnConfirmar = document.getElementById('btn-confirmar-ejecutar');
+    if (btnConfirmar) { btnConfirmar.disabled = true; }
+
+    mostrarProgreso(true);
+    setProgressBar(0, 'Iniciando...');
+    limpiarAlerta();
+
+    fetch('/api/segunda-validacion/ejecutar', { method: 'POST' })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.error) {
+                mostrarAlerta('danger', data.error);
+                mostrarProgreso(false);
+                if (btnEjecutar) { btnEjecutar.disabled = false; }
+                return;
+            }
+            iniciarPolling();
+        })
+        .catch(function(err) {
+            mostrarAlerta('danger', 'Error al iniciar el proceso: ' + err.message);
+            mostrarProgreso(false);
+            if (btnEjecutar) { btnEjecutar.disabled = false; }
+        });
+}
+
+// ── Polling ───────────────────────────────────────────────────────────────────
+
+function iniciarPolling() {
+    if (_pollingInterval) { clearInterval(_pollingInterval); }
+    _pollingInterval = setInterval(consultarEstado, 2000);
+    consultarEstado();
+}
+
+function detenerPolling() {
+    if (_pollingInterval) {
+        clearInterval(_pollingInterval);
+        _pollingInterval = null;
+    }
+}
+
+function consultarEstado() {
+    fetch('/api/segunda-validacion/estado')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var phaseLabel = PHASE_LABELS[data.phase] || (data.phase || 'Procesando...');
+            var pct = data.progress || 0;
+            var detail = '';
+            if (data.processed != null && data.total != null) {
+                detail = data.processed + ' / ' + data.total + ' procesados';
+            }
+            setProgressBar(pct, phaseLabel, detail);
+
+            if (data.status === 'done' || data.status === 'completed') {
+                detenerPolling();
+                mostrarProgreso(false);
+                mostrarAlerta('success', '<i class="bi bi-check-circle me-2"></i>Segunda Validación completada exitosamente.');
+                var btnEjecutar = document.getElementById('btn-ejecutar');
+                if (btnEjecutar) { btnEjecutar.disabled = false; }
+                cargarBackups(true);
+            } else if (data.status === 'error') {
+                detenerPolling();
+                mostrarProgreso(false);
+                mostrarAlerta('danger', '<i class="bi bi-x-circle me-2"></i>Error: ' + (data.error || 'Error desconocido'));
+                var btnEjecutar = document.getElementById('btn-ejecutar');
+                if (btnEjecutar) { btnEjecutar.disabled = false; }
+            }
+        })
+        .catch(function(err) {
+            // Network error — keep polling, don't stop
+            console.warn('Error consultando estado:', err);
+        });
+}
+
+function verificarEstadoInicial() {
+    fetch('/api/segunda-validacion/estado')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.status === 'running' || data.status === 'in_progress') {
+                mostrarProgreso(true);
+                var btnEjecutar = document.getElementById('btn-ejecutar');
+                if (btnEjecutar) { btnEjecutar.disabled = true; }
+                iniciarPolling();
+            }
+        })
+        .catch(function() { /* ignore */ });
+}
+
+// ── Progress helpers ──────────────────────────────────────────────────────────
+
+function mostrarProgreso(visible) {
+    document.getElementById('progress-section').style.display = visible ? 'block' : 'none';
+}
+
+function setProgressBar(pct, label, detail) {
+    var bar = document.getElementById('progress-bar');
+    var labelEl = document.getElementById('progress-phase-label');
+    var pctEl = document.getElementById('progress-pct-label');
+    var detailEl = document.getElementById('progress-detail');
+
+    bar.style.width = pct + '%';
+    bar.setAttribute('aria-valuenow', pct);
+    labelEl.textContent = label || '';
+    pctEl.textContent = pct + '%';
+    detailEl.textContent = detail || '';
+}
+
+// ── Alert helpers ─────────────────────────────────────────────────────────────
+
+function mostrarAlerta(tipo, mensaje) {
+    var area = document.getElementById('alert-area');
+    area.innerHTML = '<div class="alert alert-' + tipo + ' alert-dismissible fade show mb-0" role="alert">' +
+        mensaje +
+        '<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>' +
+        '</div>';
+}
+
+function limpiarAlerta() {
+    document.getElementById('alert-area').innerHTML = '';
+}
+
+// ── Backups ───────────────────────────────────────────────────────────────────
+
+function cargarBackups(autoSelectLatest) {
+    fetch('/api/segunda-validacion/backups')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var backups = data.backups || [];
+            var select = document.getElementById('backup-select');
+            var card = document.getElementById('backup-selector-card');
+
+            if (backups.length === 0) {
+                card.style.display = 'none';
+                return;
+            }
+
+            card.style.display = 'block';
+
+            // Rebuild options
+            select.innerHTML = '<option value="">— Selecciona un backup —</option>';
+            backups.forEach(function(b) {
+                var opt = document.createElement('option');
+                opt.value = b.backup_id;
+                opt.textContent = b.backup_id + ' — ' + (b.fecha || '') + ' (' + (b.total_rows || 0).toLocaleString('es-MX') + ' filas)';
+                opt.dataset.fecha = b.fecha || '';
+                select.appendChild(opt);
+            });
+
+            if (autoSelectLatest || backups.length === 1) {
+                select.value = backups[0].backup_id;
+                cargarDashboard();
+            }
+        })
+        .catch(function(err) {
+            console.warn('Error cargando backups:', err);
+        });
+}
+
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+
+function cargarDashboard() {
+    var select = document.getElementById('backup-select');
+    var backupId = select.value;
+
+    if (!backupId) {
+        document.getElementById('dashboard-section').style.display = 'none';
+        document.getElementById('backup-fecha-label').textContent = '';
+        return;
+    }
+
+    // Show fecha label
+    var selectedOpt = select.options[select.selectedIndex];
+    document.getElementById('backup-fecha-label').textContent = selectedOpt.dataset.fecha || '';
+
+    // Show loading state
+    document.getElementById('cambios-loading').style.display = 'block';
+    document.getElementById('cambios-wrapper').style.display = 'none';
+    document.getElementById('dashboard-section').style.display = 'block';
+
+    fetch('/api/segunda-validacion/dashboard/' + encodeURIComponent(backupId))
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            renderDashboard(data);
+        })
+        .catch(function(err) {
+            document.getElementById('cambios-loading').style.display = 'none';
+            document.getElementById('cambios-wrapper').style.display = 'block';
+            document.getElementById('cambios-tbody').innerHTML =
+                '<tr><td colspan="7" class="text-center text-danger py-4">Error cargando datos: ' + err.message + '</td></tr>';
+        });
+}
+
+function renderDashboard(data) {
+    var antes = data.antes || {};
+    var despues = data.despues || {};
+    var cambios = data.cambios || {};
+
+    var antesPorEstatus = antes.por_estatus || {};
+    var despuesPorEstatus = despues.por_estatus || {};
+
+    // ANTES
+    document.getElementById('antes-nuevo').textContent    = (antesPorEstatus.NUEVO    || 0).toLocaleString('es-MX');
+    document.getElementById('antes-vincular').textContent = (antesPorEstatus.VINCULAR  || 0).toLocaleString('es-MX');
+    document.getElementById('antes-eliminar').textContent = (antesPorEstatus.ELIMINAR  || 0).toLocaleString('es-MX');
+    document.getElementById('antes-total').textContent    = (antes.total_con_decision  || 0).toLocaleString('es-MX');
+
+    // DESPUÉS
+    document.getElementById('despues-nuevo').textContent    = (despuesPorEstatus.NUEVO    || 0).toLocaleString('es-MX');
+    document.getElementById('despues-vincular').textContent = (despuesPorEstatus.VINCULAR  || 0).toLocaleString('es-MX');
+    document.getElementById('despues-eliminar').textContent = (despuesPorEstatus.ELIMINAR  || 0).toLocaleString('es-MX');
+    document.getElementById('despues-total').textContent    = (despues.total_con_decision  || 0).toLocaleString('es-MX');
+
+    // CAMBIOS summary
+    document.getElementById('cambios-vincular').textContent   = (cambios.nuevos_a_vincular || 0).toLocaleString('es-MX');
+    document.getElementById('cambios-eliminar').textContent   = (cambios.nuevos_a_eliminar || 0).toLocaleString('es-MX');
+    document.getElementById('cambios-sin-cambio').textContent = (cambios.sin_cambio        || 0).toLocaleString('es-MX');
+
+    // CAMBIOS detail table
+    _allCambios = cambios.detalle_cambios || [];
+    renderCambios(_allCambios);
+
+    document.getElementById('cambios-loading').style.display = 'none';
+    document.getElementById('cambios-wrapper').style.display = 'block';
+}
+
+function renderCambios(datos) {
+    var tbody = document.getElementById('cambios-tbody');
+    if (datos.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">No hay cambios registrados para este backup</td></tr>';
+        document.getElementById('cambios-summary').textContent = '0 cambios';
+        return;
+    }
+
+    var html = '';
+    for (var i = 0; i < datos.length; i++) {
+        var d = datos[i];
+
+        var badgeAntes = badgeEstatus(d.estatus_antes);
+        var badgeDespues = badgeEstatus(d.estatus_despues);
+
+        html += '<tr>' +
+            '<td>' + (i + 1) + '</td>' +
+            '<td><code>' + (d.id_poligono || d.id_poligon || '—') + '</code></td>' +
+            '<td>' + (d.id_credito || '—') + '</td>' +
+            '<td>' + badgeAntes + '</td>' +
+            '<td>' + badgeDespues + '</td>' +
+            '<td><code>' + (d.id_poligono_unico || '—') + '</code></td>' +
+            '<td><small class="text-muted">' + (d.comentario || '—') + '</small></td>' +
+            '</tr>';
+    }
+    tbody.innerHTML = html;
+    document.getElementById('cambios-summary').textContent =
+        'Mostrando ' + datos.length + ' cambios';
+}
+
+function badgeEstatus(estatus) {
+    if (!estatus) { return '<span class="text-muted">—</span>'; }
+    var cls = 'bg-secondary';
+    if (estatus === 'VINCULAR') { cls = 'bg-primary'; }
+    else if (estatus === 'NUEVO') { cls = 'bg-success'; }
+    else if (estatus === 'ELIMINAR') { cls = 'bg-danger'; }
+    return '<span class="badge ' + cls + '">' + estatus + '</span>';
+}
+
+// ── Search / filter ───────────────────────────────────────────────────────────
+
+function filtrarCambios() {
+    var q = document.getElementById('search-cambios').value.toLowerCase();
+    if (!q) {
+        renderCambios(_allCambios);
+        return;
+    }
+    var filtered = _allCambios.filter(function(d) {
+        var idPol = (d.id_poligono || d.id_poligon || '').toLowerCase();
+        return idPol.indexOf(q) >= 0 ||
+               (d.id_credito      && d.id_credito.toLowerCase().indexOf(q) >= 0) ||
+               (d.estatus_antes   && d.estatus_antes.toLowerCase().indexOf(q) >= 0) ||
+               (d.estatus_despues && d.estatus_despues.toLowerCase().indexOf(q) >= 0) ||
+               (d.id_poligono_unico && d.id_poligono_unico.toLowerCase().indexOf(q) >= 0) ||
+               (d.comentario      && d.comentario.toLowerCase().indexOf(q) >= 0);
+    });
+    renderCambios(filtered);
+    document.getElementById('cambios-summary').textContent =
+        'Mostrando ' + filtered.length + ' de ' + _allCambios.length + ' cambios';
+}
+</script>
+{% endblock %}
