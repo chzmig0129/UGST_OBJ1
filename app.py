@@ -7217,7 +7217,8 @@ def api_segunda_validacion_grupos():
         })
 
     # Reconstruct groups from current DB state
-    rows = Analizador15K.query.filter(
+    # First, get all rows that were modified by segunda validación
+    modified_rows = Analizador15K.query.filter(
         Analizador15K.estatus_chapingo.in_(["VINCULAR", "ELIMINAR"]),
         db.or_(
             Analizador15K.comentario_chapingo.ilike('%Duplicado%'),
@@ -7226,9 +7227,9 @@ def api_segunda_validacion_grupos():
         )
     ).order_by(Analizador15K.idx_shp).all()
 
-    # Group by id_poligono_unico
+    # Group by id_poligono_unico (which is the principal's id_poligon)
     groups_dict = {}
-    for r in rows:
+    for r in modified_rows:
         key = r.id_poligono_unico or ""
         if key not in groups_dict:
             groups_dict[key] = []
@@ -7237,15 +7238,53 @@ def api_segunda_validacion_grupos():
             "id_poligon": r.id_poligon,
             "id_credito": r.id_credito,
             "estatus_chapingo": r.estatus_chapingo,
+            "decision": r.estatus_chapingo,
+            "reason": r.comentario_chapingo or "",
         })
 
-    groups = [
-        {
-            "principal_id_poligon": principal,
-            "members": members,
-        }
-        for principal, members in groups_dict.items()
-    ]
+    # Now find the principal polygon for each group
+    # The principal is the one whose id_poligon matches the group key (id_poligono_unico)
+    # and has estatus_chapingo = "NUEVO"
+    principal_ids = list(groups_dict.keys())
+    if principal_ids:
+        principals = Analizador15K.query.filter(
+            Analizador15K.id_poligon.in_(principal_ids),
+            Analizador15K.estatus_chapingo == "NUEVO",
+        ).all()
+
+        principal_map = {}
+        for p in principals:
+            # Use id_poligon as key since that's what id_poligono_unico points to
+            principal_map[p.id_poligon] = p
+
+        groups = []
+        for group_idx, (principal_id_poligon, members) in enumerate(groups_dict.items(), 1):
+            principal_record = principal_map.get(principal_id_poligon)
+
+            # Build the principal member entry
+            if principal_record:
+                principal_member = {
+                    "idx_shp": principal_record.idx_shp,
+                    "id_poligon": principal_record.id_poligon,
+                    "id_credito": principal_record.id_credito,
+                    "estatus_chapingo": "NUEVO",
+                    "decision": "NUEVO",
+                    "reason": "Polígono principal del grupo",
+                }
+                # Insert principal as first member
+                all_members = [principal_member] + members
+            else:
+                all_members = members
+
+            groups.append({
+                "group_id": group_idx,
+                "principal_idx": principal_record.idx_shp if principal_record else None,
+                "principal_id_poligon": principal_id_poligon,
+                "principal_id_credito": principal_record.id_credito if principal_record else None,
+                "members": all_members,
+            })
+    else:
+        groups = []
 
     return jsonify({
         "total_groups": len(groups),

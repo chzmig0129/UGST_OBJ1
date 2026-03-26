@@ -654,7 +654,7 @@ function renderCambios(datos) {
             '<td>' + (d.id_credito || '—') + '</td>' +
             '<td>' + badgeAntes + '</td>' +
             '<td>' + badgeDespues + '</td>' +
-            '<td><code>' + (d.id_poligono_unico || '—') + '</code></td>' +
+            '<td><code>' + (d.id_poligono_unico_despues || '—') + '</code></td>' +
             '<td><small class="text-muted">' + (d.comentario || '—') + '</small></td>' +
             '</tr>';
     }
@@ -965,7 +965,7 @@ function filtrarCambios() {
                (d.id_credito      && d.id_credito.toLowerCase().indexOf(q) >= 0) ||
                (d.estatus_antes   && d.estatus_antes.toLowerCase().indexOf(q) >= 0) ||
                (d.estatus_despues && d.estatus_despues.toLowerCase().indexOf(q) >= 0) ||
-               (d.id_poligono_unico && d.id_poligono_unico.toLowerCase().indexOf(q) >= 0) ||
+               (d.id_poligono_unico_despues && d.id_poligono_unico_despues.toLowerCase().indexOf(q) >= 0) ||
                (d.comentario      && d.comentario.toLowerCase().indexOf(q) >= 0);
     });
     renderCambios(filtered);
