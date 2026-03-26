@@ -336,7 +336,7 @@
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
             </div>
             <div class="modal-body">
-                <p>¿Estás seguro? Se creará un backup y se modificarán los estatus de los polígonos duplicados.</p>
+                <p>¿Estás seguro? Se re-ejecutará la segunda validación con la lógica actualizada. El backup original se preservará.</p>
                 <p class="text-muted small mb-0">Este proceso puede tardar varios minutos dependiendo del volumen de datos.</p>
             </div>
             <div class="modal-footer">
@@ -546,8 +546,12 @@ function cargarBackups(autoSelectLatest) {
             // Backups exist — already ran
             card.style.display = 'block';
 
-            // Hide the execute button (already ran)
-            if (btnEjecutar) btnEjecutar.style.display = 'none';
+            // Show re-execute button (allow re-running with updated logic)
+            if (btnEjecutar) {
+                btnEjecutar.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i>Re-ejecutar Segunda Validación';
+                btnEjecutar.classList.remove('btn-danger');
+                btnEjecutar.classList.add('btn-warning');
+            }
 
             // Show info banner
             if (infoBanner) {
