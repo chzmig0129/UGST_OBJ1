@@ -6481,6 +6481,181 @@ def api_segunda_validacion_backups():
     return jsonify({'backups': backups})
 
 
+# ==============================================
+# Segunda Validación — NUEVOS vs NUEVOS overlap engine
+# ==============================================
+
+_segunda_val_state = {
+    "status": "idle",   # idle | running | done | error
+    "phase": "",        # "traslape" | "agrupamiento" | "aplicando"
+    "processed": 0,
+    "total": 0,
+    "progress": 0,
+    "error": None,
+    "result": None,
+}
+
+
+def calcular_traslapes_nuevos_entre_si(on_progress=None):
+    """Compare all NUEVO polygons against each other. Returns list of overlap pairs.
+
+    Only pairs where BOTH overlap_pct_a >= 90 AND overlap_pct_b >= 90 are included.
+
+    Args:
+        on_progress: optional callable(processed, total) called after each polygon.
+
+    Returns:
+        list of dicts, each with:
+        {
+            "idx_a": int,           # idx_shp of polygon A
+            "idx_b": int,           # idx_shp of polygon B
+            "id_poligon_a": str,
+            "id_poligon_b": str,
+            "id_credito_a": str,
+            "id_credito_b": str,
+            "overlap_pct_a": float, # intersection_area / area_a * 100
+            "overlap_pct_b": float, # intersection_area / area_b * 100
+            "same_credit": bool,
+        }
+    """
+    import pyproj
+    import shapely
+    from shapely.ops import transform
+    from shapely.validation import make_valid
+
+    if shp_cache.validacion is None:
+        raise RuntimeError('Shapefile validacion no cargado')
+
+    # 1. Query all NUEVO records from Analizador15K
+    nuevos_records = Analizador15K.query.filter_by(estatus_chapingo="NUEVO").all()
+    if not nuevos_records:
+        return []
+
+    # Build a set of idx_shp values and a mapping idx_shp -> record
+    nuevos_idx_set = {r.idx_shp for r in nuevos_records}
+    nuevos_idx_list = sorted(nuevos_idx_set)
+
+    total = len(nuevos_idx_list)
+
+    # 2. Build sub-GeoDataFrame for those indices only
+    validacion_gdf = shp_cache.validacion
+    max_idx = len(validacion_gdf) - 1
+
+    # Filter to rows that exist in validacion and are in nuevos_idx_set
+    valid_indices = [i for i in nuevos_idx_list if 0 <= i <= max_idx]
+    if not valid_indices:
+        return []
+
+    sub_gdf = validacion_gdf.iloc[valid_indices].copy()
+    # sub_gdf positional index 0..len-1, but we need to track original idx_shp
+    # We'll work with the original integer positions (iloc indices = valid_indices)
+
+    # 3. Build spatial index on sub_gdf
+    sub_sindex = sub_gdf.sindex
+
+    results = []
+
+    # 4. For each polygon, find candidates via spatial index
+    for pos_a, orig_idx_a in enumerate(valid_indices):
+        row_a = sub_gdf.iloc[pos_a]
+        geom_a = row_a.geometry
+        if geom_a is None or geom_a.is_empty:
+            if on_progress:
+                on_progress(pos_a + 1, total)
+            continue
+        if not geom_a.is_valid:
+            geom_a = make_valid(geom_a)
+
+        # UTM projection for polygon A
+        centroid_a = geom_a.centroid
+        utm_zone_a = int((centroid_a.x + 180) / 6) + 1
+        transformer_a = pyproj.Transformer.from_crs(
+            'EPSG:4326', f'EPSG:326{utm_zone_a:02d}', always_xy=True
+        )
+        geom_a_utm = transform(transformer_a.transform, geom_a)
+        area_a = geom_a_utm.area
+
+        if area_a <= 0:
+            if on_progress:
+                on_progress(pos_a + 1, total)
+            continue
+
+        id_poligon_a = str(row_a.get('ID_POLIGON', ''))
+        id_credito_a = str(row_a.get('ID_CREDITO', ''))
+
+        # Candidate positions in sub_gdf via spatial index
+        candidate_positions = list(sub_sindex.intersection(geom_a.bounds))
+
+        for pos_b in candidate_positions:
+            orig_idx_b = valid_indices[pos_b]
+
+            # 5. Avoid duplicates: only process where orig_idx_a < orig_idx_b
+            if orig_idx_a >= orig_idx_b:
+                continue
+
+            row_b = sub_gdf.iloc[pos_b]
+            geom_b = row_b.geometry
+            if geom_b is None or geom_b.is_empty:
+                continue
+            if not geom_b.is_valid:
+                geom_b = make_valid(geom_b)
+
+            if not geom_a.intersects(geom_b):
+                continue
+
+            try:
+                intersection = geom_a.intersection(geom_b)
+            except Exception as e:
+                app.logger.warning(
+                    f"calcular_traslapes_nuevos_entre_si: skipping pair "
+                    f"({orig_idx_a}, {orig_idx_b}): {e}"
+                )
+                continue
+
+            if intersection.is_empty:
+                continue
+
+            # Project polygon B and intersection to UTM (use same zone as A for consistency)
+            geom_b_utm = transform(transformer_a.transform, geom_b)
+            intersection_utm = transform(transformer_a.transform, intersection)
+
+            area_b = geom_b_utm.area
+            area_inter = intersection_utm.area
+
+            if area_b <= 0:
+                continue
+
+            overlap_pct_a = area_inter / area_a * 100
+            overlap_pct_b = area_inter / area_b * 100
+
+            # Only include pairs where BOTH overlap >= 90%
+            if overlap_pct_a < 90.0 or overlap_pct_b < 90.0:
+                continue
+
+            id_poligon_b = str(row_b.get('ID_POLIGON', ''))
+            id_credito_b = str(row_b.get('ID_CREDITO', ''))
+            same_credit = id_credito_a == id_credito_b
+
+            results.append({
+                "idx_a": int(orig_idx_a),
+                "idx_b": int(orig_idx_b),
+                "id_poligon_a": id_poligon_a,
+                "id_poligon_b": id_poligon_b,
+                "id_credito_a": id_credito_a,
+                "id_credito_b": id_credito_b,
+                "overlap_pct_a": round(overlap_pct_a, 2),
+                "overlap_pct_b": round(overlap_pct_b, 2),
+                "same_credit": same_credit,
+            })
+
+        if on_progress:
+            on_progress(pos_a + 1, total)
+
+    # 7. Return sorted by idx_a ascending
+    results.sort(key=lambda x: x["idx_a"])
+    return results
+
+
 shp_cache.preload_all()  # Preload in production for gunicorn preload_app
 
 
