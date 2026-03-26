@@ -7253,6 +7253,76 @@ def api_segunda_validacion_grupos():
     })
 
 
+@app.route('/api/segunda-validacion/grupo-geometrias', methods=['GET'])
+@login_required
+@limiter.exempt
+def api_segunda_validacion_grupo_geometrias():
+    """Return GeoJSON geometries for a list of idx_shp values.
+
+    Query params:
+        indices: comma-separated list of idx_shp values, e.g. "123,456,789"
+
+    Returns GeoJSON FeatureCollection where each feature has:
+        properties: {idx_shp, id_poligon, id_credito, area_ha}
+        geometry: the polygon geometry
+    """
+    indices_str = request.args.get('indices', '')
+    if not indices_str:
+        return jsonify({'error': 'Parámetro indices requerido'}), 400
+
+    try:
+        indices = [int(x.strip()) for x in indices_str.split(',') if x.strip()]
+    except ValueError:
+        return jsonify({'error': 'Indices inválidos'}), 400
+
+    if len(indices) > 50:
+        return jsonify({'error': 'Máximo 50 índices'}), 400
+
+    if shp_cache.validacion is None:
+        return jsonify({'error': 'Shapefiles no cargados'}), 500
+
+    import pyproj
+    import shapely
+    from shapely.ops import transform
+    from shapely.validation import make_valid
+
+    features = []
+    for idx in indices:
+        if idx < 0 or idx >= len(shp_cache.validacion):
+            continue
+
+        vrow = shp_cache.validacion.iloc[idx]
+        vgeom = vrow.geometry
+        if vgeom is None:
+            continue
+        if not vgeom.is_valid:
+            vgeom = make_valid(vgeom)
+
+        # Calculate area in hectares
+        centroid = vgeom.centroid
+        utm_zone = int((centroid.x + 180) / 6) + 1
+        transformer = pyproj.Transformer.from_crs('EPSG:4326', f'EPSG:326{utm_zone:02d}', always_xy=True)
+        vgeom_utm = transform(transformer.transform, vgeom)
+        area_ha = round(vgeom_utm.area / 10000, 4)
+
+        feature = {
+            'type': 'Feature',
+            'properties': {
+                'idx_shp': int(idx),
+                'id_poligon': str(vrow.get('ID_POLIGON', '') or ''),
+                'id_credito': str(vrow.get('ID_CREDITO', '') or ''),
+                'area_ha': area_ha,
+            },
+            'geometry': json.loads(shapely.to_geojson(vgeom))
+        }
+        features.append(feature)
+
+    return jsonify({
+        'type': 'FeatureCollection',
+        'features': features
+    })
+
+
 shp_cache.preload_all()  # Preload in production for gunicorn preload_app
 
 
