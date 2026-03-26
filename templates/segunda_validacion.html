@@ -17,6 +17,11 @@
             <h3><i class="bi bi-arrow-repeat me-2"></i>Segunda Validación — Deduplicación de NUEVOS</h3>
             <p class="text-muted mb-0">Compara polígonos NUEVO entre sí (traslape ≥90%) y resuelve duplicados automáticamente</p>
         </div>
+        <div>
+            <a href="/api/segunda-validacion/exportar-grupos" class="btn btn-success btn-sm" id="btn-exportar">
+                <i class="bi bi-file-earmark-excel me-1"></i>Exportar Excel
+            </a>
+        </div>
     </div>
 
     <!-- Section 1: Control Panel -->
@@ -67,6 +72,13 @@
                 <div class="col-auto">
                     <span class="text-muted small" id="backup-fecha-label"></span>
                 </div>
+                {% if current_user.is_admin %}
+                <div class="col-auto">
+                    <button class="btn btn-warning btn-sm" id="btn-restaurar" onclick="restaurarBackup()" disabled>
+                        <i class="bi bi-arrow-counterclockwise me-1"></i>Restaurar este backup
+                    </button>
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -212,9 +224,59 @@
             <div class="text-muted mt-2 small" id="cambios-summary"></div>
         </div>
 
+        <!-- Grupos de Duplicados collapsible section -->
+        <div class="mt-4">
+            <div class="d-flex align-items-center justify-content-between mb-3">
+                <h5 class="mb-0">
+                    <button class="btn btn-link text-decoration-none p-0 fs-5 fw-semibold text-dark"
+                            type="button"
+                            data-bs-toggle="collapse"
+                            data-bs-target="#grupos-collapse"
+                            aria-expanded="false"
+                            aria-controls="grupos-collapse"
+                            onclick="cargarGrupos()">
+                        <i class="bi bi-diagram-3 me-2"></i>Grupos de Duplicados
+                        <i class="bi bi-chevron-down ms-1 small"></i>
+                    </button>
+                </h5>
+            </div>
+            <div class="collapse" id="grupos-collapse">
+                <div id="grupos-loading" class="text-center py-4" style="display:none;">
+                    <div class="spinner-border text-primary"></div>
+                    <p class="mt-2 text-muted">Cargando grupos...</p>
+                </div>
+                <div id="grupos-content"></div>
+                <div class="text-muted small mt-2" id="grupos-summary"></div>
+            </div>
+        </div>
+
     </div><!-- /#dashboard-section -->
 
 </div><!-- /.container-fluid -->
+
+<!-- Restore Confirmation Modal -->
+<div class="modal fade" id="modal-restaurar" tabindex="-1" aria-labelledby="modal-restaurar-label" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title" id="modal-restaurar-label">
+                    <i class="bi bi-arrow-counterclockwise me-2"></i>Confirmar Restauración
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <p id="modal-restaurar-mensaje">¿Restaurar la tabla al estado del backup seleccionado? Los cambios de la segunda validación se revertirán.</p>
+                <p class="text-muted small mb-0">Esta acción no se puede deshacer fácilmente.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-warning" id="btn-confirmar-restaurar" onclick="confirmarRestaurar()">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i>Sí, restaurar
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 
 <!-- Confirmation Modal -->
 <div class="modal fade" id="modal-confirmacion" tabindex="-1" aria-labelledby="modal-confirmacion-label" aria-hidden="true">
@@ -244,6 +306,8 @@
 var _allCambios = [];
 var _pollingInterval = null;
 var _modalConfirmacion = null;
+var _modalRestaurar = null;
+var _gruposLoaded = false;
 
 // Phase label translations
 var PHASE_LABELS = {
@@ -257,6 +321,7 @@ var PHASE_LABELS = {
 
 document.addEventListener('DOMContentLoaded', function() {
     _modalConfirmacion = new bootstrap.Modal(document.getElementById('modal-confirmacion'));
+    _modalRestaurar = new bootstrap.Modal(document.getElementById('modal-restaurar'));
     cargarBackups();
     verificarEstadoInicial();
 });
@@ -437,6 +502,13 @@ function cargarDashboard() {
     var select = document.getElementById('backup-select');
     var backupId = select.value;
 
+    // Enable/disable restore button based on selection
+    var btnRestaurar = document.getElementById('btn-restaurar');
+    if (btnRestaurar) { btnRestaurar.disabled = !backupId; }
+
+    // Reset groups when backup changes
+    _gruposLoaded = false;
+
     if (!backupId) {
         document.getElementById('dashboard-section').style.display = 'none';
         document.getElementById('backup-fecha-label').textContent = '';
@@ -535,6 +607,118 @@ function badgeEstatus(estatus) {
     else if (estatus === 'NUEVO') { cls = 'bg-success'; }
     else if (estatus === 'ELIMINAR') { cls = 'bg-danger'; }
     return '<span class="badge ' + cls + '">' + estatus + '</span>';
+}
+
+// ── Restore backup ────────────────────────────────────────────────────────────
+
+function restaurarBackup() {
+    var select = document.getElementById('backup-select');
+    var backupId = select.value;
+    if (!backupId) { return; }
+
+    var msg = '¿Restaurar la tabla al estado del backup ' + backupId + '? Los cambios de la segunda validación se revertirán.';
+    document.getElementById('modal-restaurar-mensaje').textContent = msg;
+    _modalRestaurar.show();
+}
+
+function confirmarRestaurar() {
+    var select = document.getElementById('backup-select');
+    var backupId = select.value;
+    if (!backupId) { return; }
+
+    var btnConfirmar = document.getElementById('btn-confirmar-restaurar');
+    if (btnConfirmar) { btnConfirmar.disabled = true; }
+
+    _modalRestaurar.hide();
+    limpiarAlerta();
+
+    fetch('/api/segunda-validacion/restaurar/' + encodeURIComponent(backupId), { method: 'POST' })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (btnConfirmar) { btnConfirmar.disabled = false; }
+            if (data.ok) {
+                mostrarAlerta('success',
+                    '<i class="bi bi-check-circle me-2"></i>Backup restaurado exitosamente. ' +
+                    (data.rows_restored != null ? data.rows_restored.toLocaleString('es-MX') + ' filas restauradas.' : ''));
+                cargarBackups(false);
+            } else {
+                mostrarAlerta('danger',
+                    '<i class="bi bi-x-circle me-2"></i>Error al restaurar: ' + (data.error || 'Error desconocido'));
+            }
+        })
+        .catch(function(err) {
+            if (btnConfirmar) { btnConfirmar.disabled = false; }
+            mostrarAlerta('danger', '<i class="bi bi-x-circle me-2"></i>Error al restaurar: ' + err.message);
+        });
+}
+
+// ── Groups ────────────────────────────────────────────────────────────────────
+
+function cargarGrupos() {
+    // Only load once per backup selection
+    if (_gruposLoaded) { return; }
+    _gruposLoaded = true;
+
+    var loadingEl = document.getElementById('grupos-loading');
+    var contentEl = document.getElementById('grupos-content');
+    var summaryEl = document.getElementById('grupos-summary');
+
+    loadingEl.style.display = 'block';
+    contentEl.innerHTML = '';
+    summaryEl.textContent = '';
+
+    fetch('/api/segunda-validacion/grupos')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            loadingEl.style.display = 'none';
+            var totalGroups = data.total_groups || 0;
+            var groups = data.groups || [];
+            var limit = 50;
+            var shown = groups.slice(0, limit);
+
+            if (shown.length === 0) {
+                contentEl.innerHTML = '<p class="text-muted">No hay grupos de duplicados registrados.</p>';
+                summaryEl.textContent = '';
+                return;
+            }
+
+            var html = '';
+            for (var i = 0; i < shown.length; i++) {
+                var g = shown[i];
+                var members = g.members || [];
+                html += '<div class="card border-0 shadow-sm mb-3">' +
+                    '<div class="card-header d-flex align-items-center gap-2 py-2">' +
+                    '<span class="fw-semibold">Grupo ' + (i + 1) + '</span>' +
+                    '<span class="badge bg-success">Principal: ' + (g.principal_id_poligon || '—') + '</span>' +
+                    '</div>' +
+                    '<div class="card-body py-2">' +
+                    '<ul class="list-unstyled mb-0">';
+                for (var j = 0; j < members.length; j++) {
+                    var m = members[j];
+                    var badgeCls = 'bg-secondary';
+                    if (m.estatus_chapingo === 'VINCULAR') { badgeCls = 'bg-primary'; }
+                    else if (m.estatus_chapingo === 'ELIMINAR') { badgeCls = 'bg-danger'; }
+                    else if (m.estatus_chapingo === 'NUEVO') { badgeCls = 'bg-success'; }
+                    html += '<li class="d-flex align-items-center gap-2 py-1 border-bottom">' +
+                        '<code class="small">' + (m.id_poligon || '—') + '</code>' +
+                        '<span class="text-muted small">Crédito: ' + (m.id_credito || '—') + '</span>' +
+                        '<span class="badge ' + badgeCls + ' ms-auto">' + (m.estatus_chapingo || '—') + '</span>' +
+                        '</li>';
+                }
+                html += '</ul></div></div>';
+            }
+            contentEl.innerHTML = html;
+
+            if (totalGroups > limit) {
+                summaryEl.textContent = 'Mostrando ' + limit + ' de ' + totalGroups + ' grupos';
+            } else {
+                summaryEl.textContent = 'Mostrando ' + shown.length + ' grupo' + (shown.length !== 1 ? 's' : '');
+            }
+        })
+        .catch(function(err) {
+            loadingEl.style.display = 'none';
+            contentEl.innerHTML = '<p class="text-danger"><i class="bi bi-x-circle me-1"></i>Error cargando grupos: ' + err.message + '</p>';
+        });
 }
 
 // ── Search / filter ───────────────────────────────────────────────────────────
