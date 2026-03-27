@@ -387,6 +387,39 @@ function verMapaMegacapa(validacionId, estatus, traslape) {
             .table-responsive-custom:hover .scroll-indicator {
                 opacity: 1;
             }
+
+            /* Resizable columns */
+            .resizable-table th {
+                position: relative;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                user-select: none;
+            }
+            .resizable-table td {
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+            .resizable-table th .resize-handle {
+                position: absolute;
+                right: 0;
+                top: 0;
+                bottom: 0;
+                width: 5px;
+                cursor: col-resize;
+                background: transparent;
+                z-index: 10;
+            }
+            .resizable-table th .resize-handle:hover,
+            .resizable-table th .resize-handle.active {
+                background: rgba(0, 123, 255, 0.5);
+            }
+            .resizable-table td.expanded,
+            .resizable-table th.expanded {
+                white-space: normal;
+                word-wrap: break-word;
+            }
         </style>
         
         <script>
@@ -466,27 +499,28 @@ function verMapaMegacapa(validacionId, estatus, traslape) {
                 <div class="position-relative">
                     <div class="scroll-indicator">← → Desplazar horizontalmente</div>
                     <div class="table-responsive-custom" style="max-height: 600px; overflow-x: auto; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 0.375rem;">
-                    <table class="table table-hover table-striped mb-0" style="min-width: 1200px;">
+                    <table class="table table-hover table-striped mb-0 resizable-table" id="tablaPoligonos" style="min-width: 1200px; table-layout: fixed;">
                         <thead class="table-light sticky-top">
                             <tr>
-                                <th style="min-width: 50px;">#</th>
+                                <th style="width: 50px;">#</th>
                                 {% for col in columns %}
-                                    {# Highlight specific columns for clarity #}
-                                    {% if col in ['COORDENADAS', 'COORDENADAS_CORREGIDAS'] %}
-                                        <th class="bg-info text-white" style="min-width: 200px; max-width: 250px;">{{ col }}</th>
+                                    {% if col == 'COORDENADAS' or col == 'COORDENADAS_DECIMALES_CORREGIDAS' %}
+                                        <th style="width: 250px;">{{ col }}<span class="resize-handle"></span></th>
                                     {% elif col == 'AREA_DIGITALIZADA' %}
-                                        <th class="bg-success text-white" style="min-width: 120px;">{{ col }} (ha)</th>
-                                    {% elif col in ['ESTADO', 'MUNICIPIO', 'ESTATUS'] %}
-                                        <th class="bg-light" style="min-width: 100px;">{{ col }}</th> {# Newly added columns #}
-                                    {% elif col == 'COMENTARIOS' %}
-                                        <th class="bg-light" style="min-width: 150px;">{{ col }}</th> {# Comentarios column #}
-                                    {% elif col == 'DESCRIPCION' %}
-                                        <th class="bg-light" style="min-width: 150px;">{{ col }}</th> {# Descripcion column #}
+                                        <th class="bg-success text-white" style="width: 130px;">{{ col }} (ha)<span class="resize-handle"></span></th>
+                                    {% elif col in ['COMENTARIOS', 'DESCRIPCION'] %}
+                                        <th style="width: 180px;">{{ col }}<span class="resize-handle"></span></th>
+                                    {% elif col in ['ESTADO', 'MUNICIPIO'] %}
+                                        <th style="width: 130px;">{{ col }}<span class="resize-handle"></span></th>
+                                    {% elif col == 'SUPERFICIE' %}
+                                        <th style="width: 100px;">{{ col }}<span class="resize-handle"></span></th>
+                                    {% elif col == 'ESTATUS' %}
+                                        <th style="width: 100px;">{{ col }}<span class="resize-handle"></span></th>
                                     {% else %}
-                                        <th style="min-width: 100px;">{{ col }}</th>
+                                        <th style="width: 120px;">{{ col }}<span class="resize-handle"></span></th>
                                     {% endif %}
                                 {% endfor %}
-                                <th style="min-width: 80px;">Acciones</th>
+                                <th style="width: 80px;">Acciones</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -494,12 +528,7 @@ function verMapaMegacapa(validacionId, estatus, traslape) {
                             <tr>
                                 <td>{{ loop.index }}</td>
                                 {% for col in columns %}
-                                    {% if col in ['COORDENADAS', 'COORDENADAS_CORREGIDAS'] %}
-                                        <td style="max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{ row[col] if row[col] is not none else '' }}">
-                                    {% else %}
-                                        <td>
-                                    {% endif %}
-                                        {# Display values, handle None #}
+                                    <td title="{{ row[col] if row[col] is not none and row[col] != '' else '' }}">
                                         {% if row[col] is not none and row[col] != '' %}
                                             {% if col == 'AREA_DIGITALIZADA' %}
                                                 {{ "%.2f"|format(row[col]|float) }} ha
@@ -507,7 +536,7 @@ function verMapaMegacapa(validacionId, estatus, traslape) {
                                                 {{ row[col] }}
                                             {% endif %}
                                         {% else %}
-                                            <span class="text-muted">--</span> {# Display dashes for empty values #}
+                                            <span class="text-muted">--</span>
                                         {% endif %}
                                     </td>
                                 {% endfor %}
@@ -536,6 +565,69 @@ function verMapaMegacapa(validacionId, estatus, traslape) {
             </div>
         </div>
 
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var table = document.getElementById('tablaPoligonos');
+    if (!table) return;
+
+    var handles = table.querySelectorAll('.resize-handle');
+    var currentHandle = null;
+    var startX = 0;
+    var startWidth = 0;
+    var th = null;
+
+    handles.forEach(function(handle) {
+        handle.addEventListener('mousedown', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            currentHandle = handle;
+            th = handle.parentElement;
+            startX = e.pageX;
+            startWidth = th.offsetWidth;
+            handle.classList.add('active');
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+        });
+
+        // Double-click to auto-expand/collapse
+        handle.addEventListener('dblclick', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            var colTh = handle.parentElement;
+            var colIndex = Array.from(colTh.parentElement.children).indexOf(colTh);
+            var cells = table.querySelectorAll('tbody tr td:nth-child(' + (colIndex + 1) + ')');
+
+            // Toggle expanded state
+            var isExpanded = colTh.classList.contains('expanded');
+            if (isExpanded) {
+                colTh.classList.remove('expanded');
+                colTh.style.width = '120px';
+                cells.forEach(function(cell) { cell.classList.remove('expanded'); });
+            } else {
+                colTh.classList.add('expanded');
+                colTh.style.width = 'auto';
+                cells.forEach(function(cell) { cell.classList.add('expanded'); });
+            }
+        });
+    });
+
+    document.addEventListener('mousemove', function(e) {
+        if (!currentHandle) return;
+        var diff = e.pageX - startX;
+        var newWidth = Math.max(50, startWidth + diff);
+        th.style.width = newWidth + 'px';
+    });
+
+    document.addEventListener('mouseup', function() {
+        if (currentHandle) {
+            currentHandle.classList.remove('active');
+            currentHandle = null;
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        }
+    });
+});
+</script>
 
         {% elif tab == 'editar' %}
         <!-- Pestaña de Editar Polígono -->

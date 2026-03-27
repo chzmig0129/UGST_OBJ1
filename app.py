@@ -767,7 +767,6 @@ def validacion_poligonos(tab):
                     'ESTATUS': p.estatus,
                     'COMENTARIOS': p.comentarios,
                     'DESCRIPCION': p.descripcion,
-                    'ORDEN': p.orden,
                     'db_id': p.id
                 }
                 # Ya no es necesario cargar JSON ni usar setdefault,
@@ -778,7 +777,7 @@ def validacion_poligonos(tab):
             columns_to_display = [
                 'ID_POLIGONO', 'IF', 'ID_CREDITO', 'ID_PERSONA', 'SUPERFICIE',
                 'ESTADO', 'MUNICIPIO', 'COORDENADAS', 'COORDENADAS_DECIMALES_CORREGIDAS',
-                'AREA_DIGITALIZADA', 'ESTATUS', 'COMENTARIOS', 'DESCRIPCION', 'ORDEN', 'db_id'
+                'AREA_DIGITALIZADA', 'ESTATUS', 'COMENTARIOS', 'DESCRIPCION'
             ]
             # --- FIN: Definir columnas fijas ---
 
@@ -1093,9 +1092,9 @@ def cargar_excel():
                         coordenadas=safe_str(row.get('COORDENADAS')),
                         coordenadas_corregidas=safe_str(row.get('COORDENADAS_DECIMALES_CORREGIDAS')),  # Usar las corregidas
                         area_digitalizada=None,  # Se inicializa como None
-                        estatus=safe_str(row.get('ESTATUS')),         # Populated from XLSX for consolidado
+                        estatus=None,            # Se inicializa como None
                         comentarios=None,        # Se inicializa como None
-                        descripcion=safe_str(row.get('DESCRIPCION'))  # Populated from XLSX for consolidado
+                        descripcion=None         # Se inicializa como None
                         # datos_json ya no existe
                     )
                     db.session.add(poligono)
