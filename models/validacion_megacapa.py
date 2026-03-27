@@ -1,5 +1,5 @@
 from datetime import datetime
-from utils.database import db
+from extensions import db
 
 
 class ValidacionMegacapa(db.Model):
