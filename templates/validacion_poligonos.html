@@ -515,7 +515,13 @@ document.addEventListener('DOMContentLoaded', function() {
                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body p-0">
-                        <div id="mapaGrupo" style="height: 500px; width: 100%;"></div>
+                        <div class="d-flex">
+                            <div id="mapaGrupo" style="height: 500px; flex: 1;"></div>
+                            <div id="mapaGrupoToggles" style="width: 250px; max-height: 500px; overflow-y: auto; border-left: 1px solid #dee2e6; padding: 10px; background: #f8f9fa;">
+                                <strong class="d-block mb-2"><i class="bi bi-layers"></i> Polígonos</strong>
+                                <div id="togglesList"></div>
+                            </div>
+                        </div>
                     </div>
                     <div class="modal-footer">
                         <span id="grupoInfoText" class="me-auto text-muted"></span>
@@ -644,6 +650,7 @@ document.addEventListener('DOMContentLoaded', function() {
         function verMapaGrupo(groupId, pidsStr) {
             var modal = new bootstrap.Modal(document.getElementById('modalMapaGrupo'));
             document.getElementById('modalGrupoTitle').textContent = 'Grupo ' + groupId;
+            document.getElementById('togglesList').innerHTML = '<div class="text-muted small">Cargando...</div>';
             modal.show();
             
             setTimeout(function() {
@@ -654,26 +661,73 @@ document.addEventListener('DOMContentLoaded', function() {
                 }).addTo(svMapInstance);
                 
                 var colors = ['#3388ff', '#ff3333', '#33ff33', '#ff33ff', '#ffff33', '#33ffff', '#ff8833', '#8833ff'];
+                var layerRefs = [];
                 
                 fetch('/api/validacion-poligonos/segunda-validacion/grupo-geometrias?ids=' + pidsStr)
                 .then(function(r) { return r.json(); })
                 .then(function(geojson) {
                     var bounds = L.latLngBounds();
+                    var togglesHtml = '';
+                    
                     geojson.features.forEach(function(f, i) {
                         var color = colors[i % colors.length];
                         var layer = L.geoJSON(f, {
-                            style: { color: color, weight: 3, fillOpacity: 0.3 }
+                            style: { color: color, weight: 3, fillOpacity: 0.3, fillColor: color }
                         }).addTo(svMapInstance);
                         layer.bindTooltip(
-                            f.properties.id_poligono + '<br>Crédito: ' + f.properties.id_credito + '<br>Área: ' + f.properties.area_ha + ' ha',
+                            '<strong>' + f.properties.id_poligono + '</strong><br>Crédito: ' + f.properties.id_credito + '<br>Área: ' + f.properties.area_ha + ' ha',
                             {permanent: false}
                         );
                         bounds.extend(layer.getBounds());
+                        layerRefs.push(layer);
+                        
+                        // Build toggle HTML
+                        togglesHtml += '<div class="form-check mb-2" style="border-left: 4px solid ' + color + '; padding-left: 10px;">';
+                        togglesHtml += '<input class="form-check-input" type="checkbox" checked id="toggle-poly-' + i + '" onchange="togglePolyLayer(' + i + ', this.checked)">';
+                        togglesHtml += '<label class="form-check-label small" for="toggle-poly-' + i + '">';
+                        togglesHtml += '<strong>' + (f.properties.id_poligono || 'Polígono ' + (i+1)) + '</strong><br>';
+                        togglesHtml += '<span class="text-muted">Crédito: ' + (f.properties.id_credito || '--') + '</span><br>';
+                        togglesHtml += '<span class="text-muted">' + (f.properties.area_ha || 0) + ' ha</span>';
+                        togglesHtml += '</label></div>';
                     });
+                    
+                    // Add show all / hide all buttons
+                    var controlsHtml = '<div class="btn-group btn-group-sm w-100 mb-2">';
+                    controlsHtml += '<button class="btn btn-outline-success btn-sm" onclick="toggleAllPolyLayers(true)"><i class="bi bi-eye"></i> Todos</button>';
+                    controlsHtml += '<button class="btn btn-outline-danger btn-sm" onclick="toggleAllPolyLayers(false)"><i class="bi bi-eye-slash"></i> Ninguno</button>';
+                    controlsHtml += '</div>';
+                    
+                    document.getElementById('togglesList').innerHTML = controlsHtml + togglesHtml;
+                    
                     if (bounds.isValid()) svMapInstance.fitBounds(bounds, {padding: [30, 30]});
                     document.getElementById('grupoInfoText').textContent = geojson.features.length + ' polígonos en el grupo';
+                    
+                    // Store refs globally for toggle functions
+                    window._svLayerRefs = layerRefs;
                 });
             }, 300);
+        }
+        
+        function togglePolyLayer(index, visible) {
+            if (!window._svLayerRefs || !window._svLayerRefs[index]) return;
+            if (visible) {
+                window._svLayerRefs[index].addTo(svMapInstance);
+            } else {
+                svMapInstance.removeLayer(window._svLayerRefs[index]);
+            }
+        }
+        
+        function toggleAllPolyLayers(visible) {
+            if (!window._svLayerRefs) return;
+            window._svLayerRefs.forEach(function(layer, i) {
+                var checkbox = document.getElementById('toggle-poly-' + i);
+                if (checkbox) checkbox.checked = visible;
+                if (visible) {
+                    layer.addTo(svMapInstance);
+                } else {
+                    svMapInstance.removeLayer(layer);
+                }
+            });
         }
 
         // Auto-load groups on page load
