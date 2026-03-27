@@ -150,6 +150,19 @@
         </div>
     </div>
 
+    <!-- Filter buttons -->
+    <div class="card mb-3">
+        <div class="card-body py-2">
+            <div class="d-flex align-items-center gap-2">
+                <strong class="me-2">Filtrar:</strong>
+                <button class="btn btn-sm btn-outline-secondary active" onclick="filtrarMegacapa('TODOS')" id="filtro-TODOS">Todos</button>
+                <button class="btn btn-sm btn-outline-success" onclick="filtrarMegacapa('VINCULAR')" id="filtro-VINCULAR">VINCULAR</button>
+                <button class="btn btn-sm btn-outline-warning" onclick="filtrarMegacapa('NUEVO')" id="filtro-NUEVO">NUEVO</button>
+                <span class="ms-auto text-muted" id="filtro-count"></span>
+            </div>
+        </div>
+    </div>
+
     <!-- Results table -->
     {% if resultados %}
     <div class="card">
@@ -174,16 +187,17 @@
                     </thead>
                     <tbody>
                         {% for r in resultados %}
-                        <tr class="{% if r.estatus_megacapa == 'VINCULAR' %}table-success{% elif r.estatus_megacapa == 'NUEVO' %}table-warning{% endif %}">
+                        <tr class="megacapa-row {% if r.estatus_megacapa == 'VINCULAR' %}table-success{% elif r.estatus_megacapa == 'NUEVO' %}table-warning{% endif %}" data-estatus="{{ r.estatus_megacapa }}" data-validacion-id="{{ r.id }}">
                             <td>{{ loop.index }}</td>
                             <td>{{ r.id_poligono or '' }}</td>
                             <td>{{ r.id_credito or '' }}</td>
                             <td>
-                                {% if r.estatus_megacapa == 'VINCULAR' %}
-                                <span class="badge bg-success">VINCULAR</span>
-                                {% else %}
-                                <span class="badge bg-warning text-dark">NUEVO</span>
-                                {% endif %}
+                                <span class="badge estatus-badge {% if r.estatus_megacapa == 'VINCULAR' %}bg-success{% else %}bg-warning text-dark{% endif %}" 
+                                      style="cursor: pointer;" 
+                                      title="Click para cambiar estatus"
+                                      onclick="cambiarEstatusMegacapa(this, {{ r.id }}, '{{ r.estatus_megacapa }}')">
+                                    {{ r.estatus_megacapa }}
+                                </span>
                             </td>
                             <td>{{ '%.1f%%'|format(r.porcentaje_traslape) if r.porcentaje_traslape is not none else 'N/A' }}</td>
                             <td>{{ r.id_poligono_unico or '' }}</td>
@@ -315,6 +329,82 @@ function verMapaMegacapa(validacionId, estatus, traslape) {
             });
     });
 }
+
+// Filter megacapa results
+function filtrarMegacapa(estatus) {
+    var rows = document.querySelectorAll('.megacapa-row');
+    var visibleCount = 0;
+    
+    rows.forEach(function(row) {
+        if (estatus === 'TODOS' || row.dataset.estatus === estatus) {
+            row.style.display = '';
+            visibleCount++;
+        } else {
+            row.style.display = 'none';
+        }
+    });
+    
+    // Update active button
+    document.querySelectorAll('[id^="filtro-"]').forEach(function(btn) {
+        btn.classList.remove('active');
+    });
+    document.getElementById('filtro-' + estatus).classList.add('active');
+    
+    // Update count
+    document.getElementById('filtro-count').textContent = visibleCount + ' de ' + rows.length + ' registros';
+}
+
+// Change estatus megacapa via API
+function cambiarEstatusMegacapa(badge, validacionId, estatusActual) {
+    var nuevoEstatus = estatusActual === 'VINCULAR' ? 'NUEVO' : 'VINCULAR';
+    
+    if (!confirm('¿Cambiar estatus de ' + estatusActual + ' a ' + nuevoEstatus + '?\n\nSi cambia a NUEVO, el polígono aparecerá en la pestaña Lista para ser editado.')) {
+        return;
+    }
+    
+    fetch('/api/validacion-megacapa/cambiar-estatus', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            validacion_id: validacionId,
+            nuevo_estatus: nuevoEstatus
+        })
+    })
+    .then(function(response) { return response.json(); })
+    .then(function(data) {
+        if (data.error) {
+            alert('Error: ' + data.error);
+            return;
+        }
+        
+        // Update badge appearance
+        badge.textContent = nuevoEstatus;
+        badge.setAttribute('onclick', "cambiarEstatusMegacapa(this, " + validacionId + ", '" + nuevoEstatus + "')");
+        
+        if (nuevoEstatus === 'VINCULAR') {
+            badge.className = 'badge estatus-badge bg-success';
+        } else {
+            badge.className = 'badge estatus-badge bg-warning text-dark';
+        }
+        
+        // Update row color and data attribute
+        var row = badge.closest('tr');
+        row.dataset.estatus = nuevoEstatus;
+        row.classList.remove('table-success', 'table-warning');
+        row.classList.add(nuevoEstatus === 'VINCULAR' ? 'table-success' : 'table-warning');
+    })
+    .catch(function(err) {
+        alert('Error de conexión: ' + err);
+    });
+}
+
+// Initialize count on load
+document.addEventListener('DOMContentLoaded', function() {
+    var rows = document.querySelectorAll('.megacapa-row');
+    if (rows.length > 0) {
+        document.getElementById('filtro-count').textContent = rows.length + ' de ' + rows.length + ' registros';
+    }
+});
 </script>
 </div>
 

@@ -1312,6 +1312,43 @@ def api_validacion_megacapa_mapa(validacion_id):
         app.logger.error(f'Error en api_validacion_megacapa_mapa: {e}')
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/validacion-megacapa/cambiar-estatus', methods=['POST'])
+@login_required
+def api_cambiar_estatus_megacapa():
+    """Change the estatus_megacapa of a validation result (VINCULAR <-> NUEVO)."""
+    try:
+        data = request.get_json()
+        if not data or 'validacion_id' not in data or 'nuevo_estatus' not in data:
+            return jsonify({'error': 'Faltan parámetros: validacion_id, nuevo_estatus'}), 400
+        
+        validacion_id = data['validacion_id']
+        nuevo_estatus = data['nuevo_estatus']
+        
+        if nuevo_estatus not in ('VINCULAR', 'NUEVO'):
+            return jsonify({'error': 'Estatus debe ser VINCULAR o NUEVO'}), 400
+        
+        registro = ValidacionMegacapa.query.get(validacion_id)
+        if not registro:
+            return jsonify({'error': 'Registro no encontrado'}), 404
+        
+        estatus_anterior = registro.estatus_megacapa
+        registro.estatus_megacapa = nuevo_estatus
+        db.session.commit()
+        
+        app.logger.info(f'Estatus megacapa cambiado: validacion_id={validacion_id}, {estatus_anterior} -> {nuevo_estatus} (por {current_user.username})')
+        
+        return jsonify({
+            'success': True,
+            'validacion_id': validacion_id,
+            'estatus_anterior': estatus_anterior,
+            'estatus_nuevo': nuevo_estatus,
+            'message': f'Estatus cambiado de {estatus_anterior} a {nuevo_estatus}'
+        })
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f'Error al cambiar estatus megacapa: {e}')
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/actualizar-fila', methods=['POST'])
 @login_required
 def actualizar_fila():
