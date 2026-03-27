@@ -204,8 +204,8 @@
                             <td>{{ r.id_credito_megacapa or '' }}</td>
                             <td><small>{{ r.motivo or '' }}</small></td>
                             <td>
-                                <button class="btn btn-sm btn-outline-primary" onclick="verMapaMegacapa({{ r.id }}, '{{ r.estatus_megacapa }}', {{ r.porcentaje_traslape if r.porcentaje_traslape is not none else 'null' }})" title="Ver en mapa">
-                                    <i class="fas fa-map-marked-alt"></i>
+                                <button class="btn btn-sm btn-primary" onclick="verMapaMegacapa({{ r.id }}, '{{ r.estatus_megacapa }}', {{ r.porcentaje_traslape if r.porcentaje_traslape is not none else 'null' }})" title="Ver en mapa">
+                                    <i class="bi bi-map"></i> Mapa
                                 </button>
                             </td>
                         </tr>
