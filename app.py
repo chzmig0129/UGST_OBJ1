@@ -196,7 +196,6 @@ login_manager.login_message_category = 'warning'
 from models.user import User  # noqa: E402
 from models.analizador_15k import Analizador15K  # noqa: E402
 from models.backup_analizador import BackupAnalizador15K  # noqa: E402
-from models.validacion_megacapa import ValidacionMegacapa  # noqa: E402
 from utils.validacion_megacapa import ejecutar_validacion_megacapa  # noqa: E402
 
 @login_manager.user_loader
@@ -225,6 +224,8 @@ class Poligono(db.Model):
     # Metadata
     fecha_creacion = db.Column(db.DateTime, default=datetime.utcnow)
     fecha_modificacion = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+from models.validacion_megacapa import ValidacionMegacapa  # noqa: E402  — must be after Poligono is defined
 
 # Variable global para almacenar los datos del Excel (mantener por compatibilidad)
 excel_data = {
