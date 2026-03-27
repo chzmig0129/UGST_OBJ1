@@ -1190,6 +1190,74 @@ def ejecutar_validacion_megacapa_route():
         flash(f'Error al ejecutar validación: {str(e)}', 'error')
         return redirect(url_for('validacion_poligonos', tab='megacapa'))
 
+@app.route('/api/validacion-megacapa-mapa/<int:validacion_id>')
+@login_required
+def api_validacion_megacapa_mapa(validacion_id):
+    """Return GeoJSON for map visualization of a validation result."""
+    try:
+        from utils.validacion_megacapa import construir_geometria
+        from shapely.geometry import mapping
+        import json
+
+        # Get validation record
+        registro = ValidacionMegacapa.query.get_or_404(validacion_id)
+
+        # Get the loaded polygon
+        poligono = Poligono.query.get(registro.poligono_id)
+        if not poligono:
+            return jsonify({'error': 'Polígono no encontrado'}), 404
+
+        features = []
+
+        # Build geometry from loaded polygon's coordenadas_corregidas
+        geom_cargado, error = construir_geometria(poligono.coordenadas_corregidas)
+        if geom_cargado:
+            features.append({
+                'type': 'Feature',
+                'properties': {
+                    'tipo': 'cargado',
+                    'id_poligono': registro.id_poligono,
+                    'id_credito': registro.id_credito,
+                    'label': f'Polígono Cargado: {registro.id_poligono}',
+                    'color': '#3388ff',
+                },
+                'geometry': mapping(geom_cargado),
+            })
+
+        # If VINCULAR, find the megacapa polygon
+        if registro.estatus_megacapa == 'VINCULAR' and registro.id_poligono_unico:
+            mega = shp_cache.mega
+            match = mega[mega['ID_POLIGON'] == registro.id_poligono_unico]
+            if len(match) > 0:
+                mega_geom = match.iloc[0].geometry
+                features.append({
+                    'type': 'Feature',
+                    'properties': {
+                        'tipo': 'megacapa',
+                        'id_poligono': registro.id_poligono_unico,
+                        'id_credito': registro.id_credito_megacapa,
+                        'label': f'Megacapa: {registro.id_poligono_unico}',
+                        'color': '#28a745',
+                    },
+                    'geometry': mapping(mega_geom),
+                })
+
+        geojson = {
+            'type': 'FeatureCollection',
+            'features': features,
+            'properties': {
+                'estatus': registro.estatus_megacapa,
+                'porcentaje_traslape': registro.porcentaje_traslape,
+                'motivo': registro.motivo,
+            }
+        }
+
+        return jsonify(geojson)
+
+    except Exception as e:
+        app.logger.error(f'Error en api_validacion_megacapa_mapa: {e}')
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/actualizar-fila', methods=['POST'])
 @login_required
 def actualizar_fila():

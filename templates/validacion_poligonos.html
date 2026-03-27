@@ -166,6 +166,7 @@
                             <th>ID Polígono Único (Megacapa)</th>
                             <th>ID Crédito Megacapa</th>
                             <th>Motivo</th>
+                            <th>Mapa</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -185,6 +186,11 @@
                             <td>{{ r.id_poligono_unico or '' }}</td>
                             <td>{{ r.id_credito_megacapa or '' }}</td>
                             <td><small>{{ r.motivo or '' }}</small></td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-primary" onclick="verMapaMegacapa({{ r.id }}, '{{ r.estatus_megacapa }}', {{ r.porcentaje_traslape if r.porcentaje_traslape is not none else 'null' }})" title="Ver en mapa">
+                                    <i class="fas fa-map-marked-alt"></i>
+                                </button>
+                            </td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -198,6 +204,115 @@
         No hay resultados de validación. Primero cargue un archivo Excel en la pestaña "Cargar Datos" y luego presione "Ejecutar Validación".
     </div>
     {% endif %}
+
+<!-- Modal Mapa Megacapa -->
+<div class="modal fade" id="modalMapaMegacapa" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="modalMapaTitle">Visualización de Polígono</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-0">
+                <div id="mapaMegacapa" style="height: 500px; width: 100%;"></div>
+            </div>
+            <div class="modal-footer">
+                <span id="mapaInfoText" class="me-auto text-muted"></span>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+var mapaMegacapa = null;
+
+function verMapaMegacapa(validacionId, estatus, traslape) {
+    var modal = new bootstrap.Modal(document.getElementById('modalMapaMegacapa'));
+    
+    // Set title
+    document.getElementById('modalMapaTitle').textContent = 
+        'Polígono - ' + estatus + (traslape !== null ? ' (' + traslape.toFixed(1) + '% traslape)' : '');
+    
+    modal.show();
+    
+    // Initialize or reset map after modal is shown
+    document.getElementById('modalMapaMegacapa').addEventListener('shown.bs.modal', function handler() {
+        this.removeEventListener('shown.bs.modal', handler);
+        
+        if (mapaMegacapa) {
+            mapaMegacapa.remove();
+        }
+        
+        mapaMegacapa = L.map('mapaMegacapa');
+        
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            attribution: 'Esri',
+            maxZoom: 19
+        }).addTo(mapaMegacapa);
+        
+        // Fetch GeoJSON from API
+        fetch('/api/validacion-megacapa-mapa/' + validacionId)
+            .then(function(response) { return response.json(); })
+            .then(function(data) {
+                if (data.error) {
+                    document.getElementById('mapaInfoText').textContent = 'Error: ' + data.error;
+                    return;
+                }
+                
+                var bounds = L.latLngBounds();
+                
+                L.geoJSON(data, {
+                    style: function(feature) {
+                        return {
+                            color: feature.properties.color || '#3388ff',
+                            weight: 3,
+                            opacity: 0.8,
+                            fillOpacity: 0.3
+                        };
+                    },
+                    onEachFeature: function(feature, layer) {
+                        var props = feature.properties;
+                        var popup = '<b>' + props.label + '</b><br>' +
+                                    'ID Crédito: ' + (props.id_credito || 'N/A');
+                        layer.bindPopup(popup);
+                        layer.bindTooltip(props.label, {permanent: false});
+                    }
+                }).addTo(mapaMegacapa);
+                
+                // Fit bounds to all features
+                data.features.forEach(function(f) {
+                    L.geoJSON(f).eachLayer(function(layer) {
+                        if (layer.getBounds) {
+                            bounds.extend(layer.getBounds());
+                        } else if (layer.getLatLng) {
+                            bounds.extend(layer.getLatLng());
+                        }
+                    });
+                });
+                
+                if (bounds.isValid()) {
+                    mapaMegacapa.fitBounds(bounds, {padding: [30, 30]});
+                } else {
+                    mapaMegacapa.setView([23.6345, -102.5528], 5); // Mexico center
+                }
+                
+                // Info text
+                var info = data.properties || {};
+                document.getElementById('mapaInfoText').textContent = 
+                    'Estatus: ' + (info.estatus || '') + 
+                    ' | Traslape: ' + (info.porcentaje_traslape !== null ? info.porcentaje_traslape.toFixed(1) + '%' : 'N/A') +
+                    ' | ' + (info.motivo || '');
+            })
+            .catch(function(err) {
+                document.getElementById('mapaInfoText').textContent = 'Error al cargar mapa: ' + err;
+            });
+    });
+}
+</script>
 </div>
 
         {% elif tab == 'lista' %}
