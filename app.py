@@ -711,7 +711,7 @@ def unir_archivos():
 @app.route('/validacion-poligonos/<tab>')
 @login_required
 def validacion_poligonos(tab):
-    valid_tabs = ['cargar', 'megacapa', 'lista', 'editar', 'generar']
+    valid_tabs = ['cargar', 'megacapa', 'lista', 'editar', 'generar', 'resultados']
     
     if tab not in valid_tabs:
         tab = 'lista'
@@ -953,6 +953,43 @@ def validacion_poligonos(tab):
             flash(f'Error al generar reporte: {str(e)}', 'error')
             return redirect(url_for('validacion_poligonos', tab='lista'))
     
+    elif tab == 'resultados':
+        try:
+            # Query polygons that have been edited (have estatus set)
+            query = Poligono.query.filter(Poligono.estatus.isnot(None), Poligono.estatus != '')
+
+            # Non-admins only see their assigned polygons
+            if not current_user.is_admin:
+                query = query.filter(Poligono.usuario_asignado_id == current_user.id)
+
+            poligonos = query.order_by(Poligono.fecha_editado.desc()).all()
+
+            resultados_data = []
+            for p in poligonos:
+                editado_por_username = p.editado_por.username if p.editado_por else '--'
+                fecha_editado_str = p.fecha_editado.strftime('%Y-%m-%d %H:%M') if p.fecha_editado else '--'
+                resultados_data.append({
+                    'db_id': p.id,
+                    'ID_POLIGONO': p.id_poligono,
+                    'ID_CREDITO': p.id_credito,
+                    'SUPERFICIE': p.superficie,
+                    'AREA_DIGITALIZADA': p.area_digitalizada,
+                    'ESTATUS': p.estatus,
+                    'COMENTARIOS': p.comentarios,
+                    'DESCRIPCION': p.descripcion,
+                    'EDITADO_POR': editado_por_username,
+                    'FECHA_EDITADO': fecha_editado_str,
+                })
+
+            return render_template('validacion_poligonos.html',
+                                   tab=tab,
+                                   resultados_data=resultados_data,
+                                   is_admin=current_user.is_admin)
+        except Exception as e:
+            app.logger.error(f'Error en tab resultados: {e}')
+            flash(f'Error: {str(e)}', 'error')
+            return render_template('validacion_poligonos.html', tab=tab, resultados_data=[], is_admin=current_user.is_admin)
+
     else:  # tab == 'cargar'
         columnas_ejemplo = [
             'ID_POLIGONO', 'ESTADO', 'AREA_REPORTADA', 'AREA_DIGITALIZADA',
@@ -7912,6 +7949,97 @@ def api_revisor_usuarios():
             })
 
     return jsonify({"usuarios": usuarios})
+
+
+# ==============================================
+# Validación de Polígonos — Admin Assignment & Stats
+# ==============================================
+
+@app.route('/admin/asignar-poligonos-validacion', methods=['POST'])
+@login_required
+def asignar_poligonos_validacion():
+    if not current_user.is_admin:
+        flash('Acceso denegado', 'error')
+        return redirect(url_for('validacion_poligonos', tab='lista'))
+
+    try:
+        # Get non-admin users
+        usuarios = User.query.filter_by(is_admin=False, is_active=True).order_by(User.id).all()
+        if not usuarios:
+            flash('No hay usuarios no-admin activos para asignar', 'error')
+            return redirect(url_for('validacion_poligonos', tab='lista'))
+
+        # Get unassigned polygons (ordered by id for consistent distribution)
+        poligonos = Poligono.query.filter(
+            Poligono.usuario_asignado_id.is_(None)
+        ).order_by(Poligono.id).all()
+
+        if not poligonos:
+            flash('No hay polígonos sin asignar', 'warning')
+            return redirect(url_for('validacion_poligonos', tab='lista'))
+
+        # Distribute evenly using round-robin
+        for i, poligono in enumerate(poligonos):
+            poligono.usuario_asignado_id = usuarios[i % len(usuarios)].id
+
+        db.session.commit()
+
+        # Build summary
+        resumen = []
+        for u in usuarios:
+            count = Poligono.query.filter_by(usuario_asignado_id=u.id).count()
+            resumen.append(f'{u.username}: {count}')
+
+        flash(f'Asignados {len(poligonos)} polígonos a {len(usuarios)} usuarios ({", ".join(resumen)})', 'success')
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f'Error asignando polígonos: {e}')
+        flash(f'Error al asignar polígonos: {str(e)}', 'error')
+
+    return redirect(url_for('validacion_poligonos', tab='lista'))
+
+
+@app.route('/api/validacion-poligonos/estadisticas')
+@login_required
+def api_validacion_poligonos_estadisticas():
+    try:
+        total = Poligono.query.count()
+        con_estatus = Poligono.query.filter(
+            Poligono.estatus.isnot(None), Poligono.estatus != ''
+        ).count()
+        sin_estatus = total - con_estatus
+        sin_asignar = Poligono.query.filter(Poligono.usuario_asignado_id.is_(None)).count()
+
+        # Per-user stats for non-admin users
+        usuarios = User.query.filter_by(is_admin=False, is_active=True).order_by(User.id).all()
+        por_usuario = []
+        for u in usuarios:
+            asignados = Poligono.query.filter_by(usuario_asignado_id=u.id).count()
+            editados = Poligono.query.filter(
+                Poligono.usuario_asignado_id == u.id,
+                Poligono.estatus.isnot(None),
+                Poligono.estatus != ''
+            ).count()
+            pendientes = asignados - editados
+            avance_pct = round((editados / asignados * 100), 1) if asignados > 0 else 0
+            por_usuario.append({
+                'username': u.username,
+                'asignados': asignados,
+                'editados': editados,
+                'pendientes': pendientes,
+                'avance_pct': avance_pct,
+            })
+
+        return jsonify({
+            'total': total,
+            'con_estatus': con_estatus,
+            'sin_estatus': sin_estatus,
+            'sin_asignar': sin_asignar,
+            'por_usuario': por_usuario,
+        })
+    except Exception as e:
+        app.logger.error(f'Error en estadísticas de validación: {e}')
+        return jsonify({'error': str(e)}), 500
 
 
 if __name__ == '__main__':
