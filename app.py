@@ -743,7 +743,19 @@ def validacion_poligonos(tab):
         try:
             # Obtener datos de la base de datos
             app.logger.info("Consultando polígonos en la base de datos...")
-            poligonos = Poligono.query.all()
+            # Build base query
+            query = Poligono.query
+            
+            # Filter by assigned user (non-admins only see their assigned polygons)
+            if not current_user.is_admin:
+                query = query.filter(
+                    db.or_(
+                        Poligono.usuario_asignado_id == current_user.id,
+                        Poligono.usuario_asignado_id.is_(None)
+                    )
+                )
+            
+            poligonos = query.all()
             
             # Exclude VINCULAR polygons (already validated against megacapa)
             vincular_ids = set(
@@ -1368,7 +1380,19 @@ def actualizar_fila():
                 # Verificar si el usuario quiere ir al siguiente registro
                 if 'guardar_y_siguiente' in request.form:
                     # Buscar el siguiente registro en la base de datos
-                    siguiente_poligono = Poligono.query.filter(Poligono.id > db_id).order_by(Poligono.id.asc()).first()
+                    # Build query for next polygon
+                    next_query = Poligono.query.filter(Poligono.id > db_id)
+                    
+                    # Non-admins: only navigate within their assigned polygons
+                    if not current_user.is_admin:
+                        next_query = next_query.filter(
+                            db.or_(
+                                Poligono.usuario_asignado_id == current_user.id,
+                                Poligono.usuario_asignado_id.is_(None)
+                            )
+                        )
+                    
+                    siguiente_poligono = next_query.order_by(Poligono.id.asc()).first()
                     
                     if siguiente_poligono:
                         flash('Pasando al siguiente registro...', 'info')
