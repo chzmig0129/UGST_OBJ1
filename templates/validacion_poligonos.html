@@ -426,14 +426,6 @@
                             
                             <div class="row mb-3">
                                 <div class="col-12">
-                                    <label for="Orden" class="form-label">Orden</label>
-                                    <textarea class="form-control" id="Orden" name="ORDEN" rows="2">{{ poligono_data.get('ORDEN', '') if poligono_data.get('ORDEN') != None else '' }}</textarea>
-                                    <small class="text-muted">Se llena automáticamente cuando se selecciona un ID de polígono en la descripción</small>
-                                </div>
-                            </div>
-                            
-                            <div class="row mb-3">
-                                <div class="col-12">
                                     <label class="form-label">Estatus</label>
                                     <div class="form-check">
                                         <input class="form-check-input" type="radio" name="ESTATUS" id="Estatus6" value="6" {% if poligono_data.get('ESTATUS') == '6' or poligono_data.get('ESTATUS') == 6 %}checked{% endif %}>
@@ -745,20 +737,6 @@
                             descripcionTextarea.value += '\n' + descripcionCompleta;
                         } else {
                             descripcionTextarea.value = descripcionCompleta;
-                        }
-                        
-                        // Obtener el número de orden del atributo data-orden
-                        const selectedOption = this.options[this.selectedIndex];
-                        const orden = selectedOption.getAttribute('data-orden');
-                        const ordenTextarea = document.getElementById('Orden');
-                        
-                        if (orden && orden.trim() !== '' && ordenTextarea) {
-                            // Si el textarea de orden ya tiene contenido, añadir una nueva línea
-                            if (ordenTextarea.value && ordenTextarea.value.trim() !== '') {
-                                ordenTextarea.value += '\n' + orden;
-                            } else {
-                                ordenTextarea.value = orden;
-                            }
                         }
                         
                         // Resetear ambos selects y ocultar el dropdown de IDs
