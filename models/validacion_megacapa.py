@@ -7,7 +7,7 @@ class ValidacionMegacapa(db.Model):
     __tablename__ = 'validacion_megacapa'
 
     id = db.Column(db.Integer, primary_key=True)
-    poligono_id = db.Column(db.Integer, db.ForeignKey('poligono.id'), nullable=False)
+    poligono_id = db.Column(db.Integer, nullable=False)  # References poligono.id (no FK constraint to avoid import order issues)
     id_poligono = db.Column(db.Text, nullable=True)       # ID_POLIGONO del polígono cargado
     id_credito = db.Column(db.Text, nullable=True)         # ID_CREDITO del polígono cargado
     estatus_megacapa = db.Column(db.Text, nullable=False)  # 'VINCULAR' o 'NUEVO'
