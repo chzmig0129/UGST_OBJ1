@@ -8208,7 +8208,7 @@ def _calcular_traslapes_poligonos(on_progress=None):
         if area_a <= 0:
             continue
 
-        pid_a = row_a['poligono_id']
+        pid_a = int(row_a['poligono_id'])
         id_poligono_a = row_a.get('id_poligono', '')
         id_credito_a = row_a.get('id_credito', '')
 
@@ -8218,7 +8218,7 @@ def _calcular_traslapes_poligonos(on_progress=None):
                 continue
 
             row_b = gdf.iloc[pos_b]
-            pid_b = row_b['poligono_id']
+            pid_b = int(row_b['poligono_id'])
             geom_b = row_b.geometry
             if geom_b is None or geom_b.is_empty:
                 continue
@@ -8341,7 +8341,7 @@ def _agrupar_y_decidir_poligonos(pairs):
                     seen_credits.add(cred)
 
             group['members'].append({
-                'poligono_id': m,
+                'poligono_id': int(m),
                 'id_poligono': info['id_poligono'],
                 'id_credito': info['id_credito'],
                 'decision': decision,
@@ -8396,13 +8396,13 @@ def _run_seg_val_poligonos():
             for group in groups:
                 for member in group['members']:
                     registro = SegundaValidacionPoligono(
-                        poligono_id=member['poligono_id'],
+                        poligono_id=int(member['poligono_id']),
                         id_poligono=member['id_poligono'],
                         id_credito=member['id_credito'],
                         group_id=group['group_id'],
                         is_principal=(member['poligono_id'] == group['principal_pid']),
                         decision=member['decision'],
-                        principal_poligono_id=group['principal_pid'],
+                        principal_poligono_id=int(group['principal_pid']),
                         principal_id_poligono=group['principal_id_poligono'],
                         razon=member['reason'],
                     )
@@ -8491,8 +8491,9 @@ def api_seg_val_poligonos_resultado():
 @login_required
 def api_seg_val_poligonos_grupos():
     # Try in-memory first
-    if _seg_val_poligonos_state.get('result', {}).get('groups'):
-        return jsonify({'groups': _seg_val_poligonos_state['result']['groups']})
+    result = _seg_val_poligonos_state.get('result') or {}
+    if result.get('groups'):
+        return jsonify({'groups': result['groups']})
 
     # Reconstruct from DB
     try:
