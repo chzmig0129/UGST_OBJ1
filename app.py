@@ -221,6 +221,12 @@ class Poligono(db.Model):
     descripcion = db.Column(db.Text, nullable=True) # Nueva columna para descripción
     orden = db.Column(db.Text, nullable=True) # Nueva columna para número de orden
     se_modifico = db.Column(db.Text, default='No') # Campo para indicar si se modificó el polígono en el mapa
+    # User assignment and audit
+    usuario_asignado_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True, index=True)
+    editado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    fecha_editado = db.Column(db.DateTime, nullable=True)
+    usuario_asignado = db.relationship('User', foreign_keys=[usuario_asignado_id], backref='poligonos_validacion_asignados')
+    editado_por = db.relationship('User', foreign_keys=[editado_por_id], backref='poligonos_validacion_editados')
     # Metadata
     fecha_creacion = db.Column(db.DateTime, default=datetime.utcnow)
     fecha_modificacion = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -1350,6 +1356,8 @@ def actualizar_fila():
 
             # Actualizar fecha de modificación
             poligono.fecha_modificacion = datetime.utcnow()
+            poligono.editado_por_id = current_user.id
+            poligono.fecha_editado = datetime.utcnow()
             
             # Guardar cambios en la base de datos
             try:
