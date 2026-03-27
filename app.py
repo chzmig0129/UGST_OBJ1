@@ -8125,13 +8125,32 @@ def api_validacion_poligonos_estadisticas():
 # SEGUNDA VALIDACION - POLIGONOS (deduplicacion NUEVO vs NUEVO)
 # ============================================================
 
-_seg_val_poligonos_state = {
-    'status': 'idle',  # idle | running | done | error
-    'phase': '',
-    'progress': 0,
-    'message': '',
-    'result': None,
-}
+import json as _json
+_SEG_VAL_STATE_FILE = '/tmp/seg_val_poligonos_state.json'
+
+def _get_seg_val_state():
+    """Read segunda validacion state from shared file."""
+    try:
+        with open(_SEG_VAL_STATE_FILE, 'r') as f:
+            return _json.load(f)
+    except (FileNotFoundError, _json.JSONDecodeError):
+        return {
+            'status': 'idle',
+            'phase': '',
+            'progress': 0,
+            'message': '',
+            'result': None,
+        }
+
+def _set_seg_val_state(**kwargs):
+    """Update segunda validacion state in shared file."""
+    state = _get_seg_val_state()
+    state.update(kwargs)
+    try:
+        with open(_SEG_VAL_STATE_FILE, 'w') as f:
+            _json.dump(state, f)
+    except Exception:
+        pass
 
 
 def _build_nuevo_geodataframe():
@@ -8355,39 +8374,29 @@ def _agrupar_y_decidir_poligonos(pairs):
 
 def _run_seg_val_poligonos():
     """Background pipeline for segunda validacion of poligonos."""
-    state = _seg_val_poligonos_state
     try:
         with app.app_context():
             # Phase 1: Reset
-            state['phase'] = 'reset'
-            state['progress'] = 5
-            state['message'] = 'Limpiando resultados anteriores...'
+            _set_seg_val_state(phase='reset', progress=5, message='Limpiando resultados anteriores...')
             db.session.query(SegundaValidacionPoligono).delete()
             db.session.commit()
 
             # Phase 2: Traslape
-            state['phase'] = 'traslape'
-            state['progress'] = 10
-            state['message'] = 'Construyendo geometrías y calculando traslapes...'
+            _set_seg_val_state(phase='traslape', progress=10, message='Construyendo geometrías y calculando traslapes...')
 
             def on_progress(current, total):
                 if total > 0:
                     pct = 10 + int((current / total) * 60)
-                    state['progress'] = min(pct, 70)
-                    state['message'] = f'Analizando polígono {current}/{total}...'
+                    _set_seg_val_state(progress=min(pct, 70), message=f'Analizando polígono {current}/{total}...')
 
             pairs = _calcular_traslapes_poligonos(on_progress)
 
             # Phase 3: Agrupamiento
-            state['phase'] = 'agrupamiento'
-            state['progress'] = 75
-            state['message'] = f'Agrupando {len(pairs)} pares encontrados...'
+            _set_seg_val_state(phase='agrupamiento', progress=75, message=f'Agrupando {len(pairs)} pares encontrados...')
             groups = _agrupar_y_decidir_poligonos(pairs)
 
             # Phase 4: Aplicando
-            state['phase'] = 'aplicando'
-            state['progress'] = 80
-            state['message'] = 'Guardando resultados en base de datos...'
+            _set_seg_val_state(phase='aplicando', progress=80, message='Guardando resultados en base de datos...')
 
             vinculados = 0
             eliminados = 0
@@ -8425,26 +8434,26 @@ def _run_seg_val_poligonos():
             sin_duplicados = total_nuevos - poligonos_en_grupos
 
             # Phase 5: Done
-            state['phase'] = 'done'
-            state['status'] = 'done'
-            state['progress'] = 100
-            state['message'] = 'Segunda validación completada'
-            state['result'] = {
-                'total_nuevos_analizados': total_nuevos,
-                'total_pairs_found': len(pairs),
-                'total_groups': len(groups),
-                'verdaderamente_nuevos': sin_duplicados + sum(1 for g in groups for m in g['members'] if m['decision'] == 'NUEVO'),
-                'vinculados': vinculados,
-                'eliminados': eliminados,
-                'sin_duplicados': sin_duplicados,
-                'groups': groups,
-            }
+            _set_seg_val_state(
+                status='done',
+                phase='done',
+                progress=100,
+                message='Segunda validación completada',
+                result={
+                    'total_nuevos_analizados': total_nuevos,
+                    'total_pairs_found': len(pairs),
+                    'total_groups': len(groups),
+                    'verdaderamente_nuevos': sin_duplicados + sum(1 for g in groups for m in g['members'] if m['decision'] == 'NUEVO'),
+                    'vinculados': vinculados,
+                    'eliminados': eliminados,
+                    'sin_duplicados': sin_duplicados,
+                }
+            )
 
     except Exception as e:
         import traceback
         traceback.print_exc()
-        state['status'] = 'error'
-        state['message'] = str(e)
+        _set_seg_val_state(status='error', message=str(e))
 
 
 @app.route('/api/validacion-poligonos/segunda-validacion/ejecutar', methods=['POST'])
@@ -8453,16 +8462,17 @@ def api_seg_val_poligonos_ejecutar():
     if not current_user.is_admin:
         return jsonify({'error': 'Solo administradores'}), 403
 
-    if _seg_val_poligonos_state['status'] == 'running':
+    state = _get_seg_val_state()
+    if state['status'] == 'running':
         return jsonify({'error': 'Ya hay una validación en curso'}), 409
 
-    _seg_val_poligonos_state.update({
-        'status': 'running',
-        'phase': 'iniciando',
-        'progress': 0,
-        'message': 'Iniciando segunda validación...',
-        'result': None,
-    })
+    _set_seg_val_state(
+        status='running',
+        phase='iniciando',
+        progress=0,
+        message='Iniciando segunda validación...',
+        result=None,
+    )
 
     import threading
     t = threading.Thread(target=_run_seg_val_poligonos, daemon=True)
@@ -8474,33 +8484,29 @@ def api_seg_val_poligonos_ejecutar():
 @app.route('/api/validacion-poligonos/segunda-validacion/estado')
 @login_required
 def api_seg_val_poligonos_estado():
-    return jsonify(_seg_val_poligonos_state)
+    return jsonify(_get_seg_val_state())
 
 
 @app.route('/api/validacion-poligonos/segunda-validacion/resultado')
 @login_required
 def api_seg_val_poligonos_resultado():
-    if _seg_val_poligonos_state['status'] == 'done' and _seg_val_poligonos_state['result']:
-        result = dict(_seg_val_poligonos_state['result'])
-        result.pop('groups', None)  # Don't send full groups in this endpoint
-        return jsonify(result)
+    state = _get_seg_val_state()
+    if state['status'] == 'done' and state.get('result'):
+        return jsonify(state['result'])
     return jsonify({'error': 'No hay resultados disponibles'}), 404
 
 
 @app.route('/api/validacion-poligonos/segunda-validacion/grupos')
 @login_required
 def api_seg_val_poligonos_grupos():
-    # Try in-memory first
-    result = _seg_val_poligonos_state.get('result') or {}
-    if result.get('groups'):
-        return jsonify({'groups': result['groups']})
-
-    # Reconstruct from DB
     try:
         registros = SegundaValidacionPoligono.query.order_by(
             SegundaValidacionPoligono.group_id,
             SegundaValidacionPoligono.poligono_id
         ).all()
+
+        if not registros:
+            return jsonify({'groups': []})
 
         groups_map = {}
         for r in registros:
@@ -8588,13 +8594,7 @@ def api_seg_val_poligonos_reset():
     try:
         deleted = db.session.query(SegundaValidacionPoligono).delete()
         db.session.commit()
-        _seg_val_poligonos_state.update({
-            'status': 'idle',
-            'phase': '',
-            'progress': 0,
-            'message': '',
-            'result': None,
-        })
+        _set_seg_val_state(status='idle', phase='', progress=0, message='', result=None)
         return jsonify({'ok': True, 'deleted': deleted})
     except Exception as e:
         db.session.rollback()
