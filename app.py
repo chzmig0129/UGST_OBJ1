@@ -232,6 +232,7 @@ class Poligono(db.Model):
     fecha_modificacion = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 from models.validacion_megacapa import ValidacionMegacapa  # noqa: E402  — must be after Poligono is defined
+from models.segunda_validacion_poligono import SegundaValidacionPoligono  # noqa: E402
 
 # Variable global para almacenar los datos del Excel (mantener por compatibilidad)
 excel_data = {
@@ -711,7 +712,7 @@ def unir_archivos():
 @app.route('/validacion-poligonos/<tab>')
 @login_required
 def validacion_poligonos(tab):
-    valid_tabs = ['cargar', 'megacapa', 'lista', 'editar', 'generar', 'resultados']
+    valid_tabs = ['cargar', 'megacapa', 'segunda', 'lista', 'editar', 'generar', 'resultados']
     
     if tab not in valid_tabs:
         tab = 'lista'
@@ -738,7 +739,38 @@ def validacion_poligonos(tab):
             app.logger.error(f'Error en tab megacapa: {e}')
             flash(f'Error: {str(e)}', 'error')
             return render_template('validacion_poligonos.html', tab=tab, resultados=[], resumen={})
-    
+
+    elif tab == 'segunda':
+        try:
+            resultados_sv = SegundaValidacionPoligono.query.all()
+
+            # Build summary
+            total_nuevos_megacapa = ValidacionMegacapa.query.filter_by(estatus_megacapa='NUEVO').count()
+            resumen_sv = {
+                'total_nuevos': total_nuevos_megacapa,
+                'analizados': len(resultados_sv),
+                'grupos': db.session.query(db.func.max(SegundaValidacionPoligono.group_id)).scalar() or 0,
+                'verdaderamente_nuevos': sum(1 for r in resultados_sv if r.decision == 'NUEVO'),
+                'vincular': sum(1 for r in resultados_sv if r.decision == 'VINCULAR'),
+                'eliminar': sum(1 for r in resultados_sv if r.decision == 'ELIMINAR'),
+                'sin_duplicados': total_nuevos_megacapa - len(resultados_sv),
+            }
+
+            return render_template('validacion_poligonos.html',
+                                   tab=tab,
+                                   resumen_sv=resumen_sv,
+                                   resultados_sv=[r.to_dict() for r in resultados_sv],
+                                   is_admin=current_user.is_admin)
+        except Exception as e:
+            app.logger.error(f'Error en tab segunda: {e}')
+            import traceback
+            traceback.print_exc()
+            return render_template('validacion_poligonos.html',
+                                   tab=tab,
+                                   resumen_sv={},
+                                   resultados_sv=[],
+                                   is_admin=current_user.is_admin)
+
     elif tab == 'lista':
         try:
             # Obtener datos de la base de datos
@@ -764,6 +796,16 @@ def validacion_poligonos(tab):
             if vincular_ids:
                 poligonos = [p for p in poligonos if p.id not in vincular_ids]
                 app.logger.info(f'Excluidos {len(vincular_ids)} polígonos VINCULAR de la lista')
+
+            # Also exclude polygons marked ELIMINAR or VINCULAR by segunda validacion
+            seg_val_excluir_ids = set(
+                sv.poligono_id for sv in SegundaValidacionPoligono.query.filter(
+                    SegundaValidacionPoligono.decision.in_(['ELIMINAR', 'VINCULAR'])
+                ).all()
+            )
+            if seg_val_excluir_ids:
+                poligonos = [p for p in poligonos if p.id not in seg_val_excluir_ids]
+                app.logger.info(f'Excluidos {len(seg_val_excluir_ids)} polígonos por segunda validación')
             
             app.logger.info(f"Se encontraron {len(poligonos)} polígonos en la base de datos")
             
@@ -8076,6 +8118,485 @@ def api_validacion_poligonos_estadisticas():
         })
     except Exception as e:
         app.logger.error(f'Error en estadísticas de validación: {e}')
+        return jsonify({'error': str(e)}), 500
+
+
+# ============================================================
+# SEGUNDA VALIDACION - POLIGONOS (deduplicacion NUEVO vs NUEVO)
+# ============================================================
+
+_seg_val_poligonos_state = {
+    'status': 'idle',  # idle | running | done | error
+    'phase': '',
+    'progress': 0,
+    'message': '',
+    'result': None,
+}
+
+
+def _build_nuevo_geodataframe():
+    """Build an in-memory GeoDataFrame from Poligono records classified as NUEVO by megacapa."""
+    import geopandas as gpd
+    from utils.validacion_megacapa import construir_geometria
+
+    nuevos_vm = ValidacionMegacapa.query.filter_by(estatus_megacapa='NUEVO').all()
+    nuevo_poligono_ids = {vm.poligono_id for vm in nuevos_vm}
+
+    poligonos = Poligono.query.filter(Poligono.id.in_(nuevo_poligono_ids)).all()
+
+    rows = []
+    for p in poligonos:
+        geom, error = construir_geometria(p.coordenadas_corregidas)
+        if geom is None or geom.is_empty:
+            continue
+        rows.append({
+            'poligono_id': p.id,
+            'id_poligono': p.id_poligono,
+            'id_credito': p.id_credito,
+            'geometry': geom,
+        })
+
+    if not rows:
+        return gpd.GeoDataFrame()
+
+    gdf = gpd.GeoDataFrame(rows, geometry='geometry', crs='EPSG:4326')
+    return gdf
+
+
+def _calcular_traslapes_poligonos(on_progress=None):
+    """Calculate overlaps between NUEVO polygons (>= 90% bidirectional)."""
+    from shapely.validation import make_valid
+    from pyproj import Transformer
+
+    with app.app_context():
+        gdf = _build_nuevo_geodataframe()
+
+    if gdf.empty:
+        return []
+
+    sindex = gdf.sindex
+    pairs = []
+    total = len(gdf)
+
+    for pos_a in range(total):
+        if on_progress and pos_a % 50 == 0:
+            on_progress(pos_a, total)
+
+        row_a = gdf.iloc[pos_a]
+        geom_a = row_a.geometry
+        if geom_a is None or geom_a.is_empty:
+            continue
+        if not geom_a.is_valid:
+            geom_a = make_valid(geom_a)
+
+        # Project to UTM for area calculation
+        centroid = geom_a.centroid
+        utm_zone = int((centroid.x + 180) / 6) + 1
+        epsg_utm = f'EPSG:326{utm_zone:02d}' if centroid.y >= 0 else f'EPSG:327{utm_zone:02d}'
+        try:
+            transformer = Transformer.from_crs('EPSG:4326', epsg_utm, always_xy=True)
+        except Exception:
+            continue
+
+        try:
+            from shapely.ops import transform as shapely_transform
+            geom_a_utm = shapely_transform(transformer.transform, geom_a)
+            area_a = geom_a_utm.area
+        except Exception:
+            continue
+
+        if area_a <= 0:
+            continue
+
+        pid_a = row_a['poligono_id']
+        id_poligono_a = row_a.get('id_poligono', '')
+        id_credito_a = row_a.get('id_credito', '')
+
+        candidates = list(sindex.intersection(geom_a.bounds))
+        for pos_b in candidates:
+            if pos_b <= pos_a:
+                continue
+
+            row_b = gdf.iloc[pos_b]
+            pid_b = row_b['poligono_id']
+            geom_b = row_b.geometry
+            if geom_b is None or geom_b.is_empty:
+                continue
+            if not geom_b.is_valid:
+                geom_b = make_valid(geom_b)
+
+            try:
+                if not geom_a.intersects(geom_b):
+                    continue
+
+                geom_b_utm = shapely_transform(transformer.transform, geom_b)
+                area_b = geom_b_utm.area
+                if area_b <= 0:
+                    continue
+
+                intersection_utm = geom_a_utm.intersection(geom_b_utm)
+                inter_area = intersection_utm.area
+
+                overlap_pct_a = (inter_area / area_a) * 100
+                overlap_pct_b = (inter_area / area_b) * 100
+
+                if overlap_pct_a >= 90 and overlap_pct_b >= 90:
+                    id_credito_b = row_b.get('id_credito', '')
+                    pairs.append({
+                        'pid_a': pid_a,
+                        'pid_b': pid_b,
+                        'id_poligono_a': id_poligono_a,
+                        'id_poligono_b': row_b.get('id_poligono', ''),
+                        'id_credito_a': id_credito_a,
+                        'id_credito_b': id_credito_b,
+                        'overlap_pct_a': round(overlap_pct_a, 2),
+                        'overlap_pct_b': round(overlap_pct_b, 2),
+                        'same_credit': str(id_credito_a) == str(id_credito_b),
+                    })
+            except Exception:
+                continue
+
+    return pairs
+
+
+def _agrupar_y_decidir_poligonos(pairs):
+    """Group overlapping polygons and decide NUEVO/VINCULAR/ELIMINAR."""
+    if not pairs:
+        return []
+
+    node_info = {}
+    edges = []
+    for p in pairs:
+        pid_a, pid_b = p['pid_a'], p['pid_b']
+        if pid_a not in node_info:
+            node_info[pid_a] = {'id_poligono': p['id_poligono_a'], 'id_credito': p['id_credito_a']}
+        if pid_b not in node_info:
+            node_info[pid_b] = {'id_poligono': p['id_poligono_b'], 'id_credito': p['id_credito_b']}
+        edges.append((pid_a, pid_b))
+
+    # Union-Find
+    parent = {pid: pid for pid in node_info}
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a, b):
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            if ra < rb:
+                parent[rb] = ra
+            else:
+                parent[ra] = rb
+
+    for a, b in edges:
+        union(a, b)
+
+    # Build components
+    component_map = {}
+    for pid in node_info:
+        root = find(pid)
+        component_map.setdefault(root, []).append(pid)
+
+    # Decide per group
+    groups = []
+    for group_id, (root, members) in enumerate(sorted(component_map.items()), 1):
+        members.sort()
+        principal_pid = members[0]
+        principal_info = node_info[principal_pid]
+
+        unique_credits = set(str(node_info[m]['id_credito']) for m in members)
+        seen_credits = {str(principal_info['id_credito'])}
+
+        group = {
+            'group_id': group_id,
+            'principal_pid': principal_pid,
+            'principal_id_poligono': principal_info['id_poligono'],
+            'principal_id_credito': principal_info['id_credito'],
+            'members': [],
+        }
+
+        for m in members:
+            info = node_info[m]
+            cred = str(info['id_credito'])
+
+            if m == principal_pid:
+                decision = 'NUEVO'
+                reason = 'Polígono principal del grupo'
+            elif len(unique_credits) == 1:
+                decision = 'ELIMINAR'
+                reason = f'Duplicado mismo crédito. Eliminado a favor de {principal_info["id_poligono"]}'
+            else:
+                if cred == str(principal_info['id_credito']):
+                    decision = 'ELIMINAR'
+                    reason = f'Duplicado mismo crédito que principal {principal_info["id_poligono"]}'
+                elif cred in seen_credits:
+                    decision = 'ELIMINAR'
+                    reason = f'Crédito {cred} ya vinculado en este grupo'
+                else:
+                    decision = 'VINCULAR'
+                    reason = f'Diferente crédito, vinculado a {principal_info["id_poligono"]}'
+                    seen_credits.add(cred)
+
+            group['members'].append({
+                'poligono_id': m,
+                'id_poligono': info['id_poligono'],
+                'id_credito': info['id_credito'],
+                'decision': decision,
+                'reason': reason,
+            })
+
+        groups.append(group)
+
+    return groups
+
+
+def _run_seg_val_poligonos():
+    """Background pipeline for segunda validacion of poligonos."""
+    state = _seg_val_poligonos_state
+    try:
+        with app.app_context():
+            # Phase 1: Reset
+            state['phase'] = 'reset'
+            state['progress'] = 5
+            state['message'] = 'Limpiando resultados anteriores...'
+            db.session.query(SegundaValidacionPoligono).delete()
+            db.session.commit()
+
+            # Phase 2: Traslape
+            state['phase'] = 'traslape'
+            state['progress'] = 10
+            state['message'] = 'Construyendo geometrías y calculando traslapes...'
+
+            def on_progress(current, total):
+                if total > 0:
+                    pct = 10 + int((current / total) * 60)
+                    state['progress'] = min(pct, 70)
+                    state['message'] = f'Analizando polígono {current}/{total}...'
+
+            pairs = _calcular_traslapes_poligonos(on_progress)
+
+            # Phase 3: Agrupamiento
+            state['phase'] = 'agrupamiento'
+            state['progress'] = 75
+            state['message'] = f'Agrupando {len(pairs)} pares encontrados...'
+            groups = _agrupar_y_decidir_poligonos(pairs)
+
+            # Phase 4: Aplicando
+            state['phase'] = 'aplicando'
+            state['progress'] = 80
+            state['message'] = 'Guardando resultados en base de datos...'
+
+            vinculados = 0
+            eliminados = 0
+            count = 0
+
+            for group in groups:
+                for member in group['members']:
+                    registro = SegundaValidacionPoligono(
+                        poligono_id=member['poligono_id'],
+                        id_poligono=member['id_poligono'],
+                        id_credito=member['id_credito'],
+                        group_id=group['group_id'],
+                        is_principal=(member['poligono_id'] == group['principal_pid']),
+                        decision=member['decision'],
+                        principal_poligono_id=group['principal_pid'],
+                        principal_id_poligono=group['principal_id_poligono'],
+                        razon=member['reason'],
+                    )
+                    db.session.add(registro)
+                    count += 1
+
+                    if member['decision'] == 'VINCULAR':
+                        vinculados += 1
+                    elif member['decision'] == 'ELIMINAR':
+                        eliminados += 1
+
+                    if count % 100 == 0:
+                        db.session.commit()
+
+            db.session.commit()
+
+            # Count NUEVO from megacapa that had no duplicates
+            total_nuevos = ValidacionMegacapa.query.filter_by(estatus_megacapa='NUEVO').count()
+            poligonos_en_grupos = len([m for g in groups for m in g['members']])
+            sin_duplicados = total_nuevos - poligonos_en_grupos
+
+            # Phase 5: Done
+            state['phase'] = 'done'
+            state['status'] = 'done'
+            state['progress'] = 100
+            state['message'] = 'Segunda validación completada'
+            state['result'] = {
+                'total_nuevos_analizados': total_nuevos,
+                'total_pairs_found': len(pairs),
+                'total_groups': len(groups),
+                'verdaderamente_nuevos': sin_duplicados + sum(1 for g in groups for m in g['members'] if m['decision'] == 'NUEVO'),
+                'vinculados': vinculados,
+                'eliminados': eliminados,
+                'sin_duplicados': sin_duplicados,
+                'groups': groups,
+            }
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        state['status'] = 'error'
+        state['message'] = str(e)
+
+
+@app.route('/api/validacion-poligonos/segunda-validacion/ejecutar', methods=['POST'])
+@login_required
+def api_seg_val_poligonos_ejecutar():
+    if not current_user.is_admin:
+        return jsonify({'error': 'Solo administradores'}), 403
+
+    if _seg_val_poligonos_state['status'] == 'running':
+        return jsonify({'error': 'Ya hay una validación en curso'}), 409
+
+    _seg_val_poligonos_state.update({
+        'status': 'running',
+        'phase': 'iniciando',
+        'progress': 0,
+        'message': 'Iniciando segunda validación...',
+        'result': None,
+    })
+
+    import threading
+    t = threading.Thread(target=_run_seg_val_poligonos, daemon=True)
+    t.start()
+
+    return jsonify({'ok': True, 'message': 'Segunda validación iniciada'})
+
+
+@app.route('/api/validacion-poligonos/segunda-validacion/estado')
+@login_required
+def api_seg_val_poligonos_estado():
+    return jsonify(_seg_val_poligonos_state)
+
+
+@app.route('/api/validacion-poligonos/segunda-validacion/resultado')
+@login_required
+def api_seg_val_poligonos_resultado():
+    if _seg_val_poligonos_state['status'] == 'done' and _seg_val_poligonos_state['result']:
+        result = dict(_seg_val_poligonos_state['result'])
+        result.pop('groups', None)  # Don't send full groups in this endpoint
+        return jsonify(result)
+    return jsonify({'error': 'No hay resultados disponibles'}), 404
+
+
+@app.route('/api/validacion-poligonos/segunda-validacion/grupos')
+@login_required
+def api_seg_val_poligonos_grupos():
+    # Try in-memory first
+    if _seg_val_poligonos_state.get('result', {}).get('groups'):
+        return jsonify({'groups': _seg_val_poligonos_state['result']['groups']})
+
+    # Reconstruct from DB
+    try:
+        registros = SegundaValidacionPoligono.query.order_by(
+            SegundaValidacionPoligono.group_id,
+            SegundaValidacionPoligono.poligono_id
+        ).all()
+
+        groups_map = {}
+        for r in registros:
+            if r.group_id not in groups_map:
+                groups_map[r.group_id] = {
+                    'group_id': r.group_id,
+                    'principal_pid': r.principal_poligono_id,
+                    'principal_id_poligono': r.principal_id_poligono,
+                    'members': [],
+                }
+            groups_map[r.group_id]['members'].append({
+                'poligono_id': r.poligono_id,
+                'id_poligono': r.id_poligono,
+                'id_credito': r.id_credito,
+                'decision': r.decision,
+                'reason': r.razon,
+            })
+
+        return jsonify({'groups': list(groups_map.values())})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/validacion-poligonos/segunda-validacion/grupo-geometrias')
+@login_required
+def api_seg_val_poligonos_grupo_geometrias():
+    """Return GeoJSON for a set of poligono_ids."""
+    try:
+        from utils.validacion_megacapa import construir_geometria
+        from shapely.geometry import mapping
+
+        ids_param = request.args.get('ids', '')
+        if not ids_param:
+            return jsonify({'error': 'Parámetro ids requerido'}), 400
+
+        poligono_ids = [int(x) for x in ids_param.split(',') if x.strip()][:200]
+
+        features = []
+        for pid in poligono_ids:
+            poligono = Poligono.query.get(pid)
+            if not poligono:
+                continue
+
+            geom, error = construir_geometria(poligono.coordenadas_corregidas)
+            if geom is None:
+                continue
+
+            # Calculate area in hectares
+            try:
+                centroid = geom.centroid
+                utm_zone = int((centroid.x + 180) / 6) + 1
+                epsg_utm = f'EPSG:326{utm_zone:02d}' if centroid.y >= 0 else f'EPSG:327{utm_zone:02d}'
+                from pyproj import Transformer
+                from shapely.ops import transform as shapely_transform
+                transformer = Transformer.from_crs('EPSG:4326', epsg_utm, always_xy=True)
+                geom_utm = shapely_transform(transformer.transform, geom)
+                area_ha = geom_utm.area / 10000
+            except Exception:
+                area_ha = 0
+
+            features.append({
+                'type': 'Feature',
+                'properties': {
+                    'poligono_id': pid,
+                    'id_poligono': poligono.id_poligono,
+                    'id_credito': poligono.id_credito,
+                    'area_ha': round(area_ha, 4),
+                },
+                'geometry': mapping(geom),
+            })
+
+        return jsonify({
+            'type': 'FeatureCollection',
+            'features': features,
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/validacion-poligonos/segunda-validacion/reset', methods=['POST'])
+@login_required
+def api_seg_val_poligonos_reset():
+    if not current_user.is_admin:
+        return jsonify({'error': 'Solo administradores'}), 403
+    try:
+        deleted = db.session.query(SegundaValidacionPoligono).delete()
+        db.session.commit()
+        _seg_val_poligonos_state.update({
+            'status': 'idle',
+            'phase': '',
+            'progress': 0,
+            'message': '',
+            'result': None,
+        })
+        return jsonify({'ok': True, 'deleted': deleted})
+    except Exception as e:
+        db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
 
