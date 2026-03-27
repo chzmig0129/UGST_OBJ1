@@ -17,8 +17,7 @@ class ValidacionMegacapa(db.Model):
     motivo = db.Column(db.Text, nullable=True)             # Razón: 'traslape>=85%', 'traslape<85%', 'sin_coordenadas', 'puntos_insuficientes'
     fecha_validacion = db.Column(db.DateTime, default=datetime.utcnow)
 
-    # Relationship
-    poligono = db.relationship('Poligono', backref=db.backref('validacion_megacapa', uselist=False, lazy=True))
+    # Note: no ORM relationship — Poligono is defined in app.py, use poligono_id for joins
 
     def to_dict(self):
         return {

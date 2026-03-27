@@ -24,11 +24,9 @@
             <a href="{{ url_for('validacion_poligonos', tab='cargar') }}" class="tab-item {% if tab == 'cargar' %}active{% endif %}">
                 Cargar Datos
             </a>
-            <li class="nav-item">
-                <a class="nav-link {% if tab == 'megacapa' %}active{% endif %}" href="{{ url_for('validacion_poligonos', tab='megacapa') }}">
-                    <i class="fas fa-layer-group me-1"></i>Validación Megacapa
-                </a>
-            </li>
+            <a href="{{ url_for('validacion_poligonos', tab='megacapa') }}" class="tab-item {% if tab == 'megacapa' %}active{% endif %}">
+                Validación Megacapa
+            </a>
             <a href="{{ url_for('validacion_poligonos', tab='lista') }}" class="tab-item {% if tab == 'lista' %}active{% endif %}">
                 Lista de Polígonos
             </a>
