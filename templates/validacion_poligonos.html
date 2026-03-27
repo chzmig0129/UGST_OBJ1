@@ -36,6 +36,9 @@
             <a href="{{ url_for('validacion_poligonos', tab='generar') }}" class="tab-item {% if tab == 'generar' %}active{% endif %}">
                 Generar Fichas
             </a>
+            <a href="{{ url_for('validacion_poligonos', tab='resultados') }}" class="tab-item {% if tab == 'resultados' %}active{% endif %}">
+                Resultados
+            </a>
         </div>
     </div>
 
@@ -489,6 +492,13 @@ function verMapaMegacapa(validacionId, estatus, traslape) {
                     <h3 class="mb-0">Datos del archivo: {{ filename }}</h3>
                     <div class="d-flex align-items-center gap-2">
                         <span class="badge bg-primary">{{ data|length }} registros</span>
+                        {% if current_user.is_admin %}
+                        <form action="{{ url_for('asignar_poligonos_validacion') }}" method="POST" style="display: inline;" onsubmit="return confirm('¿Asignar polígonos equitativamente entre los usuarios? Esto solo afecta polígonos sin asignar.');">
+                            <button type="submit" class="btn btn-sm btn-outline-primary">
+                                <i class="bi bi-people"></i> Asignar Polígonos
+                            </button>
+                        </form>
+                        {% endif %}
                         <small class="text-muted">
                             <i class="bi bi-arrow-left-right"></i> Desplazarse horizontalmente para ver todas las columnas
                         </small>
@@ -3459,6 +3469,158 @@ document.addEventListener('DOMContentLoaded', function() {
         setInterval(verifyAndRestoreFields, 1000);
     </script>
         
+        {% elif tab == 'resultados' %}
+        <!-- Pestaña de Resultados -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h3 class="mb-0">Resultados - Polígonos Editados</h3>
+                    <span class="badge bg-success">{{ resultados_data|length }} editados</span>
+                </div>
+                
+                <!-- Stats cards (loaded via API) -->
+                <div class="row mb-4" id="stats-cards">
+                    <div class="col-md-3">
+                        <div class="card bg-primary text-white">
+                            <div class="card-body text-center">
+                                <h5 id="stat-total">--</h5>
+                                <small>Total Polígonos</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-success text-white">
+                            <div class="card-body text-center">
+                                <h5 id="stat-editados">--</h5>
+                                <small>Con Estatus</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-warning text-dark">
+                            <div class="card-body text-center">
+                                <h5 id="stat-pendientes">--</h5>
+                                <small>Pendientes</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-info text-white">
+                            <div class="card-body text-center">
+                                <h5 id="stat-avance">--</h5>
+                                <small>Avance</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {% if is_admin %}
+                <!-- Per-user progress (admin only) -->
+                <div class="row mb-4" id="user-progress">
+                </div>
+                {% endif %}
+
+                <!-- Results table -->
+                {% if resultados_data %}
+                <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+                    <table class="table table-hover table-striped table-sm">
+                        <thead class="table-light sticky-top">
+                            <tr>
+                                <th>#</th>
+                                <th>ID_POLIGONO</th>
+                                <th>ID_CREDITO</th>
+                                <th>SUPERFICIE</th>
+                                <th>AREA_DIGITALIZADA</th>
+                                <th>ESTATUS</th>
+                                <th>COMENTARIOS</th>
+                                <th>DESCRIPCION</th>
+                                <th>EDITADO POR</th>
+                                <th>FECHA</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in resultados_data %}
+                            <tr>
+                                <td>{{ loop.index }}</td>
+                                <td>{{ row.ID_POLIGONO or '--' }}</td>
+                                <td>{{ row.ID_CREDITO or '--' }}</td>
+                                <td>{{ '%.2f'|format(row.SUPERFICIE|float) if row.SUPERFICIE else '--' }}</td>
+                                <td>{{ '%.2f'|format(row.AREA_DIGITALIZADA|float) if row.AREA_DIGITALIZADA else '--' }} ha</td>
+                                <td>
+                                    {% if row.ESTATUS == '6' %}
+                                        <span class="badge bg-warning text-dark">6</span>
+                                    {% elif row.ESTATUS == '7' %}
+                                        <span class="badge bg-success">7</span>
+                                    {% else %}
+                                        {{ row.ESTATUS or '--' }}
+                                    {% endif %}
+                                </td>
+                                <td title="{{ row.COMENTARIOS or '' }}">{{ row.COMENTARIOS[:30] + '...' if row.COMENTARIOS and row.COMENTARIOS|length > 30 else row.COMENTARIOS or '--' }}</td>
+                                <td title="{{ row.DESCRIPCION or '' }}">{{ row.DESCRIPCION[:30] + '...' if row.DESCRIPCION and row.DESCRIPCION|length > 30 else row.DESCRIPCION or '--' }}</td>
+                                <td><strong>{{ row.EDITADO_POR }}</strong></td>
+                                <td>{{ row.FECHA_EDITADO }}</td>
+                                <td>
+                                    <a href="{{ url_for('validacion_poligonos', tab='editar', db_id=row.db_id) }}" title="Ver/Editar">
+                                        <i class="bi bi-pencil-square"></i>
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle"></i> No hay polígonos editados aún. Los polígonos aparecerán aquí después de ser editados en la pestaña Lista.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <script>
+        // Load stats via API
+        document.addEventListener('DOMContentLoaded', function() {
+            fetch('/api/validacion-poligonos/estadisticas')
+                .then(function(r) { return r.json(); })
+                .then(function(stats) {
+                    document.getElementById('stat-total').textContent = stats.total;
+                    document.getElementById('stat-editados').textContent = stats.con_estatus;
+                    document.getElementById('stat-pendientes').textContent = stats.sin_estatus;
+                    var pct = stats.total > 0 ? ((stats.con_estatus / stats.total) * 100).toFixed(1) : 0;
+                    document.getElementById('stat-avance').textContent = pct + '%';
+                    
+                    // Per-user progress (admin only)
+                    var userDiv = document.getElementById('user-progress');
+                    if (userDiv && stats.por_usuario) {
+                        var html = '';
+                        stats.por_usuario.forEach(function(u) {
+                            html += '<div class="col-md-4 mb-3">' +
+                                '<div class="card">' +
+                                '<div class="card-body">' +
+                                '<h6 class="card-title"><i class="bi bi-person"></i> ' + u.username + '</h6>' +
+                                '<div class="d-flex justify-content-between mb-1">' +
+                                '<small>Editados: ' + u.editados + ' / ' + u.asignados + '</small>' +
+                                '<small>' + u.avance_pct + '%</small>' +
+                                '</div>' +
+                                '<div class="progress" style="height: 20px;">' +
+                                '<div class="progress-bar bg-success" style="width: ' + u.avance_pct + '%">' + u.editados + '</div>' +
+                                '</div>' +
+                                '<small class="text-muted">Pendientes: ' + u.pendientes + '</small>' +
+                                '</div></div></div>';
+                        });
+                        if (stats.sin_asignar > 0) {
+                            html += '<div class="col-12"><div class="alert alert-warning mb-0">' +
+                                '<i class="bi bi-exclamation-triangle"></i> ' + stats.sin_asignar + ' polígonos sin asignar' +
+                                '</div></div>';
+                        }
+                        userDiv.innerHTML = html;
+                    }
+                })
+                .catch(function(err) { console.error('Error loading stats:', err); });
+        });
+        </script>
+
         {% elif tab == 'generar' %}
 
         <!-- Pestaña de Generar Fichas -->
