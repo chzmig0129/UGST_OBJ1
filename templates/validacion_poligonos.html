@@ -27,6 +27,9 @@
             <a href="{{ url_for('validacion_poligonos', tab='megacapa') }}" class="tab-item {% if tab == 'megacapa' %}active{% endif %}">
                 Validación Megacapa
             </a>
+            <a href="{{ url_for('validacion_poligonos', tab='segunda') }}" class="tab-item {% if tab == 'segunda' %}active{% endif %}">
+                Segunda Validación
+            </a>
             <a href="{{ url_for('validacion_poligonos', tab='lista') }}" class="tab-item {% if tab == 'lista' %}active{% endif %}">
                 Lista de Polígonos
             </a>
@@ -407,6 +410,279 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 </div>
+
+        {% elif tab == 'segunda' %}
+        <!-- Pestaña de Segunda Validación -->
+        <div class="container-fluid mt-3">
+            <!-- Summary cards -->
+            <div class="row mb-4">
+                <div class="col-md-2">
+                    <div class="card text-center">
+                        <div class="card-body">
+                            <h5 class="card-title">NUEVO (Megacapa)</h5>
+                            <h2 class="text-primary" id="sv-total-nuevos">{{ resumen_sv.get('total_nuevos', 0) }}</h2>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="card text-center border-success">
+                        <div class="card-body">
+                            <h5 class="card-title">Verdaderamente Nuevos</h5>
+                            <h2 class="text-success" id="sv-verdaderos">{{ resumen_sv.get('verdaderamente_nuevos', 0) }}</h2>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="card text-center">
+                        <div class="card-body">
+                            <h5 class="card-title">Grupos</h5>
+                            <h2 class="text-info" id="sv-grupos">{{ resumen_sv.get('grupos', 0) }}</h2>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="card text-center border-warning">
+                        <div class="card-body">
+                            <h5 class="card-title">VINCULAR</h5>
+                            <h2 class="text-warning" id="sv-vincular">{{ resumen_sv.get('vincular', 0) }}</h2>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="card text-center border-danger">
+                        <div class="card-body">
+                            <h5 class="card-title">ELIMINAR</h5>
+                            <h2 class="text-danger" id="sv-eliminar">{{ resumen_sv.get('eliminar', 0) }}</h2>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-2 d-flex align-items-center">
+                    {% if is_admin %}
+                    <div class="w-100">
+                        <button class="btn btn-danger btn-lg w-100 mb-2" id="btn-ejecutar-sv" onclick="ejecutarSegundaValidacion()">
+                            <i class="bi bi-play-fill"></i> Ejecutar
+                        </button>
+                        <button class="btn btn-outline-secondary btn-sm w-100" onclick="resetSegundaValidacion()">
+                            <i class="bi bi-arrow-counterclockwise"></i> Resetear
+                        </button>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Progress bar (hidden by default) -->
+            <div class="card mb-3" id="sv-progress-card" style="display: none;">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between mb-1">
+                        <strong id="sv-phase">Iniciando...</strong>
+                        <span id="sv-pct">0%</span>
+                    </div>
+                    <div class="progress" style="height: 25px;">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated bg-danger" id="sv-progress-bar" style="width: 0%"></div>
+                    </div>
+                    <small class="text-muted" id="sv-message"></small>
+                </div>
+            </div>
+
+            <!-- Groups section -->
+            <div class="card" id="sv-groups-card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Grupos de Duplicados</h5>
+                    <div>
+                        <button class="btn btn-sm btn-outline-secondary active" onclick="filtrarGruposSV('todos')" id="sv-filtro-todos">Todos</button>
+                        <button class="btn btn-sm btn-outline-warning" onclick="filtrarGruposSV('VINCULAR')" id="sv-filtro-VINCULAR">Con VINCULAR</button>
+                        <button class="btn btn-sm btn-outline-danger" onclick="filtrarGruposSV('ELIMINAR')" id="sv-filtro-ELIMINAR">Con ELIMINAR</button>
+                    </div>
+                </div>
+                <div class="card-body p-0" id="sv-groups-container">
+                    <div class="text-center p-4 text-muted" id="sv-groups-empty">
+                        {% if resumen_sv.get('grupos', 0) > 0 %}
+                        Cargando grupos...
+                        {% else %}
+                        No hay resultados. Ejecute la segunda validación para detectar duplicados entre polígonos NUEVO.
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal Mapa Grupo -->
+        <div class="modal fade" id="modalMapaGrupo" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-xl">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="modalGrupoTitle">Grupo de Duplicados</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body p-0">
+                        <div id="mapaGrupo" style="height: 500px; width: 100%;"></div>
+                    </div>
+                    <div class="modal-footer">
+                        <span id="grupoInfoText" class="me-auto text-muted"></span>
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script>
+        var svMapInstance = null;
+
+        function ejecutarSegundaValidacion() {
+            if (!confirm('¿Ejecutar segunda validación? Esto analizará traslapes entre polígonos NUEVO.')) return;
+            
+            document.getElementById('sv-progress-card').style.display = '';
+            document.getElementById('btn-ejecutar-sv').disabled = true;
+            
+            fetch('/api/validacion-poligonos/segunda-validacion/ejecutar', {method: 'POST'})
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.error) { alert(data.error); return; }
+                pollSegundaValidacion();
+            });
+        }
+
+        function pollSegundaValidacion() {
+            fetch('/api/validacion-poligonos/segunda-validacion/estado')
+            .then(function(r) { return r.json(); })
+            .then(function(state) {
+                var bar = document.getElementById('sv-progress-bar');
+                bar.style.width = state.progress + '%';
+                document.getElementById('sv-pct').textContent = state.progress + '%';
+                document.getElementById('sv-phase').textContent = state.phase || '';
+                document.getElementById('sv-message').textContent = state.message || '';
+                
+                if (state.status === 'running') {
+                    setTimeout(pollSegundaValidacion, 1500);
+                } else if (state.status === 'done') {
+                    bar.classList.remove('progress-bar-animated');
+                    bar.classList.replace('bg-danger', 'bg-success');
+                    document.getElementById('btn-ejecutar-sv').disabled = false;
+                    // Reload page to show results
+                    setTimeout(function() { location.reload(); }, 1000);
+                } else if (state.status === 'error') {
+                    bar.classList.replace('bg-danger', 'bg-warning');
+                    alert('Error: ' + state.message);
+                    document.getElementById('btn-ejecutar-sv').disabled = false;
+                }
+            });
+        }
+
+        function resetSegundaValidacion() {
+            if (!confirm('¿Resetear resultados de segunda validación? Los polígonos volverán a aparecer en la Lista.')) return;
+            fetch('/api/validacion-poligonos/segunda-validacion/reset', {method: 'POST'})
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.ok) { location.reload(); }
+                else { alert(data.error); }
+            });
+        }
+
+        function cargarGruposSV() {
+            fetch('/api/validacion-poligonos/segunda-validacion/grupos')
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (!data.groups || data.groups.length === 0) return;
+                
+                var container = document.getElementById('sv-groups-container');
+                var html = '<div class="list-group list-group-flush">';
+                
+                data.groups.forEach(function(g) {
+                    var hasVincular = g.members.some(function(m) { return m.decision === 'VINCULAR'; });
+                    var hasEliminar = g.members.some(function(m) { return m.decision === 'ELIMINAR'; });
+                    var filterClass = '';
+                    if (hasVincular) filterClass += ' sv-has-vincular';
+                    if (hasEliminar) filterClass += ' sv-has-eliminar';
+                    
+                    var pids = g.members.map(function(m) { return m.poligono_id; }).join(',');
+                    
+                    html += '<div class="list-group-item sv-group-item' + filterClass + '">';
+                    html += '<div class="d-flex justify-content-between align-items-center">';
+                    html += '<div>';
+                    html += '<strong>Grupo ' + g.group_id + '</strong> ';
+                    html += '<span class="badge bg-secondary">' + g.members.length + ' polígonos</span> ';
+                    html += '<small class="text-muted">Principal: ' + (g.principal_id_poligono || g.principal_pid) + '</small>';
+                    html += '</div>';
+                    html += '<button class="btn btn-sm btn-primary" onclick="verMapaGrupo(' + g.group_id + ', \'' + pids + '\')">';
+                    html += '<i class="bi bi-map"></i> Mapa</button>';
+                    html += '</div>';
+                    
+                    html += '<div class="mt-2"><table class="table table-sm table-bordered mb-0"><thead><tr>';
+                    html += '<th>ID Polígono</th><th>ID Crédito</th><th>Decisión</th><th>Razón</th></tr></thead><tbody>';
+                    
+                    g.members.forEach(function(m) {
+                        var badgeClass = m.decision === 'NUEVO' ? 'bg-success' : m.decision === 'VINCULAR' ? 'bg-warning text-dark' : 'bg-danger';
+                        html += '<tr><td>' + (m.id_poligono || '') + '</td>';
+                        html += '<td>' + (m.id_credito || '') + '</td>';
+                        html += '<td><span class="badge ' + badgeClass + '">' + m.decision + '</span></td>';
+                        html += '<td><small>' + m.reason + '</small></td></tr>';
+                    });
+                    
+                    html += '</tbody></table></div></div>';
+                });
+                
+                html += '</div>';
+                container.innerHTML = html;
+            });
+        }
+
+        function filtrarGruposSV(tipo) {
+            var items = document.querySelectorAll('.sv-group-item');
+            items.forEach(function(item) {
+                if (tipo === 'todos') {
+                    item.style.display = '';
+                } else if (tipo === 'VINCULAR') {
+                    item.style.display = item.classList.contains('sv-has-vincular') ? '' : 'none';
+                } else if (tipo === 'ELIMINAR') {
+                    item.style.display = item.classList.contains('sv-has-eliminar') ? '' : 'none';
+                }
+            });
+            document.querySelectorAll('[id^="sv-filtro-"]').forEach(function(btn) { btn.classList.remove('active'); });
+            document.getElementById('sv-filtro-' + tipo).classList.add('active');
+        }
+
+        function verMapaGrupo(groupId, pidsStr) {
+            var modal = new bootstrap.Modal(document.getElementById('modalMapaGrupo'));
+            document.getElementById('modalGrupoTitle').textContent = 'Grupo ' + groupId;
+            modal.show();
+            
+            setTimeout(function() {
+                if (svMapInstance) { svMapInstance.remove(); }
+                svMapInstance = L.map('mapaGrupo').setView([23.6, -102.5], 5);
+                L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                    attribution: 'Esri'
+                }).addTo(svMapInstance);
+                
+                var colors = ['#3388ff', '#ff3333', '#33ff33', '#ff33ff', '#ffff33', '#33ffff', '#ff8833', '#8833ff'];
+                
+                fetch('/api/validacion-poligonos/segunda-validacion/grupo-geometrias?ids=' + pidsStr)
+                .then(function(r) { return r.json(); })
+                .then(function(geojson) {
+                    var bounds = L.latLngBounds();
+                    geojson.features.forEach(function(f, i) {
+                        var color = colors[i % colors.length];
+                        var layer = L.geoJSON(f, {
+                            style: { color: color, weight: 3, fillOpacity: 0.3 }
+                        }).addTo(svMapInstance);
+                        layer.bindTooltip(
+                            f.properties.id_poligono + '<br>Crédito: ' + f.properties.id_credito + '<br>Área: ' + f.properties.area_ha + ' ha',
+                            {permanent: false}
+                        );
+                        bounds.extend(layer.getBounds());
+                    });
+                    if (bounds.isValid()) svMapInstance.fitBounds(bounds, {padding: [30, 30]});
+                    document.getElementById('grupoInfoText').textContent = geojson.features.length + ' polígonos en el grupo';
+                });
+            }, 300);
+        }
+
+        // Auto-load groups on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            if (document.getElementById('sv-groups-container')) {
+                cargarGruposSV();
+            }
+        });
+        </script>
 
         {% elif tab == 'lista' %}
         <!-- Pestaña de Lista de Polígonos -->
