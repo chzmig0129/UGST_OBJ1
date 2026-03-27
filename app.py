@@ -946,21 +946,32 @@ def cargar_excel():
             app.logger.info(f"Columnas normalizadas: {df.columns.tolist()}")
             
             # --- INICIO: Validar columnas requeridas ---
-            required_columns = {'IF', 'ID_CREDITO', 'ID_PERSONA', 'ID_POLIGONO', 'SUPERFICIE', 'COORDENADAS'}
-            actual_columns = set(df.columns)
-            
-            if actual_columns != required_columns:
-                missing_cols = required_columns - actual_columns
-                extra_cols = actual_columns - required_columns
-                error_parts = []
-                if missing_cols:
-                    error_parts.append(f"Faltan columnas: {', '.join(sorted(list(missing_cols)))}")
-                if extra_cols:
-                    error_parts.append(f"Hay columnas extra: {', '.join(sorted(list(extra_cols)))}")
+            legacy_required = {'IF', 'ID_CREDITO', 'ID_PERSONA', 'ID_POLIGONO', 'SUPERFICIE', 'COORDENADAS'}
+            consolidado_required = {'IF', 'ID_CREDITO', 'ID_ACREDITADO', 'ID_POLIGONO', 'SUPERFICIE', 'COORDENADAS_NORMALIZADAS'}
+            actual = set(df.columns)
 
-                error_msg = f"El excel no sigue el formato. Favor de verificar el nombre de las columnas. Columnas requeridas: {', '.join(sorted(list(required_columns)))}. Detalles: {'. '.join(error_parts)}"
+            is_legacy = legacy_required.issubset(actual)
+            is_consolidado = consolidado_required.issubset(actual)
+
+            if not is_legacy and not is_consolidado:
+                missing_legacy = legacy_required - actual
+                missing_consolidado = consolidado_required - actual
+                error_msg = (
+                    f"El excel no sigue ningún formato reconocido. "
+                    f"Formato legacy — faltan columnas: {', '.join(sorted(missing_legacy))}. "
+                    f"Formato consolidado — faltan columnas: {', '.join(sorted(missing_consolidado))}."
+                )
                 flash(error_msg, 'error')
                 return redirect(url_for('validacion_poligonos', tab='cargar'))
+
+            # Detect format and normalise column names for consolidado
+            if is_consolidado and not is_legacy:
+                formato_excel = 'consolidado'
+                df.rename(columns={'ID_ACREDITADO': 'ID_PERSONA', 'COORDENADAS_NORMALIZADAS': 'COORDENADAS_NORMALIZADAS_SRC'}, inplace=True)
+            else:
+                formato_excel = 'legacy'
+
+            app.logger.info(f"Formato Excel detectado: {formato_excel}")
             # --- FIN: Validar columnas requeridas ---
 
             # Asegurar que exista la columna COORDENADAS (Esta validación ya está cubierta arriba, se podría quitar pero la dejamos por si acaso)
@@ -977,8 +988,26 @@ def cargar_excel():
             #         return redirect(url_for('validacion_poligonos'))
             
             # Procesar coordenadas
-            df['COORDENADAS_DECIMALES'] = df.apply(procesar_coordenadas_dms, axis=1)
-            df['COORDENADAS_DECIMALES_CORREGIDAS'] = df['COORDENADAS_DECIMALES'].apply(corregir_longitud)
+            if formato_excel == 'consolidado':
+                # COORDENADAS_NORMALIZADAS already has decimal coords in format: lat,lon|lat,lon|...
+                # Normalize separator to ' | ' (with spaces) to match what downstream code expects
+                def normalizar_separador(val):
+                    if pd.isna(val) or str(val).strip() == '':
+                        return ''
+                    # Replace '|' with ' | ' but avoid double-spacing if already spaced
+                    return ' | '.join(part.strip() for part in str(val).split('|'))
+
+                df['COORDENADAS_DECIMALES'] = df['COORDENADAS_NORMALIZADAS_SRC'].apply(
+                    lambda x: str(x) if pd.notna(x) else ''
+                )
+                df['COORDENADAS_DECIMALES_CORREGIDAS'] = df['COORDENADAS_NORMALIZADAS_SRC'].apply(normalizar_separador)
+                # Also keep original COORDENADAS if present, otherwise use the normalized as original
+                if 'COORDENADAS' not in df.columns:
+                    df['COORDENADAS'] = df['COORDENADAS_NORMALIZADAS_SRC']
+            else:
+                # Legacy flow — process DMS coordinates as before
+                df['COORDENADAS_DECIMALES'] = df.apply(procesar_coordenadas_dms, axis=1)
+                df['COORDENADAS_DECIMALES_CORREGIDAS'] = df['COORDENADAS_DECIMALES'].apply(corregir_longitud)
             
             # No calculamos el área aquí, la dejamos como None inicialmente
             # df['AREA_DIGITALIZADA'] = areas
@@ -999,6 +1028,16 @@ def cargar_excel():
                 db.session.commit()
                 app.logger.info(f"Tabla 'poligono' limpiada. Insertando {len(df)} registros...")
                 
+                def safe_str(val, default=''):
+                    if val is None:
+                        return default
+                    try:
+                        if pd.isna(val):
+                            return default
+                    except (TypeError, ValueError):
+                        pass
+                    return str(val).strip()
+
                 count = 0
                 for index, row in df.iterrows():
                     # Crear objeto Poligono mapeando columnas del DF a atributos del modelo
@@ -1009,19 +1048,19 @@ def cargar_excel():
                         superficie_val = None
 
                     poligono = Poligono(
-                        id_poligono=str(row.get('ID_POLIGONO', '')),
-                        if_val=str(row.get('IF', '')), # Mapeado a if_val
-                        id_credito=str(row.get('ID_CREDITO', '')),
-                        id_persona=str(row.get('ID_PERSONA', '')),
+                        id_poligono=safe_str(row.get('ID_POLIGONO')),
+                        if_val=safe_str(row.get('IF')),  # Mapeado a if_val
+                        id_credito=safe_str(row.get('ID_CREDITO')),
+                        id_persona=safe_str(row.get('ID_PERSONA')),  # Already renamed from ID_ACREDITADO in task 1
                         superficie=superficie_val,
-                        estado=str(row.get('ESTADO', '')), # Añadir si existe en Excel
-                        municipio=str(row.get('MUNICIPIO', '')), # Añadir si existe en Excel
-                        coordenadas=str(row.get('COORDENADAS', '')),
-                        coordenadas_corregidas=str(row.get('COORDENADAS_DECIMALES_CORREGIDAS', '')), # Usar las corregidas
-                        area_digitalizada=None, # Se inicializa como None
-                        estatus=str(row.get('ESTATUS', '')), # Añadir si existe en Excel
+                        estado=safe_str(row.get('ESTADO')),          # Populated from XLSX for consolidado
+                        municipio=safe_str(row.get('MUNICIPIO')),     # Populated from XLSX for consolidado
+                        coordenadas=safe_str(row.get('COORDENADAS')),
+                        coordenadas_corregidas=safe_str(row.get('COORDENADAS_DECIMALES_CORREGIDAS')),  # Usar las corregidas
+                        area_digitalizada=None,  # Se inicializa como None
+                        estatus=safe_str(row.get('ESTATUS')),         # Populated from XLSX for consolidado
                         comentarios=None,        # Se inicializa como None
-                        descripcion=str(row.get('DESCRIPCION', ''))  # Añadir descripción
+                        descripcion=safe_str(row.get('DESCRIPCION'))  # Populated from XLSX for consolidado
                         # datos_json ya no existe
                     )
                     db.session.add(poligono)
