@@ -196,6 +196,8 @@ login_manager.login_message_category = 'warning'
 from models.user import User  # noqa: E402
 from models.analizador_15k import Analizador15K  # noqa: E402
 from models.backup_analizador import BackupAnalizador15K  # noqa: E402
+from models.validacion_megacapa import ValidacionMegacapa  # noqa: E402
+from utils.validacion_megacapa import ejecutar_validacion_megacapa  # noqa: E402
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -702,16 +704,48 @@ def unir_archivos():
 @app.route('/validacion-poligonos/<tab>')
 @login_required
 def validacion_poligonos(tab):
-    valid_tabs = ['cargar', 'lista', 'editar', 'generar']
+    valid_tabs = ['cargar', 'megacapa', 'lista', 'editar', 'generar']
     
     if tab not in valid_tabs:
         tab = 'cargar'
     
-    if tab == 'lista':
+    if tab == 'megacapa':
+        try:
+            # Check if validation results already exist
+            resultados = ValidacionMegacapa.query.all()
+            total_poligonos = Poligono.query.count()
+            
+            resumen = {
+                'total': total_poligonos,
+                'validados': len(resultados),
+                'vincular': sum(1 for r in resultados if r.estatus_megacapa == 'VINCULAR'),
+                'nuevo': sum(1 for r in resultados if r.estatus_megacapa == 'NUEVO'),
+                'pendientes': total_poligonos - len(resultados),
+            }
+            
+            return render_template('validacion_poligonos.html',
+                                   tab=tab,
+                                   resultados=[r.to_dict() for r in resultados],
+                                   resumen=resumen)
+        except Exception as e:
+            app.logger.error(f'Error en tab megacapa: {e}')
+            flash(f'Error: {str(e)}', 'error')
+            return render_template('validacion_poligonos.html', tab=tab, resultados=[], resumen={})
+    
+    elif tab == 'lista':
         try:
             # Obtener datos de la base de datos
             app.logger.info("Consultando polígonos en la base de datos...")
             poligonos = Poligono.query.all()
+            
+            # Exclude VINCULAR polygons (already validated against megacapa)
+            vincular_ids = set(
+                v.poligono_id for v in ValidacionMegacapa.query.filter_by(estatus_megacapa='VINCULAR').all()
+            )
+            if vincular_ids:
+                poligonos = [p for p in poligonos if p.id not in vincular_ids]
+                app.logger.info(f'Excluidos {len(vincular_ids)} polígonos VINCULAR de la lista')
+            
             app.logger.info(f"Se encontraron {len(poligonos)} polígonos en la base de datos")
             
             # Convertir a formato compatible con la plantilla (LEYENDO DIRECTO DE COLUMNAS)
@@ -1099,6 +1133,61 @@ def cargar_excel():
     
     flash('Formato de archivo no permitido. Solo se aceptan .xlsx o .xls', 'error')
     return redirect(url_for('validacion_poligonos'))
+
+@app.route('/ejecutar-validacion-megacapa', methods=['POST'])
+@login_required
+def ejecutar_validacion_megacapa_route():
+    try:
+        # Clear previous results
+        db.session.query(ValidacionMegacapa).delete()
+        db.session.commit()
+        
+        # Get all loaded polygons
+        poligonos = Poligono.query.all()
+        if not poligonos:
+            flash('No hay polígonos cargados. Primero cargue un archivo Excel.', 'warning')
+            return redirect(url_for('validacion_poligonos', tab='megacapa'))
+        
+        app.logger.info(f'Ejecutando validación megacapa para {len(poligonos)} polígonos...')
+        
+        # Run spatial validation
+        resultados = ejecutar_validacion_megacapa(poligonos)
+        
+        # Save results to DB
+        count = 0
+        for r in resultados:
+            registro = ValidacionMegacapa(
+                poligono_id=r['poligono_id'],
+                id_poligono=r['id_poligono'],
+                id_credito=r['id_credito'],
+                estatus_megacapa=r['estatus_megacapa'],
+                id_poligono_unico=r['id_poligono_unico'],
+                porcentaje_traslape=r['porcentaje_traslape'],
+                id_credito_megacapa=r['id_credito_megacapa'],
+                motivo=r['motivo'],
+            )
+            db.session.add(registro)
+            count += 1
+            if count % 100 == 0:
+                db.session.commit()
+        
+        db.session.commit()
+        
+        vincular = sum(1 for r in resultados if r['estatus_megacapa'] == 'VINCULAR')
+        nuevo = sum(1 for r in resultados if r['estatus_megacapa'] == 'NUEVO')
+        
+        app.logger.info(f'Validación megacapa completada: {vincular} VINCULAR, {nuevo} NUEVO')
+        flash(f'Validación completada: {vincular} VINCULAR, {nuevo} NUEVO de {len(resultados)} polígonos', 'success')
+        
+        return redirect(url_for('validacion_poligonos', tab='megacapa'))
+        
+    except Exception as e:
+        app.logger.error(f'Error en validación megacapa: {e}')
+        import traceback
+        traceback.print_exc()
+        db.session.rollback()
+        flash(f'Error al ejecutar validación: {str(e)}', 'error')
+        return redirect(url_for('validacion_poligonos', tab='megacapa'))
 
 @app.route('/actualizar-fila', methods=['POST'])
 @login_required

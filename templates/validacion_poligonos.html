@@ -24,6 +24,11 @@
             <a href="{{ url_for('validacion_poligonos', tab='cargar') }}" class="tab-item {% if tab == 'cargar' %}active{% endif %}">
                 Cargar Datos
             </a>
+            <li class="nav-item">
+                <a class="nav-link {% if tab == 'megacapa' %}active{% endif %}" href="{{ url_for('validacion_poligonos', tab='megacapa') }}">
+                    <i class="fas fa-layer-group me-1"></i>Validación Megacapa
+                </a>
+            </li>
             <a href="{{ url_for('validacion_poligonos', tab='lista') }}" class="tab-item {% if tab == 'lista' %}active{% endif %}">
                 Lista de Polígonos
             </a>
@@ -91,6 +96,112 @@
             </div>
         </div>
         
+        {% elif tab == 'megacapa' %}
+<div class="container-fluid mt-3">
+    <!-- Summary cards -->
+    <div class="row mb-4">
+        <div class="col-md-2">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5 class="card-title">Total</h5>
+                    <h2 class="text-primary">{{ resumen.get('total', 0) }}</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5 class="card-title">Validados</h5>
+                    <h2 class="text-info">{{ resumen.get('validados', 0) }}</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card text-center border-success">
+                <div class="card-body">
+                    <h5 class="card-title">VINCULAR</h5>
+                    <h2 class="text-success">{{ resumen.get('vincular', 0) }}</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card text-center border-warning">
+                <div class="card-body">
+                    <h5 class="card-title">NUEVO</h5>
+                    <h2 class="text-warning">{{ resumen.get('nuevo', 0) }}</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5 class="card-title">Pendientes</h5>
+                    <h2 class="text-secondary">{{ resumen.get('pendientes', 0) }}</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2 d-flex align-items-center">
+            <form method="POST" action="{{ url_for('ejecutar_validacion_megacapa_route') }}" class="w-100">
+                <button type="submit" class="btn btn-primary btn-lg w-100" onclick="this.disabled=true; this.innerHTML='<span class=\'spinner-border spinner-border-sm\'></span> Procesando...'; this.form.submit();">
+                    <i class="fas fa-play me-1"></i>Ejecutar Validación
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Results table -->
+    {% if resultados %}
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">Resultados de Validación</h5>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive" style="max-height: 600px; overflow-y: auto;">
+                <table class="table table-striped table-hover table-sm mb-0">
+                    <thead class="table-dark" style="position: sticky; top: 0;">
+                        <tr>
+                            <th>#</th>
+                            <th>ID Polígono</th>
+                            <th>ID Crédito</th>
+                            <th>Estatus</th>
+                            <th>% Traslape</th>
+                            <th>ID Polígono Único (Megacapa)</th>
+                            <th>ID Crédito Megacapa</th>
+                            <th>Motivo</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in resultados %}
+                        <tr class="{% if r.estatus_megacapa == 'VINCULAR' %}table-success{% elif r.estatus_megacapa == 'NUEVO' %}table-warning{% endif %}">
+                            <td>{{ loop.index }}</td>
+                            <td>{{ r.id_poligono or '' }}</td>
+                            <td>{{ r.id_credito or '' }}</td>
+                            <td>
+                                {% if r.estatus_megacapa == 'VINCULAR' %}
+                                <span class="badge bg-success">VINCULAR</span>
+                                {% else %}
+                                <span class="badge bg-warning text-dark">NUEVO</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ '%.1f%%'|format(r.porcentaje_traslape) if r.porcentaje_traslape is not none else 'N/A' }}</td>
+                            <td>{{ r.id_poligono_unico or '' }}</td>
+                            <td>{{ r.id_credito_megacapa or '' }}</td>
+                            <td><small>{{ r.motivo or '' }}</small></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="alert alert-info">
+        <i class="fas fa-info-circle me-2"></i>
+        No hay resultados de validación. Primero cargue un archivo Excel en la pestaña "Cargar Datos" y luego presione "Ejecutar Validación".
+    </div>
+    {% endif %}
+</div>
+
         {% elif tab == 'lista' %}
         <!-- Pestaña de Lista de Polígonos -->
         <style>
