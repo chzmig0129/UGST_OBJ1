@@ -21,7 +21,7 @@
     <!-- Pestañas de navegación -->
     <div class="tabs-container">
         <div class="nav-tabs">
-            <a href="{{ url_for('validacion_poligonos', tab='cargar') }}" class="tab-item {% if tab == 'cargar' %}active{% endif %}">
+            <a href="{{ url_for('validacion_poligonos', tab='cargar') }}" class="tab-item {% if tab == 'cargar' %}active{% endif %}" style="display: none;">
                 Cargar Datos
             </a>
             <a href="{{ url_for('validacion_poligonos', tab='megacapa') }}" class="tab-item {% if tab == 'megacapa' %}active{% endif %}">

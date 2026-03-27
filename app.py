@@ -701,14 +701,14 @@ def unir_archivos():
     now = datetime.now()
     return render_template('unir_archivos.html', resultado=resultado, now=now)
 
-@app.route('/validacion-poligonos', defaults={'tab': 'cargar'})
+@app.route('/validacion-poligonos', defaults={'tab': 'lista'})
 @app.route('/validacion-poligonos/<tab>')
 @login_required
 def validacion_poligonos(tab):
     valid_tabs = ['cargar', 'megacapa', 'lista', 'editar', 'generar']
     
     if tab not in valid_tabs:
-        tab = 'cargar'
+        tab = 'lista'
     
     if tab == 'megacapa':
         try:
