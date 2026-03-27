@@ -1278,8 +1278,8 @@ def api_validacion_megacapa_mapa(validacion_id):
                 'geometry': mapping(geom_cargado),
             })
 
-        # If VINCULAR, find the megacapa polygon
-        if registro.estatus_megacapa == 'VINCULAR' and registro.id_poligono_unico:
+        # Show megacapa polygon for any result that has a match (VINCULAR or NUEVO with overlap)
+        if registro.id_poligono_unico:
             mega = shp_cache.mega
             match = mega[mega['ID_POLIGON'] == registro.id_poligono_unico]
             if len(match) > 0:
@@ -1290,8 +1290,8 @@ def api_validacion_megacapa_mapa(validacion_id):
                         'tipo': 'megacapa',
                         'id_poligono': registro.id_poligono_unico,
                         'id_credito': registro.id_credito_megacapa,
-                        'label': f'Megacapa: {registro.id_poligono_unico}',
-                        'color': '#28a745',
+                        'label': f'Megacapa: {registro.id_poligono_unico} ({registro.porcentaje_traslape:.1f}%)',
+                        'color': '#28a745' if registro.estatus_megacapa == 'VINCULAR' else '#fd7e14',
                     },
                     'geometry': mapping(mega_geom),
                 })

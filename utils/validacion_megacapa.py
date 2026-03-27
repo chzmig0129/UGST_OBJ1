@@ -129,7 +129,7 @@ def ejecutar_validacion_megacapa(poligonos, umbral_traslape=85.0):
                 'id_poligono': poligono.id_poligono,
                 'id_credito': poligono.id_credito,
                 'estatus_megacapa': 'NUEVO',
-                'id_poligono_unico': None,
+                'id_poligono_unico': best_id_poligon if best_overlap > 0 else None,
                 'porcentaje_traslape': round(best_overlap, 2) if best_overlap > 0 else None,
                 'id_credito_megacapa': best_id_credito if best_overlap > 0 else None,
                 'motivo': f'traslape<{umbral_traslape}%' if best_overlap > 0 else 'sin_traslape',
