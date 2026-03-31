@@ -1089,139 +1089,152 @@ document.addEventListener('DOMContentLoaded', function() {
                     <input type="hidden" name="row_index" value="{{ row_index }}">
                     {% endif %}
                     
-                    <div class="row">
-                        <div class="col-md-6">
-                            <div class="row mb-3">
-                                <div class="col-md-6">
-                                    <label for="Area_reportada" class="form-label">Área Reportada</label>
-                                    <input type="text" class="form-control" id="Area_reportada" name="SUPERFICIE" 
-                                           value="{{ poligono_data.get('SUPERFICIE', '0') }}">
+                    <!-- Hidden coordenadas textarea — written by JS when saving map edits -->
+                    <textarea class="form-control" id="COORDENADAS_DECIMALES_CORREGIDAS" name="COORDENADAS_DECIMALES_CORREGIDAS" rows="3" style="display:none;">{{ poligono_data.get('COORDENADAS_DECIMALES_CORREGIDAS', '') }}</textarea>
+
+                    <!-- MAP SECTION: full width on top -->
+                    <div class="row mb-3">
+                        <div class="col-12">
+                            <div id="map" style="height: 70vh; min-height: 500px; width: 100%; border-radius: 4px;"></div>
+                        </div>
+                    </div>
+
+                    <!-- CONTROL DE CAPAS: full width, compact -->
+                    <div class="row mb-3">
+                        <div class="col-12">
+                            <div class="card">
+                                <div class="card-header py-2">
+                                    <h6 class="mb-0"><i class="bi bi-layers"></i> Control de Capas</h6>
                                 </div>
-                                <div class="col-md-6">
-                                    <label for="Area_digitalizada" class="form-label">Área Digitalizada (ha)</label>
-                                    <input type="text" class="form-control" id="Area_digitalizada" name="AREA_DIGITALIZADA" 
-                                           pattern="[0-9]+(\.[0-9]+)?" title="Ingrese un número válido (ej: 123.456)" 
-                                           value="{{ poligono_data.get('AREA_DIGITALIZADA', '0.0') }}">
-                                    <small class="text-muted">Calculada geodésicamente</small>
-                                </div>
-                            </div>
-                            
-                            <div class="row mb-3">
-                                <div class="col-md-6">
-                                    <label for="Estado" class="form-label">Estado</label>
-                                    <div class="input-group">
-                                        <input type="text" class="form-control" id="Estado" name="ESTADO" 
-                                            value="{{ poligono_data.get('ESTADO', '') }}">
-                                        {% if poligono_data.get('UBICACION_AUTO') %}
-                                        <span class="input-group-text" title="Detectado automáticamente"><i class="bi bi-geo-alt-fill text-success"></i></span>
-                                        {% endif %}
+                                <div class="card-body py-2">
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <div class="form-check form-switch mb-2">
+                                                <input class="form-check-input" type="checkbox" id="toggleHistoricos" checked>
+                                                <label class="form-check-label" for="toggleHistoricos">
+                                                    <span style="color: #ff8c00; font-weight: bold;">●</span> Polígonos Históricos
+                                                </label>
+                                            </div>
+                                            <div class="form-check form-switch mb-2">
+                                                <input class="form-check-input" type="checkbox" id="toggleActuales" checked>
+                                                <label class="form-check-label" for="toggleActuales">
+                                                    <span style="color: #d63031; font-weight: bold;">●</span> Polígonos Actuales
+                                                </label>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="form-check form-switch mb-2">
+                                                <input class="form-check-input" type="checkbox" id="togglePoligonoActual" checked>
+                                                <label class="form-check-label" for="togglePoligonoActual">
+                                                    <span style="color: #0066cc; font-weight: bold;">●</span> Polígono Actual
+                                                </label>
+                                            </div>
+                                            <button type="button" class="btn btn-outline-primary btn-sm" id="zoomToPoligono">
+                                                <i class="bi bi-zoom-in"></i> Zoom al Polígono
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
-                                <div class="col-md-6">
-                                    <label for="Municipio" class="form-label">Municipio</label>
-                                    <div class="input-group">
-                                        <input type="text" class="form-control" id="Municipio" name="MUNICIPIO" 
-                                            value="{{ poligono_data.get('MUNICIPIO', '') }}">
-                                        {% if poligono_data.get('UBICACION_AUTO') %}
-                                        <span class="input-group-text" title="Detectado automáticamente"><i class="bi bi-geo-alt-fill text-success"></i></span>
-                                        {% endif %}
-                                    </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- FORM FIELDS ROW 1: compact fields below map -->
+                    <div class="row mb-3">
+                        <div class="col-md-2">
+                            <label for="Area_reportada" class="form-label">Área Reportada</label>
+                            <input type="text" class="form-control" id="Area_reportada" name="SUPERFICIE" 
+                                   value="{{ poligono_data.get('SUPERFICIE', '0') }}">
+                        </div>
+                        <div class="col-md-2">
+                            <label for="Area_digitalizada" class="form-label">Área Digitalizada (ha)</label>
+                            <input type="text" class="form-control" id="Area_digitalizada" name="AREA_DIGITALIZADA" 
+                                   pattern="[0-9]+(\.[0-9]+)?" title="Ingrese un número válido (ej: 123.456)" 
+                                   value="{{ poligono_data.get('AREA_DIGITALIZADA', '0.0') }}">
+                            <small class="text-muted">Calculada geodésicamente</small>
+                        </div>
+                        <div class="col-md-2">
+                            <label for="Estado" class="form-label">Estado</label>
+                            <div class="input-group">
+                                <input type="text" class="form-control" id="Estado" name="ESTADO" 
+                                    value="{{ poligono_data.get('ESTADO', '') }}">
+                                {% if poligono_data.get('UBICACION_AUTO') %}
+                                <span class="input-group-text" title="Detectado automáticamente"><i class="bi bi-geo-alt-fill text-success"></i></span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="col-md-2">
+                            <label for="Municipio" class="form-label">Municipio</label>
+                            <div class="input-group">
+                                <input type="text" class="form-control" id="Municipio" name="MUNICIPIO" 
+                                    value="{{ poligono_data.get('MUNICIPIO', '') }}">
+                                {% if poligono_data.get('UBICACION_AUTO') %}
+                                <span class="input-group-text" title="Detectado automáticamente"><i class="bi bi-geo-alt-fill text-success"></i></span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Estatus</label>
+                            <div class="d-flex flex-column">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="ESTATUS" id="Estatus6" value="6" {% if poligono_data.get('ESTATUS') == '6' or poligono_data.get('ESTATUS') == 6 %}checked{% endif %}>
+                                    <label class="form-check-label" for="Estatus6">Estatus 6</label>
                                 </div>
-                            </div>
-                            
-                            <div class="mb-3">
-                                <label for="COORDENADAS_DECIMALES_CORREGIDAS" class="form-label">Coordenadas (Formato decimal)</label>
-                                <textarea class="form-control" id="COORDENADAS_DECIMALES_CORREGIDAS" name="COORDENADAS_DECIMALES_CORREGIDAS" 
-                                          rows="3">{{ poligono_data.get('COORDENADAS_DECIMALES_CORREGIDAS', '') }}</textarea>
-                                <small class="text-muted">Formato: latitud,longitud | latitud,longitud | ...</small>
-                            </div>
-                            
-                            <div class="row mb-3">
-                                <div class="col-12">
-                                    <label for="ComentariosSelect" class="form-label">Comentarios</label>
-                                    <select class="form-select mb-2" id="ComentariosSelect">
-                                        <option value="">-- Seleccionar comentario predefinido --</option>
-                                        <option value="CUMPLE CON LA SUPERFICIE">CUMPLE CON LA SUPERFICIE</option>
-                                        <option value="NO CUMPLE CON LA SUPERFICIE">NO CUMPLE CON LA SUPERFICIE</option>
-                                        <option value="NO COINCIDE LA SUPERFICIE">NO COINCIDE LA SUPERFICIE</option>
-                                        <option value="NO SE PUEDE DIGITALIZAR">NO SE PUEDE DIGITALIZAR</option>
-                                        <option value="SE ENCUENTRA EN HISTORICO">SE ENCUENTRA EN HISTORICO</option>
-                                    </select>
-                                    <textarea class="form-control" id="Comentarios" name="COMENTARIOS" rows="2">{{ poligono_data.get('COMENTARIOS', '') if poligono_data.get('COMENTARIOS') != None else '' }}</textarea>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="ESTATUS" id="Estatus7" value="7" {% if poligono_data.get('ESTATUS') == '7' or poligono_data.get('ESTATUS') == 7 %}checked{% endif %}>
+                                    <label class="form-check-label" for="Estatus7">Estatus 7</label>
                                 </div>
+                                <small class="text-muted" style="font-size: 0.75em;">Auto si diferencia ≤11%</small>
                             </div>
-                            
-                            <div class="row mb-3">
-                                <div class="col-12">
-                                    <label for="DescripcionSelect" class="form-label">Descripción</label>
-                                    <select class="form-select mb-2" id="DescripcionSelect">
-                                        <option value="">-- Seleccionar tipo de descripción --</option>
-                                        <option value="PARCELA CON CAMINO = C">PARCELA CON CAMINO = C</option>
-                                        <option value="PARCELA CON CAMINOS = CC">PARCELA CON CAMINOS = CC</option>
-                                        <option value="PARCELA CON CANAL = X">PARCELA CON CANAL = X</option>
-                                        <option value="PARCELA CON CANALES = XX">PARCELA CON CANALES = XX</option>
-                                        <option value="PARCELA CON SUPERFICIE NO AGRICOLA = A">PARCELA CON SUPERFICIE NO AGRICOLA = A</option>
-                                        <option value="PARCELA CON EDIFICACIONES = E">PARCELA CON EDIFICACIONES = E</option>
-                                        <option value="INFRAESTRUCTURA DE INVERNADEROS Y MACROTUNELES = M">INFRAESTRUCTURA DE INVERNADEROS Y MACROTUNELES = M</option>
-                                        <option value="FRACCION DE PARCELA = F">FRACCION DE PARCELA = F</option>
-                                        <option value="LA PARCELA CONTIENE A, ID POLIGONO" data-requires-id="true">LA PARCELA CONTIENE A, ID POLIGONO</option>
-                                        <option value="PARCELA CONTENIDA POR, ID POLIGONO" data-requires-id="true">PARCELA CONTENIDA POR, ID POLIGONO</option>
-                                        <option value="PARCELA TRASLAPADA CON, ID POLIGONO" data-requires-id="true">PARCELA TRASLAPADA CON, ID POLIGONO</option>
-                                        <option value="LA PARCELA IGUAL A, ID POLIGONO" data-requires-id="true">LA PARCELA IGUAL A, ID POLIGONO</option>
-                                    </select>
-                                    <select class="form-select mb-2" id="DescripcionIdSelect" style="display: none;">
-                                        <option value="">-- Seleccionar ID de polígono --</option>
-                                        <!-- Opciones de IDs históricos y actuales se cargarán dinámicamente -->
-                                    </select>
-                                    <textarea class="form-control" id="Descripcion" name="DESCRIPCION" rows="2">{{ poligono_data.get('DESCRIPCION', '') if poligono_data.get('DESCRIPCION') != None else '' }}</textarea>
-                                </div>
-                            </div>
-                            
-                            <div class="row mb-3">
-                                <div class="col-12">
-                                    <label class="form-label">Estatus</label>
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="radio" name="ESTATUS" id="Estatus6" value="6" {% if poligono_data.get('ESTATUS') == '6' or poligono_data.get('ESTATUS') == 6 %}checked{% endif %}>
-                                        <label class="form-check-label" for="Estatus6">
-                                            Estatus 6
-                                        </label>
-                                    </div>
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="radio" name="ESTATUS" id="Estatus7" value="7" {% if poligono_data.get('ESTATUS') == '7' or poligono_data.get('ESTATUS') == 7 %}checked{% endif %}>
-                                        <label class="form-check-label" for="Estatus7">
-                                            Estatus 7
-                                        </label>
-                                    </div>
-                                    <small class="text-muted">Nota: Estatus 7 se selecciona automáticamente si la diferencia entre áreas es ≤11%</small>
-                                </div>
-                            </div>
-                            
-                            <div class="mb-3">
-                                <button type="button" id="btnDetectarUbicacion" class="btn btn-outline-primary btn-sm">
-                                    <i class="bi bi-geo-alt"></i> Detectar Municipio/Estado
-                                </button>
-                                <small id="infoUbicacion" class="text-muted ms-2"></small>
-                            </div>
-                            
-                            <!-- Sección para información de polígonos históricos -->
-                            <div class="mb-3 alert alert-warning">
-                                <h5><i class="bi bi-exclamation-triangle-fill"></i> Verificación de traslapes</h5>
-                                <p>Se están mostrando polígonos en el mapa para verificar traslapes:</p>
-                                <ul>
-                                    <li><strong style="color: #ff8c00;">Polígonos históricos</strong> en color <strong style="color: #ff8c00;">naranja</strong> (línea sólida)</li>
-                                    <li><strong style="color: #d63031;">Polígonos del archivo actual</strong> en color <strong style="color: #d63031;">rojo punteado</strong></li>
-                                </ul>
-                                <p>Por favor, verifique si el polígono actual traslapa con alguno de estos polígonos y documente los resultados en los comentarios.</p>
-                                <div id="historico-info" class="mt-2">
-                                    <small>Para las descripciones que requieren un ID de polígono, se habilitará un selector adicional con los IDs disponibles. Los IDs con el prefijo <strong>"Histórico:"</strong> corresponden a polígonos del shapefile histórico, y los IDs con prefijo <strong>"Actual:"</strong> corresponden a polígonos del archivo actual.</small>
-                                </div>
-                            </div>
-                            
-                            <div class="mt-4 d-flex">
-                                <button type="button" id="btnCancelar" class="btn btn-outline-secondary me-2">
+                        </div>
+                        <div class="col-md-2 d-flex align-items-center">
+                            <div id="diferencia-badge"></div>
+                        </div>
+                    </div>
+
+                    <!-- FORM FIELDS ROW 2: Comentarios, Descripción, Buttons -->
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <label for="ComentariosSelect" class="form-label">Comentarios</label>
+                            <select class="form-select mb-2" id="ComentariosSelect">
+                                <option value="">-- Seleccionar comentario predefinido --</option>
+                                <option value="CUMPLE CON LA SUPERFICIE">CUMPLE CON LA SUPERFICIE</option>
+                                <option value="NO CUMPLE CON LA SUPERFICIE">NO CUMPLE CON LA SUPERFICIE</option>
+                                <option value="NO COINCIDE LA SUPERFICIE">NO COINCIDE LA SUPERFICIE</option>
+                                <option value="NO SE PUEDE DIGITALIZAR">NO SE PUEDE DIGITALIZAR</option>
+                                <option value="SE ENCUENTRA EN HISTORICO">SE ENCUENTRA EN HISTORICO</option>
+                            </select>
+                            <textarea class="form-control" id="Comentarios" name="COMENTARIOS" rows="2">{{ poligono_data.get('COMENTARIOS', '') if poligono_data.get('COMENTARIOS') != None else '' }}</textarea>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="DescripcionSelect" class="form-label">Descripción</label>
+                            <select class="form-select mb-2" id="DescripcionSelect">
+                                <option value="">-- Seleccionar tipo de descripción --</option>
+                                <option value="PARCELA CON CAMINO = C">PARCELA CON CAMINO = C</option>
+                                <option value="PARCELA CON CAMINOS = CC">PARCELA CON CAMINOS = CC</option>
+                                <option value="PARCELA CON CANAL = X">PARCELA CON CANAL = X</option>
+                                <option value="PARCELA CON CANALES = XX">PARCELA CON CANALES = XX</option>
+                                <option value="PARCELA CON SUPERFICIE NO AGRICOLA = A">PARCELA CON SUPERFICIE NO AGRICOLA = A</option>
+                                <option value="PARCELA CON EDIFICACIONES = E">PARCELA CON EDIFICACIONES = E</option>
+                                <option value="INFRAESTRUCTURA DE INVERNADEROS Y MACROTUNELES = M">INFRAESTRUCTURA DE INVERNADEROS Y MACROTUNELES = M</option>
+                                <option value="FRACCION DE PARCELA = F">FRACCION DE PARCELA = F</option>
+                                <option value="LA PARCELA CONTIENE A, ID POLIGONO" data-requires-id="true">LA PARCELA CONTIENE A, ID POLIGONO</option>
+                                <option value="PARCELA CONTENIDA POR, ID POLIGONO" data-requires-id="true">PARCELA CONTENIDA POR, ID POLIGONO</option>
+                                <option value="PARCELA TRASLAPADA CON, ID POLIGONO" data-requires-id="true">PARCELA TRASLAPADA CON, ID POLIGONO</option>
+                                <option value="LA PARCELA IGUAL A, ID POLIGONO" data-requires-id="true">LA PARCELA IGUAL A, ID POLIGONO</option>
+                            </select>
+                            <select class="form-select mb-2" id="DescripcionIdSelect" style="display: none;">
+                                <option value="">-- Seleccionar ID de polígono --</option>
+                                <!-- Opciones de IDs históricos y actuales se cargarán dinámicamente -->
+                            </select>
+                            <textarea class="form-control" id="Descripcion" name="DESCRIPCION" rows="2">{{ poligono_data.get('DESCRIPCION', '') if poligono_data.get('DESCRIPCION') != None else '' }}</textarea>
+                        </div>
+                        <div class="col-md-4 d-flex align-items-end">
+                            <div class="d-flex flex-wrap gap-2">
+                                <button type="button" id="btnCancelar" class="btn btn-outline-secondary">
                                     <i class="bi bi-x"></i> Cancelar
                                 </button>
-                                <button type="submit" class="btn btn-primary me-2">
+                                <button type="submit" class="btn btn-primary">
                                     <i class="bi bi-save"></i> Guardar Cambios
                                 </button>
                                 <button type="button" id="btnGuardarSiguiente" class="btn btn-success">
@@ -1229,49 +1242,10 @@ document.addEventListener('DOMContentLoaded', function() {
                                 </button>
                             </div>
                         </div>
-                        
-                        <div class="col-md-6">
-                            <div id="map" style="height: 550px; width: 100%; border-radius: 4px;"></div>
-                            
-                            <!-- Controles de Visibilidad de Capas -->
-                            <div class="mt-3">
-                                <div class="card">
-                                    <div class="card-header py-2">
-                                        <h6 class="mb-0"><i class="bi bi-layers"></i> Control de Capas</h6>
-                                    </div>
-                                    <div class="card-body py-2">
-                                        <div class="row">
-                                            <div class="col-md-6">
-                                                <div class="form-check form-switch mb-2">
-                                                    <input class="form-check-input" type="checkbox" id="toggleHistoricos" checked>
-                                                    <label class="form-check-label" for="toggleHistoricos">
-                                                        <span style="color: #ff8c00; font-weight: bold;">●</span> Polígonos Históricos
-                                                    </label>
-                                                </div>
-                                                <div class="form-check form-switch mb-2">
-                                                    <input class="form-check-input" type="checkbox" id="toggleActuales" checked>
-                                                    <label class="form-check-label" for="toggleActuales">
-                                                        <span style="color: #d63031; font-weight: bold;">●</span> Polígonos Actuales
-                                                    </label>
-                                                </div>
-                                            </div>
-                                            <div class="col-md-6">
-                                                <div class="form-check form-switch mb-2">
-                                                    <input class="form-check-input" type="checkbox" id="togglePoligonoActual" checked>
-                                                    <label class="form-check-label" for="togglePoligonoActual">
-                                                        <span style="color: #0066cc; font-weight: bold;">●</span> Polígono Actual
-                                                    </label>
-                                                </div>
-                                                <button type="button" class="btn btn-outline-primary btn-sm" id="zoomToPoligono">
-                                                    <i class="bi bi-zoom-in"></i> Zoom al Polígono
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
                     </div>
+
+                    <!-- Hidden elements kept for JS compatibility -->
+                    <small id="infoUbicacion" class="text-muted" style="display:none;"></small>
                 </form>
                 {% else %}
                 <div class="alert alert-danger">
