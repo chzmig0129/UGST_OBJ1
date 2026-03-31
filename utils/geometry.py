@@ -152,3 +152,110 @@ def ordenar_coordenadas(coordenadas_str: Optional[str]) -> Optional[str]:
     sorted_coords = sorted(unique, key=angle_key)
 
     return serializar_coordenadas(sorted_coords)
+
+
+def validar_geometria(
+    coordenadas_str: Optional[str],
+    superficie_reportada: Optional[float] = None,
+) -> tuple:
+    """Validate that a coordinate string represents a usable polygon geometry.
+
+    Parameters
+    ----------
+    coordenadas_str:
+        String in the format ``'lat,lon | lat,lon | ...'``, or ``None``.
+    superficie_reportada:
+        Optional reported area in hectares (from the Excel ``superficie``
+        field).  Reserved for future cross-checks; not used in current rules.
+
+    Returns
+    -------
+    ``(es_valido, motivo)`` where *es_valido* is ``True`` when the geometry
+    passes all checks and *motivo* is a human-readable failure reason (empty
+    string when valid).
+
+    Validation rules (checked in order, returns on first failure)
+    -------------------------------------------------------------
+    1. Sin coordenadas   – None / empty / whitespace-only input.
+    2. Punto único       – only 1 coordinate after parsing.
+    3. Línea             – only 2 coordinates after parsing.
+    4. Coordenadas duplicadas – 3+ coords but fewer than 3 unique ones.
+    5. Área cero         – Shapely polygon area == 0.
+    6. Geometría inválida irreparable – Shapely ``is_valid`` is False AND
+       ``buffer(0)`` yields an empty geometry.
+    7. Área excesiva     – calculated area > 1000 ha.
+    """
+    # ------------------------------------------------------------------ #
+    # Rule 1 – Sin coordenadas                                            #
+    # ------------------------------------------------------------------ #
+    if coordenadas_str is None or not str(coordenadas_str).strip():
+        return (False, "Sin coordenadas")
+
+    # ------------------------------------------------------------------ #
+    # Parse                                                               #
+    # ------------------------------------------------------------------ #
+    coords = parsear_coordenadas(coordenadas_str)
+
+    # ------------------------------------------------------------------ #
+    # Rule 2 – Punto único                                                #
+    # ------------------------------------------------------------------ #
+    if len(coords) == 1:
+        return (False, "Solo un punto, no es polígono")
+
+    # ------------------------------------------------------------------ #
+    # Rule 3 – Línea                                                      #
+    # ------------------------------------------------------------------ #
+    if len(coords) == 2:
+        return (False, "Solo dos puntos, es una línea")
+
+    # ------------------------------------------------------------------ #
+    # Rule 4 – Coordenadas duplicadas                                     #
+    # ------------------------------------------------------------------ #
+    unique_coords = list({(p[0], p[1]) for p in coords})
+    if len(unique_coords) < 3:
+        return (False, "Coordenadas duplicadas, no forma polígono")
+
+    # ------------------------------------------------------------------ #
+    # Build Shapely polygon (lon, lat) — import at function level         #
+    # ------------------------------------------------------------------ #
+    from shapely.geometry import Polygon as ShapelyPolygon  # noqa: PLC0415
+
+    # Convert [lat, lon] → (lon, lat) for Shapely (x=lon, y=lat)
+    ring = [(p[1], p[0]) for p in coords]
+
+    # Close the ring if necessary
+    if ring[0] != ring[-1]:
+        ring.append(ring[0])
+
+    polygon = ShapelyPolygon(ring)
+
+    # ------------------------------------------------------------------ #
+    # Rule 5 – Área cero                                                  #
+    # ------------------------------------------------------------------ #
+    if polygon.area == 0:
+        return (False, "Área cero, polígono degenerado")
+
+    # ------------------------------------------------------------------ #
+    # Rule 6 – Geometría inválida irreparable                             #
+    # ------------------------------------------------------------------ #
+    if not polygon.is_valid:
+        repaired = polygon.buffer(0)
+        if repaired.is_empty:
+            return (False, "Geometría inválida irreparable")
+        # Use the repaired polygon for the area check below
+        polygon = repaired
+
+    # ------------------------------------------------------------------ #
+    # Rule 7 – Área excesiva (>1000 ha)                                   #
+    # ------------------------------------------------------------------ #
+    # Approximate area in hectares using a degree-to-metre conversion.
+    # cos(mean_lat) corrects for longitude compression at higher latitudes.
+    # Accuracy is sufficient for detecting gross coordinate errors.
+    lats = [p[0] for p in coords]
+    mean_lat_rad = math.radians(sum(lats) / len(lats))
+    # shapely area is in degrees²; convert to m² then to ha
+    area_ha = polygon.area * (111_320 ** 2) * math.cos(mean_lat_rad) / 10_000
+    if area_ha > 1000:
+        return (False, "Área excesiva (>1000 ha), posible error de coordenadas")
+
+    return (True, "")
