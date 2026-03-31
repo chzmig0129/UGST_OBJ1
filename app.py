@@ -27,6 +27,7 @@ from utils.pdf_generator import (generar_ficha_tecnica_desde_plantilla, verifica
                                 generar_ficha_tecnica_fallback, generar_ficha_tecnica_simple, 
                                 garantizar_pymupdf, import_pymupdf)
 from utils.shapefile_cache import shp_cache
+from utils.geometry import ordenar_coordenadas, parsear_coordenadas
 import shutil
 import math
 import threading
@@ -1140,6 +1141,11 @@ def cargar_excel():
                 df['COORDENADAS_DECIMALES'] = df.apply(procesar_coordenadas_dms, axis=1)
                 df['COORDENADAS_DECIMALES_CORREGIDAS'] = df['COORDENADAS_DECIMALES'].apply(corregir_longitud)
             
+            # Ordenar coordenadas para evitar polígonos auto-intersectados (moños)
+            df['COORDENADAS_DECIMALES_CORREGIDAS'] = df['COORDENADAS_DECIMALES_CORREGIDAS'].apply(
+                lambda x: ordenar_coordenadas(x) if x else x
+            )
+
             # No calculamos el área aquí, la dejamos como None inicialmente
             # df['AREA_DIGITALIZADA'] = areas
 

@@ -4,6 +4,7 @@ Spatial validation engine: compares loaded polygons against the megacapa.
 import geopandas as gpd
 from shapely.geometry import Polygon as ShapelyPolygon
 from utils.shapefile_cache import shp_cache
+from utils.geometry import ordenar_coordenadas
 
 
 def construir_geometria(coordenadas_corregidas):
@@ -17,7 +18,9 @@ def construir_geometria(coordenadas_corregidas):
         return None, 'sin_coordenadas'
 
     try:
-        pairs = coordenadas_corregidas.split(' | ')
+        # Ordenar coordenadas para evitar auto-intersecciones
+        coordenadas_ordenadas = ordenar_coordenadas(coordenadas_corregidas)
+        pairs = coordenadas_ordenadas.split(' | ')
         coords = []
         for pair in pairs:
             pair = pair.strip()
