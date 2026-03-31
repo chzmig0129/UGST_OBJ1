@@ -4496,7 +4496,10 @@ def get_poligonos_actuales_traslapes(polygon_id):
             return jsonify({'error': 'No se pudo procesar la geometría del polígono actual'}), 400
         
         # Obtener todos los demás polígonos de la base de datos
-        otros_poligonos = Poligono.query.filter(Poligono.id != polygon_id).all()
+        otros_poligonos = Poligono.query.filter(
+            Poligono.id != polygon_id,
+            db.or_(Poligono.estatus.is_(None), Poligono.estatus == '', Poligono.estatus == '7'),
+        ).all()
         
         # Lista para almacenar polígonos que traslapan
         poligonos_traslapados = []
@@ -4509,6 +4512,15 @@ def get_poligonos_actuales_traslapes(polygon_id):
                 
             otra_geometria = coordenadas_a_geometria(otro_poligono.coordenadas_corregidas)
             if otra_geometria is None:
+                continue
+            # Skip invalid geometries (too small, too large, or degenerate)
+            if not otra_geometria.is_valid:
+                otra_geometria = otra_geometria.buffer(0)
+                if otra_geometria.is_empty:
+                    continue
+            # Skip geometries with excessive area (> ~1000 ha in degree units)
+            # Approximate: 1 degree ≈ 111km, so 1000 ha ≈ 0.01 sq degrees at equator
+            if otra_geometria.area > 0.1:  # Very generous threshold to catch obvious errors
                 continue
             
             # Verificar si hay traslape
