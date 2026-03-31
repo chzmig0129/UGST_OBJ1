@@ -918,6 +918,13 @@ document.addEventListener('DOMContentLoaded', function() {
                                 <i class="bi bi-people"></i> Asignar Polígonos
                             </button>
                         </form>
+                        <form method="POST" action="{{ url_for('validar_geometria_route') }}" class="d-inline ms-2">
+                            <button type="submit" class="btn btn-sm btn-outline-warning" 
+                                    onclick="this.disabled=true; this.innerHTML='<span class=\'spinner-border spinner-border-sm\' role=\'status\'></span> Validando...'; this.form.submit(); return true;"
+                                    title="Marca como Estatus 6 los polígonos que no forman geometría válida (puntos, líneas, sin coordenadas, área excesiva)">
+                                <i class="bi bi-shield-check"></i> Validar Geometría
+                            </button>
+                        </form>
                         {% endif %}
                         <small class="text-muted">
                             <i class="bi bi-arrow-left-right"></i> Desplazarse horizontalmente para ver todas las columnas

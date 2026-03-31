@@ -27,7 +27,7 @@ from utils.pdf_generator import (generar_ficha_tecnica_desde_plantilla, verifica
                                 generar_ficha_tecnica_fallback, generar_ficha_tecnica_simple, 
                                 garantizar_pymupdf, import_pymupdf)
 from utils.shapefile_cache import shp_cache
-from utils.geometry import ordenar_coordenadas, parsear_coordenadas
+from utils.geometry import ordenar_coordenadas, parsear_coordenadas, validar_geometria
 import shutil
 import math
 import threading
@@ -8070,6 +8070,46 @@ def asignar_poligonos_validacion():
         db.session.rollback()
         app.logger.error(f'Error asignando polígonos: {e}')
         flash(f'Error al asignar polígonos: {str(e)}', 'error')
+
+    return redirect(url_for('validacion_poligonos', tab='lista'))
+
+
+@app.route('/validar-geometria', methods=['POST'])
+@login_required
+def validar_geometria_route():
+    """Validación geométrica masiva: marca polígonos inválidos como Estatus 6."""
+    if not current_user.is_admin:
+        flash('Solo administradores pueden ejecutar esta acción', 'error')
+        return redirect(url_for('validacion_poligonos', tab='lista'))
+
+    try:
+        # Query polygons with no estatus assigned (NULL or empty)
+        poligonos = Poligono.query.filter(
+            db.or_(Poligono.estatus.is_(None), Poligono.estatus == '')
+        ).all()
+
+        total_evaluados = len(poligonos)
+        total_invalidos = 0
+
+        for poligono in poligonos:
+            es_valido, motivo = validar_geometria(
+                poligono.coordenadas_corregidas,
+                poligono.superficie
+            )
+
+            if not es_valido:
+                poligono.estatus = '6'
+                poligono.comentarios = 'NO SE PUEDE DIGITALIZAR'
+                poligono.descripcion = motivo  # Store the specific reason in descripcion
+                total_invalidos += 1
+
+        db.session.commit()
+
+        flash(f'Validación geométrica: {total_invalidos} polígonos marcados como inválidos de {total_evaluados} evaluados', 'success')
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f'Error en validación geométrica: {e}')
+        flash(f'Error en validación geométrica: {str(e)}', 'error')
 
     return redirect(url_for('validacion_poligonos', tab='lista'))
 
