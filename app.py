@@ -872,18 +872,13 @@ def validacion_poligonos(tab):
                     return redirect(url_for('validacion_poligonos', tab='lista'))
                 
                 # Preparar coordenadas para el mapa
-                coords_para_mapa = []
-                if poligono.coordenadas_corregidas:
-                    try:
-                        # Parsear las coordenadas corregidas para el mapa
-                        coord_pairs = poligono.coordenadas_corregidas.split(' | ')
-                        for pair in coord_pairs:
-                            if ',' in pair:
-                                lat, lon = pair.split(',')
-                                coords_para_mapa.append([float(lat.strip()), float(lon.strip())])
-                    except Exception as e:
-                        app.logger.error(f"Error al procesar coordenadas para el mapa: {e}")
-                        coords_para_mapa = []
+                try:
+                    coords_para_mapa = parsear_coordenadas(
+                        ordenar_coordenadas(poligono.coordenadas_corregidas)
+                    ) if poligono.coordenadas_corregidas else []
+                except Exception as e:
+                    app.logger.error(f"Error al procesar coordenadas para el mapa: {e}")
+                    coords_para_mapa = []
                 
                 # Detectar ubicación automáticamente si el estado y municipio están vacíos
                 ubicacion_auto = False
@@ -3743,18 +3738,13 @@ def validacion_rapida_shp(tab=None):
                     return redirect(url_for('validacion_poligonos', tab='lista'))
                 
                 # Preparar coordenadas para el mapa
-                coords_para_mapa = []
-                if poligono.coordenadas_corregidas:
-                    try:
-                        # Parsear las coordenadas corregidas para el mapa
-                        coord_pairs = poligono.coordenadas_corregidas.split(' | ')
-                        for pair in coord_pairs:
-                            if ',' in pair:
-                                lat, lon = pair.split(',')
-                                coords_para_mapa.append([float(lat.strip()), float(lon.strip())])
-                    except Exception as e:
-                        app.logger.error(f"Error al procesar coordenadas para el mapa: {e}")
-                        coords_para_mapa = []
+                try:
+                    coords_para_mapa = parsear_coordenadas(
+                        ordenar_coordenadas(poligono.coordenadas_corregidas)
+                    ) if poligono.coordenadas_corregidas else []
+                except Exception as e:
+                    app.logger.error(f"Error al procesar coordenadas para el mapa: {e}")
+                    coords_para_mapa = []
                 
                 # Detectar ubicación automáticamente si el estado y municipio están vacíos
                 ubicacion_auto = False
