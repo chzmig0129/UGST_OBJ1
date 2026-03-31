@@ -1426,6 +1426,10 @@ def actualizar_fila():
                 if campo_form in ['row_index', 'db_id']:
                     continue
 
+                # Note: SUPERFICIE, ESTADO, MUNICIPIO are read-only in the UI (hidden inputs).
+                # AREA_DIGITALIZADA is auto-calculated from polygon geometry.
+                # Only ESTATUS, COMENTARIOS, DESCRIPCION, and COORDENADAS are user-editable.
+
                 # Mapear nombre de campo del formulario (UPPERCASE) a atributo del modelo (lowercase)
                 atributo_modelo = None
                 if campo_form == 'ID_POLIGONO': atributo_modelo = 'id_poligono'
