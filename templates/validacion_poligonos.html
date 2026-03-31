@@ -1238,19 +1238,7 @@ document.addEventListener('DOMContentLoaded', function() {
             .edit-control-container {
                 margin-bottom: 5px;
             }
-            .editing-mode-indicator {
-                position: absolute;
-                top: 10px;
-                left: 50px;
-                z-index: 1000;
-                background-color: rgba(255, 255, 255, 0.8);
-                padding: 5px 10px;
-                border-radius: 4px;
-                box-shadow: 0 1px 5px rgba(0,0,0,0.4);
-                display: none;
-                font-weight: bold;
-                color: #ff4500;
-            }
+
             /* Estilos para el botón de pantalla completa */
             .leaflet-control-fullscreen a {
                 background-color: #fff;
@@ -1309,28 +1297,7 @@ document.addEventListener('DOMContentLoaded', function() {
             .custom-leaflet-btn button i {
                 margin-right: 5px;
             }
-            .edit-instructions {
-                position: absolute;
-                bottom: 20px;
-                left: 10px;
-                z-index: 1000;
-                background-color: rgba(255, 255, 255, 0.9);
-                padding: 10px;
-                border-radius: 4px;
-                box-shadow: 0 1px 5px rgba(0,0,0,0.4);
-                max-width: 300px;
-                font-size: 12px;
-                display: none;
-            }
-            .edit-instructions h5 {
-                margin-top: 0;
-                font-size: 14px;
-                font-weight: bold;
-            }
-            .edit-instructions ul {
-                padding-left: 20px;
-                margin-bottom: 0;
-            }
+
             .vertex-marker {
                 cursor: move;
             }
@@ -1479,7 +1446,6 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             
             // Asegurar que el elemento del mapa es visible
-            mapElement.style.height = '550px';
             mapElement.style.width = '100%';
             mapElement.style.display = 'block';
             mapElement.style.backgroundColor = '#f0f0f0';
@@ -1522,6 +1488,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Añadir control de capas para cambiar entre fondos de mapa
                 L.control.layers(baseLayers, {}).addTo(map);
                 
+                // Invalidate size after layout renders
+                setTimeout(function() { map.invalidateSize(); }, 100);
+                setTimeout(function() { map.invalidateSize(); }, 500);
+                
                 console.log("Mapa creado correctamente");
             } catch (e) {
                 console.error("Error al crear el mapa:", e);
@@ -1544,7 +1514,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
                     
                     // Crear iframe con Google Maps
-                    mapElement.innerHTML = '<div style="position: relative; width: 100%; height: 550px;">' +
+                    mapElement.innerHTML = '<div style="position: relative; width: 100%; height: 100%;">' +
                         '<iframe width="100%" height="550" frameborder="0" style="border:0" src="https://www.google.com/maps/embed/v1/view?key=YOUR_API_KEY&center=' + center + '&zoom=10" allowfullscreen></iframe>' +
                         '<button id="googleMapsFullscreen" style="position: absolute; top: 10px; left: 10px; z-index: 1000; background-color: white; border: 2px solid rgba(0,0,0,0.2); border-radius: 4px; padding: 5px 10px; cursor: pointer;"><i class="bi bi-arrows-fullscreen"></i> Pantalla Completa</button>' +
                         '</div>';
@@ -1678,8 +1648,11 @@ document.addEventListener('DOMContentLoaded', function() {
                     try {
                         var areaSqMeters = L.GeometryUtil.geodesicArea(polygon.getLatLngs()[0]);
                         var areaHectares = areaSqMeters / 10000; // Convertir a hectáreas
-                        document.getElementById('Area_digitalizada').value = areaHectares.toFixed(4);
-                        console.log("Área calculada:", areaHectares.toFixed(4), "hectáreas");
+                        var newArea = areaHectares.toFixed(4);
+                        document.getElementById('Area_digitalizada').value = newArea;
+                        var infoDigSpan = document.getElementById('infoAreaDigitalizada');
+                        if (infoDigSpan) infoDigSpan.textContent = parseFloat(newArea).toFixed(4) + ' ha';
+                        console.log("Área calculada:", newArea, "hectáreas");
                         // Calcular estatus automáticamente
                         if (typeof calcularEstatus === 'function') calcularEstatus();
                     } catch (e) {
@@ -1746,6 +1719,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     
                     // Establecer área a 0 ya que son solo dos puntos
                     document.getElementById('Area_digitalizada').value = "0.0000";
+                    var infoDigSpan = document.getElementById('infoAreaDigitalizada');
+                    if (infoDigSpan) infoDigSpan.textContent = '0.0000 ha';
                     
                     // Deshabilitar botón de edición de polígono ya que solo hay dos puntos
                     var editPolygonBtn = document.getElementById('editPolygon');
@@ -1786,6 +1761,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     
                     // Establecer área a 0 ya que es un punto
                     document.getElementById('Area_digitalizada').value = "0.0000";
+                    var infoDigSpan = document.getElementById('infoAreaDigitalizada');
+                    if (infoDigSpan) infoDigSpan.textContent = '0.0000 ha';
                     
                     // Deshabilitar botón de edición de polígono ya que solo hay un punto
                     var editPolygonBtn = document.getElementById('editPolygon');
@@ -2276,7 +2253,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         
                         // Mostrar indicador de modo de edición e instrucciones
                         document.querySelector('.editing-mode-indicator').style.display = 'block';
-                        document.querySelector('.edit-instructions').style.display = 'block';
+                        document.querySelector('.edit-help-btn').style.display = 'block';
                         
                         // Desactivar el formulario completamente durante la edición
                         var formInputs = document.querySelectorAll('#formEditarPoligono input, #formEditarPoligono textarea, #formEditarPoligono select');
@@ -2385,15 +2362,9 @@ document.addEventListener('DOMContentLoaded', function() {
                         
                         // Mostrar indicadores
                         document.querySelector('.editing-mode-indicator').style.display = 'block';
-                        document.querySelector('.editing-mode-indicator').innerHTML = 'DIBUJANDO NUEVO POLÍGONO';
-                        document.querySelector('.edit-instructions').style.display = 'block';
-                        document.querySelector('.edit-instructions').innerHTML = `
-                            <h5>Cómo dibujar un nuevo polígono:</h5>
-                            <ul>
-                                <li><strong>Añadir vértice:</strong> Haz clic en el mapa para añadir puntos</li>
-                                <li><strong>Finalizar polígono:</strong> Haz clic en el primer punto o doble clic en el último punto</li>
-                            </ul>
-                        `;
+                        document.querySelector('.editing-mode-indicator').innerHTML = '✏️ Dibujando';
+                        document.querySelector('.edit-help-btn').style.display = 'block';
+                        // edit-help tooltip has fixed content, no update needed
                         
                         // Desactivar campos del formulario durante el dibujo
                         var formInputs = document.querySelectorAll('#formEditarPoligono input, #formEditarPoligono textarea, #formEditarPoligono select');
@@ -2500,25 +2471,66 @@ document.addEventListener('DOMContentLoaded', function() {
             var editingIndicator = L.control({position: 'topleft'});
             editingIndicator.onAdd = function(map) {
                 var div = L.DomUtil.create('div', 'editing-mode-indicator');
-                div.innerHTML = 'MODO EDICIÓN ACTIVO';
+                div.style.cssText = 'display:none;background:rgba(255,69,0,0.9);color:white;padding:3px 8px;border-radius:12px;font-size:11px;font-weight:600;box-shadow:0 1px 4px rgba(0,0,0,0.3);';
+                div.innerHTML = '✏️ Editando';
                 return div;
             };
             editingIndicator.addTo(map);
             
-            // Instrucciones de edición
+            // Instrucciones de edición — botón "?" con tooltip al hover
             var editInstructions = L.control({position: 'bottomleft'});
             editInstructions.onAdd = function(map) {
-                var div = L.DomUtil.create('div', 'edit-instructions');
-                div.innerHTML = `
-                    <h5>Cómo editar el polígono:</h5>
-                    <ul>
-                        <li><strong>Mover vértice:</strong> Haz clic y arrastra cualquier punto blanco</li>
-                        <li><strong>Eliminar vértice:</strong> Haz clic en un vértice mientras mantienes presionada la tecla Ctrl</li>
-                    </ul>
-                `;
+                var div = L.DomUtil.create('div', 'edit-help-btn');
+                div.innerHTML = '<button type="button" class="btn btn-light btn-sm shadow-sm" style="width:32px;height:32px;padding:0;border-radius:50%;font-size:14px;font-weight:bold;opacity:0.8;" title="Ayuda de edición">?</button>';
+                div.style.display = 'none';
+                
+                // Tooltip on hover
+                var tooltip = L.DomUtil.create('div', 'edit-help-tooltip', div);
+                tooltip.style.cssText = 'display:none;position:absolute;bottom:40px;left:0;background:rgba(255,255,255,0.95);padding:10px;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,0.3);font-size:12px;width:250px;z-index:1001;';
+                tooltip.innerHTML = '<b>Editar polígono:</b><br>• Arrastrar punto blanco = mover vértice<br>• Ctrl+clic en vértice = eliminar<br><b>Dibujar nuevo:</b><br>• Clic = añadir punto<br>• Doble clic = cerrar polígono';
+                
+                div.querySelector('button').addEventListener('mouseenter', function() { tooltip.style.display = 'block'; });
+                div.querySelector('button').addEventListener('mouseleave', function() { tooltip.style.display = 'none'; });
+                
+                L.DomEvent.disableClickPropagation(div);
                 return div;
             };
             editInstructions.addTo(map);
+            
+            // Control de Capas as collapsible Leaflet control
+            var layerControlPanel = L.control({position: 'bottomleft'});
+            layerControlPanel.onAdd = function(map) {
+                var container = L.DomUtil.create('div', 'leaflet-layer-panel');
+                container.innerHTML = 
+                    '<button type="button" class="btn btn-light btn-sm shadow-sm" id="toggleLayerPanel" style="font-size:12px;padding:4px 10px;opacity:0.85;" title="Control de Capas">' +
+                    '<i class="bi bi-layers"></i> Capas</button>' +
+                    '<div id="layerPanelBody" style="display:none;background:rgba(255,255,255,0.95);padding:8px 10px;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,0.3);margin-top:4px;font-size:12px;min-width:200px;">' +
+                    '<div class="form-check form-switch mb-1">' +
+                    '<input class="form-check-input" type="checkbox" id="toggleHistoricos" checked>' +
+                    '<label class="form-check-label" for="toggleHistoricos"><span style="color:#ff8c00;font-weight:bold;">●</span> Históricos</label>' +
+                    '</div>' +
+                    '<div class="form-check form-switch mb-1">' +
+                    '<input class="form-check-input" type="checkbox" id="toggleActuales" checked>' +
+                    '<label class="form-check-label" for="toggleActuales"><span style="color:#d63031;font-weight:bold;">●</span> Actuales</label>' +
+                    '</div>' +
+                    '<div class="form-check form-switch mb-1">' +
+                    '<input class="form-check-input" type="checkbox" id="togglePoligonoActual" checked>' +
+                    '<label class="form-check-label" for="togglePoligonoActual"><span style="color:#0066cc;font-weight:bold;">●</span> Polígono</label>' +
+                    '</div>' +
+                    '<button type="button" class="btn btn-outline-primary btn-sm w-100 mt-1" id="zoomToPoligono" style="font-size:11px;padding:2px 6px;">' +
+                    '<i class="bi bi-zoom-in"></i> Zoom</button>' +
+                    '</div>';
+                
+                // Toggle panel
+                container.querySelector('#toggleLayerPanel').addEventListener('click', function() {
+                    var body = container.querySelector('#layerPanelBody');
+                    body.style.display = body.style.display === 'none' ? 'block' : 'none';
+                });
+                
+                L.DomEvent.disableClickPropagation(container);
+                return container;
+            };
+            layerControlPanel.addTo(map);
             
             // Boton personalizado para activar edición
             var editButton = L.control({position: 'topright'});
@@ -2644,7 +2656,10 @@ document.addEventListener('DOMContentLoaded', function() {
                     // Calcular y actualizar el área digitalizada en tiempo real
                     var areaSqMeters = L.GeometryUtil.geodesicArea(newLatLngs);
                     var areaHectares = areaSqMeters / 10000; // Convertir a hectáreas
-                    document.getElementById('Area_digitalizada').value = areaHectares.toFixed(4);
+                    var newArea = areaHectares.toFixed(4);
+                    document.getElementById('Area_digitalizada').value = newArea;
+                    var infoDigSpan = document.getElementById('infoAreaDigitalizada');
+                    if (infoDigSpan) infoDigSpan.textContent = parseFloat(newArea).toFixed(4) + ' ha';
                     
                     // Calcular estatus automáticamente
                     if (typeof calcularEstatus === 'function') calcularEstatus();
@@ -2804,15 +2819,8 @@ document.addEventListener('DOMContentLoaded', function() {
                              window.addVertexMode = false;
                             
                             // Actualizar la interfaz para mostrar que estamos en modo edición de vértices
-                            document.querySelector('.editing-mode-indicator').innerHTML = 'EDITANDO VÉRTICES';
-                            document.querySelector('.edit-instructions').innerHTML = `
-                                <h5>Vértice agregado - Modo edición activo:</h5>
-                                <ul>
-                                    <li><strong>Mover vértice:</strong> Arrastra cualquier punto blanco para moverlo</li>
-                                    <li><strong>Agregar más vértices:</strong> Haz clic en "Agregar Vértice" nuevamente</li>
-                                    <li><strong>Guardar cambios:</strong> Haz clic en "Guardar" cuando termines</li>
-                                </ul>
-                            `;
+                            document.querySelector('.editing-mode-indicator').innerHTML = '✏️ Editando';
+                            // edit-help tooltip has fixed content, no update needed
                             
                             // Mostrar botones relevantes
                             document.getElementById('editPolygon').style.display = 'none';
@@ -2992,15 +3000,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 // Mostrar indicadores
                 document.querySelector('.editing-mode-indicator').style.display = 'block';
-                document.querySelector('.editing-mode-indicator').innerHTML = 'DIBUJANDO NUEVO POLÍGONO';
-                document.querySelector('.edit-instructions').style.display = 'block';
-                document.querySelector('.edit-instructions').innerHTML = `
-                    <h5>Cómo dibujar un nuevo polígono:</h5>
-                    <ul>
-                        <li><strong>Añadir vértice:</strong> Haz clic en el mapa para añadir puntos</li>
-                        <li><strong>Finalizar polígono:</strong> Haz clic en el primer punto o doble clic en el último punto</li>
-                    </ul>
-                `;
+                document.querySelector('.editing-mode-indicator').innerHTML = '✏️ Dibujando';
+                document.querySelector('.edit-help-btn').style.display = 'block';
+                // edit-help tooltip has fixed content, no update needed
                 
                 // Desactivar campos del formulario durante el dibujo
                 var formInputs = document.querySelectorAll('#formEditarPoligono input, #formEditarPoligono textarea, #formEditarPoligono select');
@@ -3127,16 +3129,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 // Mostrar indicadores
                 document.querySelector('.editing-mode-indicator').style.display = 'block';
-                document.querySelector('.editing-mode-indicator').innerHTML = 'AGREGANDO VÉRTICES';
-                document.querySelector('.edit-instructions').style.display = 'block';
-                document.querySelector('.edit-instructions').innerHTML = `
-                    <h5>Cómo agregar vértices:</h5>
-                    <ul>
-                        <li><strong>Agregar vértice:</strong> Haz clic en cualquier línea del polígono donde quieras agregar un nuevo punto</li>
-                        <li><strong>El nuevo vértice se insertará automáticamente y se activará el modo de edición</strong></li>
-                        <li><strong>Guardar cambios:</strong> Haz clic en el botón Guardar cuando hayas terminado</li>
-                    </ul>
-                `;
+                document.querySelector('.editing-mode-indicator').innerHTML = '✏️ + Vértices';
+                document.querySelector('.edit-help-btn').style.display = 'block';
+                // edit-help tooltip has fixed content, no update needed
                 
                 // Activar el editor de agregar vértices
                 editableLayers.eachLayer(function(layer) {
@@ -3185,6 +3180,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     var areaField = document.getElementById('Area_digitalizada');
                     if(areaField) {
                         areaField.value = areaFormateada;
+                        var infoDigSpan = document.getElementById('infoAreaDigitalizada');
+                        if (infoDigSpan) infoDigSpan.textContent = parseFloat(areaFormateada).toFixed(4) + ' ha';
                         highlightField('Area_digitalizada');
                         console.log("Campo de área actualizado a:", areaFormateada);
                         
@@ -3222,14 +3219,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     // Preparar para edición de vértices una vez dibujado
                     customEditor = createCustomVertexEditor(map, newPolygon).enable();
                     
-                    // Actualizar mensaje de instrucciones
-                    document.querySelector('.edit-instructions').innerHTML = `
-                        <h5>Polígono dibujado:</h5>
-                        <ul>
-                            <li><strong>Ajustar vértices:</strong> Ahora puedes mover los puntos blancos</li>
-                            <li><strong>Guardar cambios:</strong> Haz clic en el botón Guardar</li>
-                        </ul>
-                    `;
+                    // edit-help tooltip has fixed content, no update needed
                     
                     // Desactivar modo de dibujo pero mantener en modo de edición
                     drawingMode = false;
@@ -3328,6 +3318,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 var areaField = document.getElementById('Area_digitalizada');
                 areaField.value = areaFormateada;
+                var infoDigSpan = document.getElementById('infoAreaDigitalizada');
+                if (infoDigSpan) infoDigSpan.textContent = parseFloat(areaFormateada).toFixed(4) + ' ha';
                 
                 // Calcular estatus automáticamente con el nuevo valor del área
                 if (typeof calcularEstatus === 'function') calcularEstatus();
@@ -3389,7 +3381,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 // Ocultar indicador de modo de edición e instrucciones
                 document.querySelector('.editing-mode-indicator').style.display = 'none';
-                document.querySelector('.edit-instructions').style.display = 'none';
+                document.querySelector('.edit-help-btn').style.display = 'none';
                 window.editingMode = false;  // Usar window.editingMode para asegurar alcance global
                 window.addVertexMode = false; // Resetear modo de agregar vértices
                 
@@ -3485,7 +3477,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 // Ocultar indicador de modo de edición e instrucciones
                 document.querySelector('.editing-mode-indicator').style.display = 'none';
-                document.querySelector('.edit-instructions').style.display = 'none';
+                document.querySelector('.edit-help-btn').style.display = 'none';
                 window.editingMode = false;  // Usar window.editingMode para asegurar alcance global
                 window.addVertexMode = false; // Resetear modo de agregar vértices
                 
@@ -3790,6 +3782,23 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             } else {
                 console.warn("No se pudo encontrar el contenedor de Estatus para mostrar la diferencia");
+            }
+            
+            // Update diferencia-badge in the info panel
+            var diferenciaBadge = document.getElementById('diferencia-badge');
+            if (diferenciaBadge) {
+                diferenciaBadge.textContent = porcentajeDiferencia.toFixed(2) + '%';
+                if (porcentajeDiferencia <= 11) {
+                    diferenciaBadge.className = 'badge bg-success';
+                } else {
+                    diferenciaBadge.className = 'badge bg-warning text-dark';
+                }
+            }
+            
+            // Update info panel display values
+            var infoDigSpan = document.getElementById('infoAreaDigitalizada');
+            if (infoDigSpan) {
+                infoDigSpan.textContent = parseFloat(document.getElementById('Area_digitalizada').value).toFixed(4) + ' ha';
             }
         }
         
