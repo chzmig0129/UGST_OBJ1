@@ -8134,20 +8134,36 @@ def validar_geometria_route():
 @login_required
 def api_validacion_poligonos_estadisticas():
     try:
-        total = Poligono.query.count()
-        con_estatus = Poligono.query.filter(
+        # Get IDs to exclude (same logic as Lista tab, lines 793-809)
+        vincular_ids = set(
+            v.poligono_id for v in ValidacionMegacapa.query.filter_by(estatus_megacapa='VINCULAR').all()
+        )
+        seg_val_excluir_ids = set(
+            sv.poligono_id for sv in SegundaValidacionPoligono.query.filter(
+                SegundaValidacionPoligono.decision.in_(['ELIMINAR', 'VINCULAR'])
+            ).all()
+        )
+        excluir_ids = vincular_ids | seg_val_excluir_ids
+
+        # Base query excluding VINCULAR and ELIMINAR polygons
+        base_query = Poligono.query
+        if excluir_ids:
+            base_query = base_query.filter(~Poligono.id.in_(excluir_ids))
+
+        total = base_query.count()
+        con_estatus = base_query.filter(
             Poligono.estatus.isnot(None), Poligono.estatus != ''
         ).count()
         sin_estatus = total - con_estatus
-        sin_asignar = Poligono.query.filter(Poligono.usuario_asignado_id.is_(None)).count()
+        sin_asignar = base_query.filter(Poligono.usuario_asignado_id.is_(None)).count()
 
-        # Per-user stats for non-admin users
+        # Per-user stats — also only count NUEVOS
         usuarios = User.query.filter_by(is_admin=False, is_active=True).order_by(User.id).all()
         por_usuario = []
         for u in usuarios:
-            asignados = Poligono.query.filter_by(usuario_asignado_id=u.id).count()
-            editados = Poligono.query.filter(
-                Poligono.usuario_asignado_id == u.id,
+            user_query = base_query.filter(Poligono.usuario_asignado_id == u.id)
+            asignados = user_query.count()
+            editados = user_query.filter(
                 Poligono.estatus.isnot(None),
                 Poligono.estatus != ''
             ).count()
