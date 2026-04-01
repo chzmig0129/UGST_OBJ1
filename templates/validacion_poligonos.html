@@ -271,6 +271,7 @@ function verMapaMegacapa(validacionId, estatus, traslape) {
         
         L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
             attribution: 'Esri',
+            maxNativeZoom: 19,
             maxZoom: 19
         }).addTo(mapaMegacapa);
         
@@ -657,7 +658,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (svMapInstance) { svMapInstance.remove(); }
                 svMapInstance = L.map('mapaGrupo').setView([23.6, -102.5], 5);
                 L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-                    attribution: 'Esri'
+                    attribution: 'Esri',
+                    maxNativeZoom: 19,
+                    maxZoom: 22
                 }).addTo(svMapInstance);
                 
                 var colors = ['#3388ff', '#ff3333', '#33ff33', '#ff33ff', '#ffff33', '#33ffff', '#ff8833', '#8833ff'];
@@ -1470,14 +1473,17 @@ document.addEventListener('DOMContentLoaded', function() {
                 var baseLayers = {
                     "OpenStreetMap": L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+                        maxNativeZoom: 19,
                         maxZoom: 22
                     }),
                     "Esri World Imagery": L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
                         attribution: 'Tiles &copy; Esri &mdash; Source: Esri',
+                        maxNativeZoom: 19,
                         maxZoom: 22
                     }),
                     "CartoDB Dark": L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
                         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, &copy; <a href="https://carto.com/attributions">CARTO</a>',
+                        maxNativeZoom: 19,
                         maxZoom: 22
                     })
                 };

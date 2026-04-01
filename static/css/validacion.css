@@ -212,3 +212,39 @@
         border-top: 1px solid #dee2e6;
     }
 }
+
+/* ============================================
+   Leaflet.draw vertex markers: smaller circles
+   ============================================ */
+
+/* Edit mode vertex handles */
+.leaflet-editing-icon {
+    width: 8px !important;
+    height: 8px !important;
+    margin-left: -4px !important;
+    margin-top: -4px !important;
+    border-radius: 50%;
+    border: 1.5px solid #fff !important;
+    background-color: #0066cc !important;
+    box-shadow: 0 0 3px rgba(0,0,0,0.5);
+}
+
+/* Midpoint (ghost) vertex handles — even smaller */
+.leaflet-editing-icon.leaflet-div-icon {
+    opacity: 0.6;
+}
+
+/* Draw mode click markers */
+.leaflet-marker-icon.leaflet-div-icon.leaflet-editing-icon {
+    width: 8px !important;
+    height: 8px !important;
+    margin-left: -4px !important;
+    margin-top: -4px !important;
+    border-radius: 50%;
+}
+
+/* Draw mode: the vertex being placed */
+.leaflet-draw-guide-dash {
+    width: 4px;
+    height: 4px;
+}
