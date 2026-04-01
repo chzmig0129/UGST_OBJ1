@@ -269,10 +269,11 @@ function verMapaMegacapa(validacionId, estatus, traslape) {
         
         mapaMegacapa = L.map('mapaMegacapa');
         
-        L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
-            attribution: '&copy; Google',
-            maxNativeZoom: 20,
-            maxZoom: 22
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            attribution: 'Tiles &copy; Esri',
+            maxNativeZoom: 18,
+            maxZoom: 22,
+            errorTileUrl: ''
         }).addTo(mapaMegacapa);
         
         // Fetch GeoJSON from API
@@ -657,10 +658,11 @@ document.addEventListener('DOMContentLoaded', function() {
             setTimeout(function() {
                 if (svMapInstance) { svMapInstance.remove(); }
                 svMapInstance = L.map('mapaGrupo').setView([23.6, -102.5], 5);
-                L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
-                    attribution: '&copy; Google',
-                    maxNativeZoom: 20,
-                    maxZoom: 22
+                L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                    attribution: 'Tiles &copy; Esri',
+                    maxNativeZoom: 18,
+                    maxZoom: 22,
+                    errorTileUrl: ''
                 }).addTo(svMapInstance);
                 
                 var colors = ['#3388ff', '#ff3333', '#33ff33', '#ff33ff', '#ffff33', '#33ffff', '#ff8833', '#8833ff'];
@@ -1471,30 +1473,32 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 // Añadir diferentes capas base como opciones
                 var baseLayers = {
-                    "Google Satellite": L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
-                        attribution: '&copy; Google',
-                        maxNativeZoom: 20,
-                        maxZoom: 22
+                    "Esri Satélite": L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                        attribution: 'Tiles &copy; Esri',
+                        maxNativeZoom: 18,
+                        maxZoom: 22,
+                        errorTileUrl: ''
                     }),
-                    "Google Hybrid": L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
-                        attribution: '&copy; Google',
-                        maxNativeZoom: 20,
-                        maxZoom: 22
+                    "Esri Satélite (Clarity)": L.tileLayer('https://clarity.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                        attribution: 'Tiles &copy; Esri',
+                        maxNativeZoom: 19,
+                        maxZoom: 22,
+                        errorTileUrl: ''
                     }),
-                    "Esri World Imagery": L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-                        attribution: 'Tiles &copy; Esri &mdash; Source: Esri',
+                    "OpenStreetMap": L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                        attribution: '&copy; OpenStreetMap contributors',
                         maxNativeZoom: 19,
                         maxZoom: 22
                     }),
-                    "OpenStreetMap": L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+                    "CartoDB Positron": L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+                        attribution: '&copy; OpenStreetMap, &copy; CARTO',
                         maxNativeZoom: 19,
                         maxZoom: 22
                     })
                 };
                 
-                // Añadir Google Satellite como capa base por defecto
-                baseLayers["Google Satellite"].addTo(map);
+                // Añadir Esri Satélite como capa base por defecto
+                baseLayers["Esri Satélite"].addTo(map);
                 
                 // Añadir control de capas para cambiar entre fondos de mapa
                 L.control.layers(baseLayers, {}).addTo(map);
