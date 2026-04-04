@@ -807,7 +807,17 @@ def validacion_poligonos(tab):
             if seg_val_excluir_ids:
                 poligonos = [p for p in poligonos if p.id not in seg_val_excluir_ids]
                 app.logger.info(f'Excluidos {len(seg_val_excluir_ids)} polígonos por segunda validación')
-            
+
+            # Estatus filter
+            filtro_estatus = request.args.get('filtro_estatus', 'todos')
+            if filtro_estatus == '6':
+                poligonos = [p for p in poligonos if p.estatus == '6']
+            elif filtro_estatus == '7':
+                poligonos = [p for p in poligonos if p.estatus == '7']
+            elif filtro_estatus == 'pendiente':
+                poligonos = [p for p in poligonos if p.estatus is None or p.estatus == '']
+            # 'todos' shows everything (no additional filter)
+
             app.logger.info(f"Se encontraron {len(poligonos)} polígonos en la base de datos")
             
             # Convertir a formato compatible con la plantilla (LEYENDO DIRECTO DE COLUMNAS)
@@ -848,7 +858,8 @@ def validacion_poligonos(tab):
                                tab=tab,
                                data=data,
                                columns=columns_to_display, # Usar la lista fija
-                               filename=excel_data['filename']) # Mantener filename por compatibilidad
+                               filename=excel_data['filename'], # Mantener filename por compatibilidad
+                               filtro_estatus=filtro_estatus)
         except Exception as e:
             app.logger.error(f"ERROR AL CARGAR LISTA: {str(e)}")
             import traceback
@@ -858,7 +869,8 @@ def validacion_poligonos(tab):
                                tab=tab, 
                                data=[],
                                columns=[],
-                               filename='')
+                               filename='',
+                               filtro_estatus='todos')
     
     elif tab == 'editar':
         db_id = request.args.get('db_id')
