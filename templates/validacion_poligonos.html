@@ -918,7 +918,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     <div class="d-flex align-items-center gap-2">
                         <div class="d-flex align-items-center gap-1 me-2">
                             <label class="form-label mb-0 small fw-bold text-muted">Filtrar:</label>
-                            <select id="filtroEstatus" class="form-select form-select-sm" style="width: auto; min-width: 160px;" onchange="window.location.href='{{ url_for('validacion_poligonos', tab='lista') }}' + '&filtro_estatus=' + this.value;">
+                            <select id="filtroEstatus" class="form-select form-select-sm" style="width: auto; min-width: 160px;" onchange="window.location.href='{{ url_for('validacion_poligonos', tab='lista') }}' + '?filtro_estatus=' + this.value;">
                                 <option value="todos" {% if filtro_estatus == 'todos' or not filtro_estatus %}selected{% endif %}>Todos</option>
                                 <option value="pendiente" {% if filtro_estatus == 'pendiente' %}selected{% endif %}>Sin estatus</option>
                                 <option value="6" {% if filtro_estatus == '6' %}selected{% endif %}>Estatus 6</option>
