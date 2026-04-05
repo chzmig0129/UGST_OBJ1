@@ -3704,6 +3704,13 @@ document.addEventListener('DOMContentLoaded', function() {
             hiddenInput.value = 'true';
             form.appendChild(hiddenInput);
             
+            // Pasar el filtro activo al backend para que navegue solo dentro del mismo filtro
+            var hiddenFiltro = document.createElement('input');
+            hiddenFiltro.type = 'hidden';
+            hiddenFiltro.name = 'filtro_estatus';
+            hiddenFiltro.value = '{{ filtro_estatus|default("pendiente") }}';
+            form.appendChild(hiddenFiltro);
+            
             // Mostrar un mensaje temporal
             var toastHTML = `
             <div class="toast-container position-fixed bottom-0 end-0 p-3">

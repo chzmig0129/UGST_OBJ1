@@ -1,4 +1,14 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, send_file, session, jsonify
+from flask import (
+    Flask,
+    render_template,
+    request,
+    redirect,
+    url_for,
+    flash,
+    send_file,
+    session,
+    jsonify,
+)
 from flask_login import LoginManager, login_required, current_user
 from flask_talisman import Talisman
 from flask_limiter import Limiter
@@ -23,9 +33,14 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
 from shapefile_utils import plot_shapefile_to_png
-from utils.pdf_generator import (generar_ficha_tecnica_desde_plantilla, verificar_instalacion_pymupdf, 
-                                generar_ficha_tecnica_fallback, generar_ficha_tecnica_simple, 
-                                garantizar_pymupdf, import_pymupdf)
+from utils.pdf_generator import (
+    generar_ficha_tecnica_desde_plantilla,
+    verificar_instalacion_pymupdf,
+    generar_ficha_tecnica_fallback,
+    generar_ficha_tecnica_simple,
+    garantizar_pymupdf,
+    import_pymupdf,
+)
 from utils.shapefile_cache import shp_cache
 from utils.geometry import ordenar_coordenadas, parsear_coordenadas, validar_geometria
 import shutil
@@ -37,13 +52,15 @@ app = Flask(__name__)
 # Load configuration from the appropriate config class.
 # Set FLASK_ENV or FLASK_CONFIG to 'production' / 'testing' to switch.
 from config import get_config  # noqa: E402
+
 app.config.from_object(get_config())
 
 # SECRET_KEY must be set on app.secret_key as well for Flask session signing.
-app.secret_key = app.config['SECRET_KEY']
+app.secret_key = app.config["SECRET_KEY"]
 
 # Configure logging (must be done after app creation and config loading)
 from utils.logging_config import setup_logging  # noqa: E402
+
 setup_logging(app)
 
 # ---------------------------------------------------------------------------
@@ -53,26 +70,37 @@ setup_logging(app)
 # CSP allows 'self' plus the external origins needed by Leaflet maps.
 if not app.debug:
     _csp = {
-        'default-src': ["'self'"],
-        'script-src': ["'self'", "'unsafe-inline'", 'cdn.jsdelivr.net', 'unpkg.com', 'cdnjs.cloudflare.com'],
-        'style-src': ["'self'", "'unsafe-inline'", 'cdn.jsdelivr.net', 'unpkg.com'],
-        'img-src': [
+        "default-src": ["'self'"],
+        "script-src": [
             "'self'",
-            'data:',
-            'tile.openstreetmap.org',
-            '*.tile.openstreetmap.org',
-            'cdn.jsdelivr.net',
-            'server.arcgisonline.com',
+            "'unsafe-inline'",
+            "cdn.jsdelivr.net",
+            "unpkg.com",
+            "cdnjs.cloudflare.com",
         ],
-        'font-src': ["'self'", 'cdn.jsdelivr.net', 'unpkg.com'],
-        'connect-src': ["'self'", 'tile.openstreetmap.org', '*.tile.openstreetmap.org', 'server.arcgisonline.com'],
+        "style-src": ["'self'", "'unsafe-inline'", "cdn.jsdelivr.net", "unpkg.com"],
+        "img-src": [
+            "'self'",
+            "data:",
+            "tile.openstreetmap.org",
+            "*.tile.openstreetmap.org",
+            "cdn.jsdelivr.net",
+            "server.arcgisonline.com",
+        ],
+        "font-src": ["'self'", "cdn.jsdelivr.net", "unpkg.com"],
+        "connect-src": [
+            "'self'",
+            "tile.openstreetmap.org",
+            "*.tile.openstreetmap.org",
+            "server.arcgisonline.com",
+        ],
     }
     Talisman(
         app,
-        force_https=os.environ.get('FORCE_HTTPS', 'false').lower() == 'true',
+        force_https=os.environ.get("FORCE_HTTPS", "false").lower() == "true",
         strict_transport_security=True,
         content_security_policy=_csp,
-        session_cookie_secure=os.environ.get('FORCE_HTTPS', 'false').lower() == 'true',
+        session_cookie_secure=os.environ.get("FORCE_HTTPS", "false").lower() == "true",
         session_cookie_http_only=True,
     )
 
@@ -88,20 +116,24 @@ limiter = Limiter(
     storage_uri="memory://",
 )
 
+
 @app.errorhandler(429)
 def ratelimit_handler(e):
     """Return JSON with Retry-After header for rate-limited requests."""
-    response = jsonify({
-        "error": "rate_limit_exceeded",
-        "message": "Demasiadas solicitudes. Por favor espere antes de intentar de nuevo.",
-        "retry_after": 60
-    })
+    response = jsonify(
+        {
+            "error": "rate_limit_exceeded",
+            "message": "Demasiadas solicitudes. Por favor espere antes de intentar de nuevo.",
+            "retry_after": 60,
+        }
+    )
     response.status_code = 429
     response.headers["Retry-After"] = "60"
     return response
 
+
 # Añadir filtro personalizado para slice
-@app.template_filter('slice')
+@app.template_filter("slice")
 def slice_filter(iterable, start, end=None):
     if iterable is None or len(iterable) == 0:
         return []
@@ -110,16 +142,15 @@ def slice_filter(iterable, start, end=None):
     return iterable[start:end]
 
 
-
 def obtener_estatus_validacion(row):
     """Obtiene el estatus de validación priorizando ESTA_CHA."""
-    for field_name in ('ESTA_CHA', 'ESTATUS', 'Estatus'):
+    for field_name in ("ESTA_CHA", "ESTATUS", "Estatus"):
         estatus = row.get(field_name)
         if pd.notna(estatus):
             estatus_str = str(estatus).strip()
             if estatus_str:
                 return estatus_str
-    return ''
+    return ""
 
 
 def normalizar_columna_estatus_validacion(gdf):
@@ -127,24 +158,33 @@ def normalizar_columna_estatus_validacion(gdf):
     if gdf is None:
         return gdf
 
-    if 'ESTA_CHA' in gdf.columns:
-        estatus_base = gdf['ESTA_CHA']
-    elif 'ESTATUS' in gdf.columns:
-        estatus_base = gdf['ESTATUS']
-    elif 'Estatus' in gdf.columns:
-        estatus_base = gdf['Estatus']
+    if "ESTA_CHA" in gdf.columns:
+        estatus_base = gdf["ESTA_CHA"]
+    elif "ESTATUS" in gdf.columns:
+        estatus_base = gdf["ESTATUS"]
+    elif "Estatus" in gdf.columns:
+        estatus_base = gdf["Estatus"]
     else:
         return gdf
 
-    gdf['ESTA_CHA'] = estatus_base
-    gdf['ESTATUS'] = estatus_base
+    gdf["ESTA_CHA"] = estatus_base
+    gdf["ESTATUS"] = estatus_base
 
     return gdf
+
 
 # Cache para el dashboard de estatus (se computa una vez al primer request)
 _dashboard_cache = None
 _indices_filtrados_cache = None
-_clasif_nuevos_state = {'status': 'idle', 'progress': 0, 'processed': 0, 'total': 0, 'result': None, 'indices_por_clasif': None, 'error': None}
+_clasif_nuevos_state = {
+    "status": "idle",
+    "progress": 0,
+    "processed": 0,
+    "total": 0,
+    "result": None,
+    "indices_por_clasif": None,
+    "error": None,
+}
 _nuevos_relacionados_cache = None
 
 
@@ -160,38 +200,41 @@ def obtener_ubicacion(lat, lon):
             # Corregir la codificación de caracteres
             municipio = resultados.iloc[0]["NOMGEO"]
             estado = resultados.iloc[0]["NOM_ENT"]
-            
+
             # Intentar corregir la codificación si es necesario
             try:
                 # Si los nombres están en Latin-1 pero interpretados como UTF-8
-                if isinstance(municipio, str) and any(c in municipio for c in ['Ã', 'Â', 'Á', 'É', 'Í', 'Ó', 'Ú']):
-                    municipio = municipio.encode('latin-1').decode('utf-8')
-                if isinstance(estado, str) and any(c in estado for c in ['Ã', 'Â', 'Á', 'É', 'Í', 'Ó', 'Ú']):
-                    estado = estado.encode('latin-1').decode('utf-8')
+                if isinstance(municipio, str) and any(
+                    c in municipio for c in ["Ã", "Â", "Á", "É", "Í", "Ó", "Ú"]
+                ):
+                    municipio = municipio.encode("latin-1").decode("utf-8")
+                if isinstance(estado, str) and any(
+                    c in estado for c in ["Ã", "Â", "Á", "É", "Í", "Ó", "Ú"]
+                ):
+                    estado = estado.encode("latin-1").decode("utf-8")
             except Exception as encoding_error:
                 app.logger.error(f"Error al corregir codificación: {encoding_error}")
-                
-            return {
-                "municipio": municipio,
-                "estado": estado
-            }
+
+            return {"municipio": municipio, "estado": estado}
     except Exception as e:
         app.logger.error(f"Error al obtener ubicación: {e}")
     return None
+
 
 # db and bcrypt are defined in extensions.py and initialised here via init_app.
 # This is the standard Flask pattern that avoids circular imports: any module
 # (auth.py, models/user.py, scripts/…) can safely import db/bcrypt from
 # extensions without pulling in the full app object.
 from extensions import db, bcrypt  # noqa: E402
+
 db.init_app(app)
 bcrypt.init_app(app)
 
 # Flask-Login setup
 login_manager = LoginManager(app)
-login_manager.login_view = 'auth.login'
-login_manager.login_message = 'Por favor inicia sesión para acceder a esta página.'
-login_manager.login_message_category = 'warning'
+login_manager.login_view = "auth.login"
+login_manager.login_message = "Por favor inicia sesión para acceder a esta página."
+login_manager.login_message_category = "warning"
 
 # User model — import after extensions are wired up so db is ready.
 from models.user import User  # noqa: E402
@@ -199,64 +242,82 @@ from models.analizador_15k import Analizador15K  # noqa: E402
 from models.backup_analizador import BackupAnalizador15K  # noqa: E402
 from utils.validacion_megacapa import ejecutar_validacion_megacapa  # noqa: E402
 
+
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
+
 
 # Definición del modelo para la base de datos
 class Poligono(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     # Columnas específicas mapeadas desde el Excel/Lista
     id_poligono = db.Column(db.Text, nullable=True)
-    if_val = db.Column(db.Text, nullable=True) # 'if' es palabra reservada
+    if_val = db.Column(db.Text, nullable=True)  # 'if' es palabra reservada
     id_credito = db.Column(db.Text, nullable=True)
     id_persona = db.Column(db.Text, nullable=True)
-    superficie = db.Column(db.Float, nullable=True) # Asumiendo numérico
+    superficie = db.Column(db.Float, nullable=True)  # Asumiendo numérico
     estado = db.Column(db.Text, nullable=True)
     municipio = db.Column(db.Text, nullable=True)
-    coordenadas = db.Column(db.Text, nullable=True) # Coordenadas originales
-    coordenadas_corregidas = db.Column(db.Text, nullable=True) # Coordenadas decimales corregidas
-    area_digitalizada = db.Column(db.Float, nullable=True) # Área calculada/editada
-    estatus = db.Column(db.Text, nullable=True) # Estatus (si existe)
-    comentarios = db.Column(db.Text, nullable=True) # Comentarios editables
-    descripcion = db.Column(db.Text, nullable=True) # Nueva columna para descripción
-    orden = db.Column(db.Text, nullable=True) # Nueva columna para número de orden
-    se_modifico = db.Column(db.Text, default='No') # Campo para indicar si se modificó el polígono en el mapa
+    coordenadas = db.Column(db.Text, nullable=True)  # Coordenadas originales
+    coordenadas_corregidas = db.Column(
+        db.Text, nullable=True
+    )  # Coordenadas decimales corregidas
+    area_digitalizada = db.Column(db.Float, nullable=True)  # Área calculada/editada
+    estatus = db.Column(db.Text, nullable=True)  # Estatus (si existe)
+    comentarios = db.Column(db.Text, nullable=True)  # Comentarios editables
+    descripcion = db.Column(db.Text, nullable=True)  # Nueva columna para descripción
+    orden = db.Column(db.Text, nullable=True)  # Nueva columna para número de orden
+    se_modifico = db.Column(
+        db.Text, default="No"
+    )  # Campo para indicar si se modificó el polígono en el mapa
     # User assignment and audit
-    usuario_asignado_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True, index=True)
-    editado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    usuario_asignado_id = db.Column(
+        db.Integer, db.ForeignKey("user.id"), nullable=True, index=True
+    )
+    editado_por_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
     fecha_editado = db.Column(db.DateTime, nullable=True)
-    usuario_asignado = db.relationship('User', foreign_keys=[usuario_asignado_id], backref='poligonos_validacion_asignados')
-    editado_por = db.relationship('User', foreign_keys=[editado_por_id], backref='poligonos_validacion_editados')
+    usuario_asignado = db.relationship(
+        "User",
+        foreign_keys=[usuario_asignado_id],
+        backref="poligonos_validacion_asignados",
+    )
+    editado_por = db.relationship(
+        "User", foreign_keys=[editado_por_id], backref="poligonos_validacion_editados"
+    )
     # Metadata
     fecha_creacion = db.Column(db.DateTime, default=datetime.utcnow)
-    fecha_modificacion = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    fecha_modificacion = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
 
 from models.validacion_megacapa import ValidacionMegacapa  # noqa: E402  — must be after Poligono is defined
 from models.segunda_validacion_poligono import SegundaValidacionPoligono  # noqa: E402
 
 # Variable global para almacenar los datos del Excel (mantener por compatibilidad)
 excel_data = {
-    'data': [],
-    'columns': [],
-    'filename': '',
-    'original_coords': []  # Nuevo: almacen coordenadas originales
+    "data": [],
+    "columns": [],
+    "filename": "",
+    "original_coords": [],  # Nuevo: almacen coordenadas originales
 }
 
 # Asegurar que exista el directorio de uploads
-if not os.path.exists(app.config['UPLOAD_FOLDER']):
-    os.makedirs(app.config['UPLOAD_FOLDER'])
+if not os.path.exists(app.config["UPLOAD_FOLDER"]):
+    os.makedirs(app.config["UPLOAD_FOLDER"])
 
 # Register auth blueprint
 from auth import auth as auth_blueprint  # noqa: E402
+
 app.logger.debug(auth_blueprint)
 app.register_blueprint(auth_blueprint)
 
 # Apply per-route rate limits to auth blueprint views.
 # After blueprint registration, view functions are keyed as 'blueprint_name.func_name'
 # in app.view_functions (not in auth_blueprint.view_functions).
-limiter.limit("5 per minute")(app.view_functions['auth.login'])
-limiter.limit("3 per hour")(app.view_functions['auth.register'])
+limiter.limit("5 per minute")(app.view_functions["auth.login"])
+limiter.limit("3 per hour")(app.view_functions["auth.register"])
 
 # Crear tablas que no existan todavía — nunca elimina datos existentes.
 with app.app_context():
@@ -270,21 +331,23 @@ with app.app_context():
 # Funciones para procesamiento de coordenadas
 # ==============================================
 
+
 def limpiar_coordenada(coord):
-    coord = coord.replace('\t', '').replace('"', '').strip()
-    coord = re.sub(' +', ' ', coord)
+    coord = coord.replace("\t", "").replace('"', "").strip()
+    coord = re.sub(" +", " ", coord)
     return coord
 
+
 def corregir_longitud(coord_decimales):
-    if pd.isna(coord_decimales) or coord_decimales == '':
+    if pd.isna(coord_decimales) or coord_decimales == "":
         return coord_decimales
-        
-    coord_list = coord_decimales.split(' | ')
+
+    coord_list = coord_decimales.split(" | ")
     corrected_coords = []
     for coord in coord_list:
-        if ',' not in coord:
+        if "," not in coord:
             continue
-        lat, lon = coord.split(',')
+        lat, lon = coord.split(",")
         try:
             lat = float(lat.strip())
             lon = float(lon.strip())
@@ -296,31 +359,32 @@ def corregir_longitud(coord_decimales):
         except:
             continue
 
-    return ' | '.join(corrected_coords)
+    return " | ".join(corrected_coords)
+
 
 def dms_a_decimal(coord):
     try:
         # Primero identificar la dirección (N, S, E, W)
-        match_dir = re.search(r'([NSEW])$', coord.strip(), re.IGNORECASE)
-        direccion = match_dir.group(1).upper() if match_dir else ''
-        
+        match_dir = re.search(r"([NSEW])$", coord.strip(), re.IGNORECASE)
+        direccion = match_dir.group(1).upper() if match_dir else ""
+
         # Caso especial: formato compacto tipo 18°4811.1N (sin separadores entre minutos y segundos)
-        special_match = re.match(r'(\d+)[°\s](\d{2})(\d{2}\.\d+)([NSEW])', coord)
+        special_match = re.match(r"(\d+)[°\s](\d{2})(\d{2}\.\d+)([NSEW])", coord)
         if special_match:
             grados = float(special_match.group(1))
             minutos = float(special_match.group(2))
             segundos = float(special_match.group(3))
             direccion = special_match.group(4).upper()
-            
-            decimal = grados + minutos/60 + segundos/3600
-            if direccion in ['S', 'W']:
+
+            decimal = grados + minutos / 60 + segundos / 3600
+            if direccion in ["S", "W"]:
                 decimal *= -1
             return round(decimal, 6)
-            
+
         # Caso normal: formato separado por símbolos tradicionales
-        coord_num = re.sub(r'[^\d\.\-]', ' ', coord)
+        coord_num = re.sub(r"[^\d\.\-]", " ", coord)
         parts = coord_num.strip().split()
-        
+
         if len(parts) == 3:
             grados, minutos, segundos = map(float, parts)
         elif len(parts) == 2:
@@ -332,17 +396,17 @@ def dms_a_decimal(coord):
             if len(part) >= 4:  # Al menos debe tener grados (2) y minutos (2)
                 try:
                     # Intenta interpretar como GGMMSS.S
-                    if '.' in part:
-                        dot_pos = part.index('.')
+                    if "." in part:
+                        dot_pos = part.index(".")
                         # Si hay suficientes dígitos antes del punto para grados(2) + minutos(2)
                         if dot_pos >= 4:
-                            grados = float(part[:dot_pos-4])
-                            minutos = float(part[dot_pos-4:dot_pos-2])
-                            segundos = float(part[dot_pos-2:])
+                            grados = float(part[: dot_pos - 4])
+                            minutos = float(part[dot_pos - 4 : dot_pos - 2])
+                            segundos = float(part[dot_pos - 2 :])
                         else:
                             grados = float(part[:2])
                             minutos = float(part[2:4])
-                            segundos = float('0.' + part.split('.')[1])
+                            segundos = float("0." + part.split(".")[1])
                     else:
                         # Sin punto decimal, interpretar como GGMMSS
                         grados = float(part[:2])
@@ -351,9 +415,9 @@ def dms_a_decimal(coord):
                             segundos = float(part[4:])
                         else:
                             segundos = 0.0
-                    
-                    decimal = grados + minutos/60 + segundos/3600
-                    if direccion in ['S', 'W']:
+
+                    decimal = grados + minutos / 60 + segundos / 3600
+                    if direccion in ["S", "W"]:
                         decimal *= -1
                     return round(decimal, 6)
                 except:
@@ -364,68 +428,73 @@ def dms_a_decimal(coord):
                 minutos = segundos = 0.0
         else:
             return np.nan
-            
-        decimal = grados + minutos/60 + segundos/3600
-        if direccion in ['S', 'W']:
+
+        decimal = grados + minutos / 60 + segundos / 3600
+        if direccion in ["S", "W"]:
             decimal *= -1
         return round(decimal, 6)  # Más precisión
     except Exception as e:
         app.logger.error(f"Error al convertir DMS a decimal: {coord} - {str(e)}")
         return np.nan
 
+
 def es_dms(coord):
     # Verificar si tiene símbolos de grados, minutos o segundos
-    if re.search('[°\'"]', coord):
+    if re.search("[°'\"]", coord):
         return True
     # Verificar si tiene dirección N, S, E, W
-    if re.search(r'[NSEW]$', coord, re.IGNORECASE):
+    if re.search(r"[NSEW]$", coord, re.IGNORECASE):
         return True
     # Verificar formato de números separados
-    coord_num = re.sub(r'[^\d\.]', ' ', coord)
+    coord_num = re.sub(r"[^\d\.]", " ", coord)
     parts = coord_num.strip().split()
     return len(parts) > 1
 
+
 def procesar_coordenadas_dms(fila):
-    if 'COORDENADAS' not in fila or pd.isna(fila['COORDENADAS']):
-        return ''
-    
-    coordenadas = str(fila['COORDENADAS'])
-    coordenadas = coordenadas.replace('\n', ' ').replace('\r', ' ').strip()
-    
+    if "COORDENADAS" not in fila or pd.isna(fila["COORDENADAS"]):
+        return ""
+
+    coordenadas = str(fila["COORDENADAS"])
+    coordenadas = coordenadas.replace("\n", " ").replace("\r", " ").strip()
+
     # Dividir por múltiples posibles separadores
-    for sep in ['|', ';', ' y ', ',y,']:
+    for sep in ["|", ";", " y ", ",y,"]:
         if sep in coordenadas:
             coord_list = coordenadas.split(sep)
             break
     else:
         # Si no se encontró ningún separador común, intentar dividir por espacios
-        if ' ' in coordenadas and ',' not in coordenadas:
+        if " " in coordenadas and "," not in coordenadas:
             # Asumir que cada par de coordenadas está separado por espacios
             parts = coordenadas.split()
             if len(parts) % 2 == 0:  # Debe haber un número par de partes
                 coord_list = []
                 for i in range(0, len(parts), 2):
-                    if i+1 < len(parts):
-                        coord_list.append(f"{parts[i]} {parts[i+1]}")
+                    if i + 1 < len(parts):
+                        coord_list.append(f"{parts[i]} {parts[i + 1]}")
             else:
                 coord_list = [coordenadas]  # Un solo par de coordenadas
         else:
             coord_list = [coordenadas]  # Un solo par de coordenadas
-    
+
     coord_list = [c.strip() for c in coord_list]
-    
+
     # Depuración para ver las coordenadas procesadas
     app.logger.debug(f"Coordenadas divididas: {coord_list}")
-    
+
     coords_decimales = []
-    
+
     for coord_pair in coord_list:
         coord_pair = coord_pair.strip()
         if not coord_pair:
             continue
-        
+
         # Casos especiales: coordenadas tipo 18°4811.1N,103°5102.7W
-        special_match = re.match(r'(\d+[°\s]\d{2}\d{2}\.\d+[NSEW])[,\s]+(\d+[°\s]\d{2}\d{2}\.\d+[NSEW])', coord_pair)
+        special_match = re.match(
+            r"(\d+[°\s]\d{2}\d{2}\.\d+[NSEW])[,\s]+(\d+[°\s]\d{2}\d{2}\.\d+[NSEW])",
+            coord_pair,
+        )
         if special_match:
             lat_str = special_match.group(1)
             lon_str = special_match.group(2)
@@ -434,69 +503,77 @@ def procesar_coordenadas_dms(fila):
                 lon = dms_a_decimal(lon_str)
                 if not np.isnan(lat) and not np.isnan(lon):
                     coords_decimales.append(f"{lat:.6f},{lon:.6f}")
-                    app.logger.debug(f"Par procesado especial: {lat_str},{lon_str} -> {lat:.6f},{lon:.6f}")
+                    app.logger.debug(
+                        f"Par procesado especial: {lat_str},{lon_str} -> {lat:.6f},{lon:.6f}"
+                    )
                 continue
             except Exception as e:
                 app.logger.error(f"Error procesando formato especial {coord_pair}: {e}")
-            
+
         # Procesamiento normal
-        if ' ' in coord_pair and ',' not in coord_pair:
+        if " " in coord_pair and "," not in coord_pair:
             parts = coord_pair.split()
-            
+
             patterns = [
                 r'([0-9\.]+[°][0-9\.]+[\'"][0-9\.]*[\"]*[NS])\s+([0-9\.]+[°][0-9\.]+[\'"][0-9\.]*[\"]*[WE])',
-                r'([0-9\.]+\s+[0-9\.]+\s+[0-9\.]+\s*[NS])\s+([0-9\.]+\s+[0-9\.]+\s+[0-9\.]+\s*[WE])',
-                r'([0-9\.]+\s+[0-9\.]+\s*[NS])\s+([0-9\.]+\s+[0-9\.]+\s*[WE])',
-                r'([0-9\.]+\s*[NS])\s+([0-9\.]+\s*[WE])',
+                r"([0-9\.]+\s+[0-9\.]+\s+[0-9\.]+\s*[NS])\s+([0-9\.]+\s+[0-9\.]+\s+[0-9\.]+\s*[WE])",
+                r"([0-9\.]+\s+[0-9\.]+\s*[NS])\s+([0-9\.]+\s+[0-9\.]+\s*[WE])",
+                r"([0-9\.]+\s*[NS])\s+([0-9\.]+\s*[WE])",
                 # Formatos para 18°4811.1N
-                r'(\d+[°\s]\d{2}\d{2}\.\d+[NS])\s+(\d+[°\s]\d{2}\d{2}\.\d+[WE])'
+                r"(\d+[°\s]\d{2}\d{2}\.\d+[NS])\s+(\d+[°\s]\d{2}\d{2}\.\d+[WE])",
             ]
-            
+
             lat_str = None
             lon_str = None
-            
+
             for pattern in patterns:
                 match = re.search(pattern, coord_pair)
                 if match:
                     lat_str, lon_str = match.groups()
                     break
-                    
+
             if lat_str is None or lon_str is None:
-                lat_parts = [p for p in parts if 'N' in p.upper() or 'S' in p.upper()]
-                lon_parts = [p for p in parts if 'W' in p.upper() or 'E' in p.upper()]
-                
+                lat_parts = [p for p in parts if "N" in p.upper() or "S" in p.upper()]
+                lon_parts = [p for p in parts if "W" in p.upper() or "E" in p.upper()]
+
                 if len(lat_parts) == 1 and len(lon_parts) == 1:
                     lat_str = lat_parts[0]
                     lon_str = lon_parts[0]
                 elif len(parts) >= 2:
                     mid = len(parts) // 2
-                    lat_str = ' '.join(parts[:mid])
-                    lon_str = ' '.join(parts[mid:])
+                    lat_str = " ".join(parts[:mid])
+                    lon_str = " ".join(parts[mid:])
                 else:
                     continue
-                    
-        elif ',' in coord_pair:
+
+        elif "," in coord_pair:
             try:
-                lat_str, lon_str = coord_pair.split(',', 1)
+                lat_str, lon_str = coord_pair.split(",", 1)
             except:
                 continue
         else:
             # Intentar interpretar como un formato especial sin espacios ni comas
-            match = re.match(r'(\d+[°\s]\d+\.\d+[NS])(\d+[°\s]\d+\.\d+[WE])', coord_pair)
+            match = re.match(
+                r"(\d+[°\s]\d+\.\d+[NS])(\d+[°\s]\d+\.\d+[WE])", coord_pair
+            )
             if match:
                 lat_str, lon_str = match.groups()
-            elif re.search(r'[NS]', coord_pair, re.IGNORECASE) and re.search(r'[WE]', coord_pair, re.IGNORECASE):
+            elif re.search(r"[NS]", coord_pair, re.IGNORECASE) and re.search(
+                r"[WE]", coord_pair, re.IGNORECASE
+            ):
                 # Intentar encontrar donde termina la latitud (marcada por N o S) y empieza longitud
-                ns_pos = max(coord_pair.upper().rfind('N'), coord_pair.upper().rfind('S'))
+                ns_pos = max(
+                    coord_pair.upper().rfind("N"), coord_pair.upper().rfind("S")
+                )
                 if ns_pos > 0:
-                    lat_str = coord_pair[:ns_pos+1]
-                    lon_str = coord_pair[ns_pos+1:]
+                    lat_str = coord_pair[: ns_pos + 1]
+                    lon_str = coord_pair[ns_pos + 1 :]
                 else:
                     continue
             else:
-                if re.search(r'[0-9]', coord_pair):
+                if re.search(r"[0-9]", coord_pair):
                     try:
-                        coords_clean = re.sub(r'[^\d\.\-]', ' ', coord_pair)
+                        coords_clean = re.sub(r"[^\d\.\-]", " ", coord_pair)
                         nums = [float(x) for x in coords_clean.split() if x.strip()]
                         if len(nums) >= 2:
                             lat, lon = nums[0], nums[1]
@@ -504,28 +581,30 @@ def procesar_coordenadas_dms(fila):
                                 lon *= -1
                             coords_decimales.append(f"{lat:.6f},{lon:.6f}")
                     except Exception as e:
-                        app.logger.error(f"Error procesando parte numérica {coord_pair}: {e}")
+                        app.logger.error(
+                            f"Error procesando parte numérica {coord_pair}: {e}"
+                        )
                 continue
 
         # Limpieza adicional
-        lat_str = limpiar_coordenada(lat_str) if lat_str else ''
-        lon_str = limpiar_coordenada(lon_str) if lon_str else ''
-        
+        lat_str = limpiar_coordenada(lat_str) if lat_str else ""
+        lon_str = limpiar_coordenada(lon_str) if lon_str else ""
+
         # Intentar procesarlas como DMS
         app.logger.debug(f"Procesando: lat_str={lat_str}, lon_str={lon_str}")
-        
+
         try:
             # Proceso de latitud
             if es_dms(lat_str):
                 lat = dms_a_decimal(lat_str)
                 app.logger.debug(f"Latitud DMS: {lat_str} -> {lat}")
             else:
-                lat_str_numeric = re.sub(r'[^\d\.\-]', '', lat_str)
+                lat_str_numeric = re.sub(r"[^\d\.\-]", "", lat_str)
                 lat = float(lat_str_numeric)
-                if 'S' in lat_str.upper():
+                if "S" in lat_str.upper():
                     lat *= -1
                 app.logger.debug(f"Latitud decimal: {lat_str} -> {lat}")
-                
+
             if np.isnan(lat):
                 app.logger.error(f"Latitud inválida: {lat_str}")
                 continue
@@ -539,14 +618,14 @@ def procesar_coordenadas_dms(fila):
                 lon = dms_a_decimal(lon_str)
                 app.logger.debug(f"Longitud DMS: {lon_str} -> {lon}")
             else:
-                lon_str_numeric = re.sub(r'[^\d\.\-]', '', lon_str)
+                lon_str_numeric = re.sub(r"[^\d\.\-]", "", lon_str)
                 lon = float(lon_str_numeric)
-                if 'W' in lon_str.upper():
+                if "W" in lon_str.upper():
                     lon *= -1
                 elif lon > 0:
                     lon *= -1  # Asumir oeste para América
                 app.logger.debug(f"Longitud decimal: {lon_str} -> {lon}")
-                
+
             if np.isnan(lon):
                 app.logger.error(f"Longitud inválida: {lon_str}")
                 continue
@@ -560,27 +639,28 @@ def procesar_coordenadas_dms(fila):
 
     # Eliminar duplicados
     coords_decimales = list(dict.fromkeys(coords_decimales))
-    return ' | '.join(coords_decimales)
+    return " | ".join(coords_decimales)
+
 
 def calcular_area_poligono(coordenadas_str):
     """Calcula el área de un polígono en hectáreas usando cálculo geodésico"""
     if not coordenadas_str:
         return 0.0
-    
+
     try:
         from shapely.geometry import Polygon
         from geopy.distance import geodesic
         import numpy as np
-        
+
         # Parsear coordenadas - Soportar tanto | como espacios como separadores
         points = []
         # Determinar si se usa | o espacios como separador
-        separador = '|' if '|' in coordenadas_str else ' '
-        
+        separador = "|" if "|" in coordenadas_str else " "
+
         for pair in coordenadas_str.split(separador):
             if not pair.strip():
                 continue
-            parts = pair.strip().split(',')
+            parts = pair.strip().split(",")
             if len(parts) >= 2:
                 try:
                     lat, lon = map(float, parts[:2])
@@ -588,27 +668,27 @@ def calcular_area_poligono(coordenadas_str):
                 except (ValueError, TypeError):
                     # Ignorar coordenadas inválidas
                     continue
-        
+
         if len(points) < 3:
             return 0.0
-        
+
         # Implementación del algoritmo geodésico para calcular área
         # Basado en el cálculo que usa Leaflet.GeometryUtil.geodesicArea
         area = 0.0
         coords = np.array(points)
-        
+
         if len(coords) > 2:
             p1 = coords[0]
             for i in range(1, len(coords) - 1):
                 p2 = coords[i]
                 p3 = coords[i + 1]
-                
+
                 # Cálculo del área del triángulo geodésico usando la fórmula del semiperímetro
                 a = geodesic(p1, p2).meters
                 b = geodesic(p2, p3).meters
                 c = geodesic(p3, p1).meters
                 s = (a + b + c) / 2.0
-                
+
                 # Fórmula de Herón (evitar números negativos bajo la raíz)
                 area_factor = s * (s - a) * (s - b) * (s - c)
                 if area_factor > 0:
@@ -617,24 +697,25 @@ def calcular_area_poligono(coordenadas_str):
                 else:
                     # Si el factor es negativo, usar un enfoque alternativo o 0
                     app.logger.debug(f"Factor de área negativo: {area_factor}")
-        
+
         # Convertir a hectáreas (1 ha = 10,000 m²)
         return area / 10000.0
     except Exception as e:
         app.logger.error(f"Error al calcular área geodésica: {e}")
-        
+
         # Fallback: usar shapely para cálculo plano si el geodésico falla
         try:
             from shapely.geometry import Polygon
+
             coords = []
-            
+
             # Determinar si se usa | o espacios como separador
-            separador = '|' if '|' in coordenadas_str else ' '
-            
+            separador = "|" if "|" in coordenadas_str else " "
+
             for pair in coordenadas_str.split(separador):
                 if not pair.strip():
                     continue
-                parts = pair.strip().split(',')
+                parts = pair.strip().split(",")
                 if len(parts) >= 2:
                     try:
                         lat, lon = map(float, parts[:2])
@@ -642,10 +723,10 @@ def calcular_area_poligono(coordenadas_str):
                     except (ValueError, TypeError):
                         # Ignorar coordenadas inválidas
                         continue
-            
+
             if len(coords) < 3:
                 return 0.0
-                
+
             try:
                 polygon = Polygon(coords)
                 if polygon.is_valid:
@@ -660,353 +741,436 @@ def calcular_area_poligono(coordenadas_str):
             app.logger.error(f"Error en fallback de cálculo de área: {inner_e}")
             return 0.0
 
+
 # ==============================================
 # Rutas de la aplicación
 # ==============================================
 
-@app.route('/health')
+
+@app.route("/health")
 def health_check():
     status = {
-        'status': 'ok',
-        'database': False,
-        'shapefiles': False,
-        'timestamp': datetime.utcnow().isoformat()
+        "status": "ok",
+        "database": False,
+        "shapefiles": False,
+        "timestamp": datetime.utcnow().isoformat(),
     }
 
     # Check database connectivity
     try:
-        db.session.execute(db.text('SELECT 1'))
-        status['database'] = True
+        db.session.execute(db.text("SELECT 1"))
+        status["database"] = True
     except Exception:
-        status['status'] = 'degraded'
+        status["status"] = "degraded"
 
     # Check if shapefiles are loaded
     try:
-        status['shapefiles'] = shp_cache.municipios is not None
+        status["shapefiles"] = shp_cache.municipios is not None
     except Exception:
-        status['status'] = 'degraded'
+        status["status"] = "degraded"
 
-    http_code = 200 if status['status'] == 'ok' else 503
+    http_code = 200 if status["status"] == "ok" else 503
     return jsonify(status), http_code
 
 
-@app.route('/')
+@app.route("/")
 def index():
-    return render_template('index.html')
+    return render_template("index.html")
 
-@app.route('/validacion-rapida')
+
+@app.route("/validacion-rapida")
 @login_required
 def validacion_rapida():
     return "Página de validación rápida en desarrollo"
 
-@app.route('/unir-archivos')
+
+@app.route("/unir-archivos")
 @login_required
 def unir_archivos():
     # Verificar si hay resultados en la sesión
-    resultado = session.pop('resultado_shp', None)
+    resultado = session.pop("resultado_shp", None)
     # Pasar la fecha y hora actual para los logs
     from datetime import datetime
-    now = datetime.now()
-    return render_template('unir_archivos.html', resultado=resultado, now=now)
 
-@app.route('/validacion-poligonos', defaults={'tab': 'lista'})
-@app.route('/validacion-poligonos/<tab>')
+    now = datetime.now()
+    return render_template("unir_archivos.html", resultado=resultado, now=now)
+
+
+@app.route("/validacion-poligonos", defaults={"tab": "lista"})
+@app.route("/validacion-poligonos/<tab>")
 @login_required
 def validacion_poligonos(tab):
-    valid_tabs = ['cargar', 'megacapa', 'segunda', 'lista', 'editar', 'generar', 'resultados']
-    
+    valid_tabs = [
+        "cargar",
+        "megacapa",
+        "segunda",
+        "lista",
+        "editar",
+        "generar",
+        "resultados",
+    ]
+
     if tab not in valid_tabs:
-        tab = 'lista'
-    
-    if tab == 'megacapa':
+        tab = "lista"
+
+    if tab == "megacapa":
         try:
             # Check if validation results already exist
             resultados = ValidacionMegacapa.query.all()
             total_poligonos = Poligono.query.count()
-            
-            resumen = {
-                'total': total_poligonos,
-                'validados': len(resultados),
-                'vincular': sum(1 for r in resultados if r.estatus_megacapa == 'VINCULAR'),
-                'nuevo': sum(1 for r in resultados if r.estatus_megacapa == 'NUEVO'),
-                'pendientes': total_poligonos - len(resultados),
-            }
-            
-            return render_template('validacion_poligonos.html',
-                                   tab=tab,
-                                   resultados=[r.to_dict() for r in resultados],
-                                   resumen=resumen)
-        except Exception as e:
-            app.logger.error(f'Error en tab megacapa: {e}')
-            flash(f'Error: {str(e)}', 'error')
-            return render_template('validacion_poligonos.html', tab=tab, resultados=[], resumen={})
 
-    elif tab == 'segunda':
+            resumen = {
+                "total": total_poligonos,
+                "validados": len(resultados),
+                "vincular": sum(
+                    1 for r in resultados if r.estatus_megacapa == "VINCULAR"
+                ),
+                "nuevo": sum(1 for r in resultados if r.estatus_megacapa == "NUEVO"),
+                "pendientes": total_poligonos - len(resultados),
+            }
+
+            return render_template(
+                "validacion_poligonos.html",
+                tab=tab,
+                resultados=[r.to_dict() for r in resultados],
+                resumen=resumen,
+            )
+        except Exception as e:
+            app.logger.error(f"Error en tab megacapa: {e}")
+            flash(f"Error: {str(e)}", "error")
+            return render_template(
+                "validacion_poligonos.html", tab=tab, resultados=[], resumen={}
+            )
+
+    elif tab == "segunda":
         try:
             resultados_sv = SegundaValidacionPoligono.query.all()
 
             # Build summary
-            total_nuevos_megacapa = ValidacionMegacapa.query.filter_by(estatus_megacapa='NUEVO').count()
+            total_nuevos_megacapa = ValidacionMegacapa.query.filter_by(
+                estatus_megacapa="NUEVO"
+            ).count()
             resumen_sv = {
-                'total_nuevos': total_nuevos_megacapa,
-                'analizados': len(resultados_sv),
-                'grupos': db.session.query(db.func.max(SegundaValidacionPoligono.group_id)).scalar() or 0,
-                'verdaderamente_nuevos': total_nuevos_megacapa - sum(1 for r in resultados_sv if r.decision in ('VINCULAR', 'ELIMINAR')),
-                'vincular': sum(1 for r in resultados_sv if r.decision == 'VINCULAR'),
-                'eliminar': sum(1 for r in resultados_sv if r.decision == 'ELIMINAR'),
-                'sin_duplicados': total_nuevos_megacapa - len(resultados_sv),
+                "total_nuevos": total_nuevos_megacapa,
+                "analizados": len(resultados_sv),
+                "grupos": db.session.query(
+                    db.func.max(SegundaValidacionPoligono.group_id)
+                ).scalar()
+                or 0,
+                "verdaderamente_nuevos": total_nuevos_megacapa
+                - sum(
+                    1 for r in resultados_sv if r.decision in ("VINCULAR", "ELIMINAR")
+                ),
+                "vincular": sum(1 for r in resultados_sv if r.decision == "VINCULAR"),
+                "eliminar": sum(1 for r in resultados_sv if r.decision == "ELIMINAR"),
+                "sin_duplicados": total_nuevos_megacapa - len(resultados_sv),
             }
 
-            return render_template('validacion_poligonos.html',
-                                   tab=tab,
-                                   resumen_sv=resumen_sv,
-                                   resultados_sv=[r.to_dict() for r in resultados_sv],
-                                   is_admin=current_user.is_admin)
+            return render_template(
+                "validacion_poligonos.html",
+                tab=tab,
+                resumen_sv=resumen_sv,
+                resultados_sv=[r.to_dict() for r in resultados_sv],
+                is_admin=current_user.is_admin,
+            )
         except Exception as e:
-            app.logger.error(f'Error en tab segunda: {e}')
+            app.logger.error(f"Error en tab segunda: {e}")
             import traceback
-            traceback.print_exc()
-            return render_template('validacion_poligonos.html',
-                                   tab=tab,
-                                   resumen_sv={},
-                                   resultados_sv=[],
-                                   is_admin=current_user.is_admin)
 
-    elif tab == 'lista':
+            traceback.print_exc()
+            return render_template(
+                "validacion_poligonos.html",
+                tab=tab,
+                resumen_sv={},
+                resultados_sv=[],
+                is_admin=current_user.is_admin,
+            )
+
+    elif tab == "lista":
         try:
             # Obtener datos de la base de datos
             app.logger.info("Consultando polígonos en la base de datos...")
             # Build base query
             query = Poligono.query
-            
+
             # Filter by assigned user (non-admins only see their assigned polygons)
             if not current_user.is_admin:
                 query = query.filter(
                     db.or_(
                         Poligono.usuario_asignado_id == current_user.id,
-                        Poligono.usuario_asignado_id.is_(None)
+                        Poligono.usuario_asignado_id.is_(None),
                     )
                 )
-            
+
             poligonos = query.all()
-            
+
             # Exclude VINCULAR polygons (already validated against megacapa)
             vincular_ids = set(
-                v.poligono_id for v in ValidacionMegacapa.query.filter_by(estatus_megacapa='VINCULAR').all()
+                v.poligono_id
+                for v in ValidacionMegacapa.query.filter_by(
+                    estatus_megacapa="VINCULAR"
+                ).all()
             )
             if vincular_ids:
                 poligonos = [p for p in poligonos if p.id not in vincular_ids]
-                app.logger.info(f'Excluidos {len(vincular_ids)} polígonos VINCULAR de la lista')
+                app.logger.info(
+                    f"Excluidos {len(vincular_ids)} polígonos VINCULAR de la lista"
+                )
 
             # Also exclude polygons marked ELIMINAR or VINCULAR by segunda validacion
             seg_val_excluir_ids = set(
-                sv.poligono_id for sv in SegundaValidacionPoligono.query.filter(
-                    SegundaValidacionPoligono.decision.in_(['ELIMINAR', 'VINCULAR'])
+                sv.poligono_id
+                for sv in SegundaValidacionPoligono.query.filter(
+                    SegundaValidacionPoligono.decision.in_(["ELIMINAR", "VINCULAR"])
                 ).all()
             )
             if seg_val_excluir_ids:
                 poligonos = [p for p in poligonos if p.id not in seg_val_excluir_ids]
-                app.logger.info(f'Excluidos {len(seg_val_excluir_ids)} polígonos por segunda validación')
+                app.logger.info(
+                    f"Excluidos {len(seg_val_excluir_ids)} polígonos por segunda validación"
+                )
 
             # Estatus filter
-            filtro_estatus = request.args.get('filtro_estatus', 'todos')
-            if filtro_estatus == '6':
-                poligonos = [p for p in poligonos if p.estatus == '6']
-            elif filtro_estatus == '7':
-                poligonos = [p for p in poligonos if p.estatus == '7']
-            elif filtro_estatus == 'pendiente':
-                poligonos = [p for p in poligonos if p.estatus is None or p.estatus == '']
+            filtro_estatus = request.args.get("filtro_estatus", "todos")
+            if filtro_estatus == "6":
+                poligonos = [p for p in poligonos if p.estatus == "6"]
+            elif filtro_estatus == "7":
+                poligonos = [p for p in poligonos if p.estatus == "7"]
+            elif filtro_estatus == "pendiente":
+                poligonos = [
+                    p for p in poligonos if p.estatus is None or p.estatus == ""
+                ]
             # 'todos' shows everything (no additional filter)
 
-            app.logger.info(f"Se encontraron {len(poligonos)} polígonos en la base de datos")
-            
+            app.logger.info(
+                f"Se encontraron {len(poligonos)} polígonos en la base de datos"
+            )
+
             # Convertir a formato compatible con la plantilla (LEYENDO DIRECTO DE COLUMNAS)
             data = []
             for p in poligonos:
                 # Crear diccionario directamente desde los atributos del objeto Poligono
                 datos = {
-                    'ID_POLIGONO': p.id_poligono,
-                    'IF': p.if_val,
-                    'ID_CREDITO': p.id_credito,
-                    'ID_PERSONA': p.id_persona,
-                    'SUPERFICIE': p.superficie,
-                    'ESTADO': corregir_codificacion(p.estado),
-                    'MUNICIPIO': corregir_codificacion(p.municipio),
-                    'COORDENADAS': p.coordenadas,
-                    'COORDENADAS_DECIMALES_CORREGIDAS': p.coordenadas_corregidas,  # Cambiado para coincidir con el template
-                    'AREA_DIGITALIZADA': p.area_digitalizada,
-                    'ESTATUS': p.estatus,
-                    'COMENTARIOS': p.comentarios,
-                    'DESCRIPCION': p.descripcion,
-                    'db_id': p.id
+                    "ID_POLIGONO": p.id_poligono,
+                    "IF": p.if_val,
+                    "ID_CREDITO": p.id_credito,
+                    "ID_PERSONA": p.id_persona,
+                    "SUPERFICIE": p.superficie,
+                    "ESTADO": corregir_codificacion(p.estado),
+                    "MUNICIPIO": corregir_codificacion(p.municipio),
+                    "COORDENADAS": p.coordenadas,
+                    "COORDENADAS_DECIMALES_CORREGIDAS": p.coordenadas_corregidas,  # Cambiado para coincidir con el template
+                    "AREA_DIGITALIZADA": p.area_digitalizada,
+                    "ESTATUS": p.estatus,
+                    "COMENTARIOS": p.comentarios,
+                    "DESCRIPCION": p.descripcion,
+                    "db_id": p.id,
                 }
                 # Ya no es necesario cargar JSON ni usar setdefault,
                 # los atributos no presentes en BD serán None por defecto.
                 data.append(datos)
-            
+
             # --- Definir columnas fijas para la vista de lista ---
             columns_to_display = [
-                'ID_POLIGONO', 'IF', 'ID_CREDITO', 'ID_PERSONA', 'SUPERFICIE',
-                'ESTADO', 'MUNICIPIO', 'COORDENADAS', 'COORDENADAS_DECIMALES_CORREGIDAS',
-                'AREA_DIGITALIZADA', 'ESTATUS', 'COMENTARIOS', 'DESCRIPCION'
+                "ID_POLIGONO",
+                "IF",
+                "ID_CREDITO",
+                "ID_PERSONA",
+                "SUPERFICIE",
+                "ESTADO",
+                "MUNICIPIO",
+                "COORDENADAS",
+                "COORDENADAS_DECIMALES_CORREGIDAS",
+                "AREA_DIGITALIZADA",
+                "ESTATUS",
+                "COMENTARIOS",
+                "DESCRIPCION",
             ]
             # --- FIN: Definir columnas fijas ---
 
-            app.logger.info(f"Mostrando {len(columns_to_display)} columnas fijas: {columns_to_display}")
+            app.logger.info(
+                f"Mostrando {len(columns_to_display)} columnas fijas: {columns_to_display}"
+            )
 
-            return render_template('validacion_poligonos.html',
-                               tab=tab,
-                               data=data,
-                               columns=columns_to_display, # Usar la lista fija
-                               filename=excel_data['filename'], # Mantener filename por compatibilidad
-                               filtro_estatus=filtro_estatus)
+            return render_template(
+                "validacion_poligonos.html",
+                tab=tab,
+                data=data,
+                columns=columns_to_display,  # Usar la lista fija
+                filename=excel_data["filename"],  # Mantener filename por compatibilidad
+                filtro_estatus=filtro_estatus,
+            )
         except Exception as e:
             app.logger.error(f"ERROR AL CARGAR LISTA: {str(e)}")
             import traceback
+
             traceback.print_exc()
-            flash(f'Error al cargar datos: {str(e)}', 'error')
-            return render_template('validacion_poligonos.html', 
-                               tab=tab, 
-                               data=[],
-                               columns=[],
-                               filename='',
-                               filtro_estatus='todos')
-    
-    elif tab == 'editar':
-        db_id = request.args.get('db_id')
+            flash(f"Error al cargar datos: {str(e)}", "error")
+            return render_template(
+                "validacion_poligonos.html",
+                tab=tab,
+                data=[],
+                columns=[],
+                filename="",
+                filtro_estatus="todos",
+            )
+
+    elif tab == "editar":
+        db_id = request.args.get("db_id")
         if db_id:
             try:
                 # Buscar el polígono en la base de datos por su ID
                 poligono = Poligono.query.get(int(db_id))
-                
+
                 if poligono is None:
-                    flash('Polígono no encontrado', 'error')
-                    return redirect(url_for('validacion_poligonos', tab='lista'))
-                
+                    flash("Polígono no encontrado", "error")
+                    return redirect(url_for("validacion_poligonos", tab="lista"))
+
                 # Preparar coordenadas para el mapa
                 try:
-                    coords_para_mapa = parsear_coordenadas(
-                        ordenar_coordenadas(poligono.coordenadas_corregidas)
-                    ) if poligono.coordenadas_corregidas else []
+                    coords_para_mapa = (
+                        parsear_coordenadas(
+                            ordenar_coordenadas(poligono.coordenadas_corregidas)
+                        )
+                        if poligono.coordenadas_corregidas
+                        else []
+                    )
                 except Exception as e:
                     app.logger.error(f"Error al procesar coordenadas para el mapa: {e}")
                     coords_para_mapa = []
-                
+
                 # Detectar ubicación automáticamente si el estado y municipio están vacíos
                 ubicacion_auto = False
                 estado_detectado = poligono.estado
                 municipio_detectado = poligono.municipio
-                
-                if (not estado_detectado or not municipio_detectado) and poligono.coordenadas_corregidas:
+
+                if (
+                    not estado_detectado or not municipio_detectado
+                ) and poligono.coordenadas_corregidas:
                     app.logger.debug("Detectando ubicación automáticamente...")
-                    ubicacion = obtener_ubicacion_desde_poligono(poligono.coordenadas_corregidas)
+                    ubicacion = obtener_ubicacion_desde_poligono(
+                        poligono.coordenadas_corregidas
+                    )
                     if ubicacion:
                         if not estado_detectado:
-                            estado_detectado = ubicacion['estado']
+                            estado_detectado = ubicacion["estado"]
                             ubicacion_auto = True
                         if not municipio_detectado:
-                            municipio_detectado = ubicacion['municipio']
+                            municipio_detectado = ubicacion["municipio"]
                             ubicacion_auto = True
-                        app.logger.debug(f"Ubicación detectada: {municipio_detectado}, {estado_detectado}")
-                
+                        app.logger.debug(
+                            f"Ubicación detectada: {municipio_detectado}, {estado_detectado}"
+                        )
+
                 # Crear diccionario con datos del polígono para la plantilla
                 poligono_data = {
-                    'ID_POLIGONO': poligono.id_poligono,
-                    'IF': poligono.if_val,
-                    'ID_CREDITO': poligono.id_credito,
-                    'ID_PERSONA': poligono.id_persona,
-                    'SUPERFICIE': poligono.superficie,
-                    'ESTADO': corregir_codificacion(estado_detectado) or '',
-                    'MUNICIPIO': corregir_codificacion(municipio_detectado) or '',
-                    'COORDENADAS': poligono.coordenadas,
-                    'COORDENADAS_DECIMALES_CORREGIDAS': poligono.coordenadas_corregidas,  # Cambiado para coincidir con el template
-                    'AREA_DIGITALIZADA': poligono.area_digitalizada,
-                    'ESTATUS': poligono.estatus,
-                    'COMENTARIOS': poligono.comentarios,
-                    'DESCRIPCION': poligono.descripcion,
-                    'ORDEN': poligono.orden,
-                    'db_id': poligono.id,
-                    'UBICACION_AUTO': ubicacion_auto  # Bandera para mostrar que se detectó automáticamente
+                    "ID_POLIGONO": poligono.id_poligono,
+                    "IF": poligono.if_val,
+                    "ID_CREDITO": poligono.id_credito,
+                    "ID_PERSONA": poligono.id_persona,
+                    "SUPERFICIE": poligono.superficie,
+                    "ESTADO": corregir_codificacion(estado_detectado) or "",
+                    "MUNICIPIO": corregir_codificacion(municipio_detectado) or "",
+                    "COORDENADAS": poligono.coordenadas,
+                    "COORDENADAS_DECIMALES_CORREGIDAS": poligono.coordenadas_corregidas,  # Cambiado para coincidir con el template
+                    "AREA_DIGITALIZADA": poligono.area_digitalizada,
+                    "ESTATUS": poligono.estatus,
+                    "COMENTARIOS": poligono.comentarios,
+                    "DESCRIPCION": poligono.descripcion,
+                    "ORDEN": poligono.orden,
+                    "db_id": poligono.id,
+                    "UBICACION_AUTO": ubicacion_auto,  # Bandera para mostrar que se detectó automáticamente
                 }
-                
-                return render_template('validacion_poligonos.html', 
-                                      tab=tab, 
-                                      db_id=db_id,
-                                      poligono_data=poligono_data, 
-                                      coords_para_mapa=coords_para_mapa)
+
+                return render_template(
+                    "validacion_poligonos.html",
+                    tab=tab,
+                    db_id=db_id,
+                    poligono_data=poligono_data,
+                    coords_para_mapa=coords_para_mapa,
+                    filtro_estatus=request.args.get("filtro_estatus", "pendiente"),
+                )
             except ValueError:
-                flash('ID de polígono inválido', 'error')
-                return redirect(url_for('validacion_poligonos', tab='lista'))
+                flash("ID de polígono inválido", "error")
+                return redirect(url_for("validacion_poligonos", tab="lista"))
             except Exception as e:
                 app.logger.error(f"Error al cargar polígono para edición: {e}")
-                flash('Error al cargar el polígono para edición', 'error')
-                return redirect(url_for('validacion_poligonos', tab='lista'))
+                flash("Error al cargar el polígono para edición", "error")
+                return redirect(url_for("validacion_poligonos", tab="lista"))
         else:
             # Si no hay db_id, redirigir a la lista
-            flash('No se especificó qué polígono editar', 'warning')
-            return redirect(url_for('validacion_poligonos', tab='lista'))
-    
-    elif tab == 'generar':
+            flash("No se especificó qué polígono editar", "warning")
+            return redirect(url_for("validacion_poligonos", tab="lista"))
+
+    elif tab == "generar":
         try:
             # Obtener datos de la base de datos para generar reportes
             poligonos = Poligono.query.all()
-            
+
             # Convertir a formato compatible con la plantilla (LEYENDO DIRECTO DE COLUMNAS)
             data = []
             for p in poligonos:
                 # Crear diccionario directamente desde los atributos del objeto Poligono
                 datos = {
-                    'ID_POLIGONO': p.id_poligono,
-                    'IF': p.if_val,
-                    'ID_CREDITO': p.id_credito,
-                    'ID_PERSONA': p.id_persona,
-                    'SUPERFICIE': p.superficie,
-                    'ESTADO': corregir_codificacion(p.estado),
-                    'MUNICIPIO': corregir_codificacion(p.municipio),
-                    'COORDENADAS': p.coordenadas,
-                    'COORDENADAS_DECIMALES_CORREGIDAS': p.coordenadas_corregidas,  # Cambiado para coincidir con el template
-                    'AREA_DIGITALIZADA': p.area_digitalizada,
-                    'ESTATUS': p.estatus,
-                    'COMENTARIOS': p.comentarios,
-                    'DESCRIPCION': p.descripcion,
-                    'ORDEN': p.orden,
-                    'db_id': p.id
+                    "ID_POLIGONO": p.id_poligono,
+                    "IF": p.if_val,
+                    "ID_CREDITO": p.id_credito,
+                    "ID_PERSONA": p.id_persona,
+                    "SUPERFICIE": p.superficie,
+                    "ESTADO": corregir_codificacion(p.estado),
+                    "MUNICIPIO": corregir_codificacion(p.municipio),
+                    "COORDENADAS": p.coordenadas,
+                    "COORDENADAS_DECIMALES_CORREGIDAS": p.coordenadas_corregidas,  # Cambiado para coincidir con el template
+                    "AREA_DIGITALIZADA": p.area_digitalizada,
+                    "ESTATUS": p.estatus,
+                    "COMENTARIOS": p.comentarios,
+                    "DESCRIPCION": p.descripcion,
+                    "ORDEN": p.orden,
+                    "db_id": p.id,
                 }
                 data.append(datos)
-            
+
             # Si no hay datos en la base de datos, usar datos en memoria (mantener por si acaso)
-            if not data and excel_data.get('data'):
-                data = excel_data['data']
-                flash('Generando reporte con datos en memoria. No hay datos guardados en la base de datos.', 'warning')
-            
+            if not data and excel_data.get("data"):
+                data = excel_data["data"]
+                flash(
+                    "Generando reporte con datos en memoria. No hay datos guardados en la base de datos.",
+                    "warning",
+                )
+
             # Asegurar que haya datos para prevenir división por cero
             if not data:
-                flash('No hay datos disponibles para generar reportes. Por favor, cargue un archivo primero.', 'warning')
-                return redirect(url_for('validacion_poligonos', tab='cargar'))
-            
+                flash(
+                    "No hay datos disponibles para generar reportes. Por favor, cargue un archivo primero.",
+                    "warning",
+                )
+                return redirect(url_for("validacion_poligonos", tab="cargar"))
+
             # Determinar columnas disponibles de manera segura
             all_columns = set()
             for row in data:
                 if isinstance(row, dict):  # Asegurar que row sea un diccionario
                     all_columns.update(row.keys())
-            
+
             columns = sorted(list(all_columns)) if all_columns else []
-            
-            return render_template('validacion_poligonos.html', 
-                               tab=tab,
-                               data=data,
-                               columns=columns)
+
+            return render_template(
+                "validacion_poligonos.html", tab=tab, data=data, columns=columns
+            )
         except Exception as e:
             app.logger.error(f"ERROR AL GENERAR REPORTE: {str(e)}")
             import traceback
+
             traceback.print_exc()
-            flash(f'Error al generar reporte: {str(e)}', 'error')
-            return redirect(url_for('validacion_poligonos', tab='lista'))
-    
-    elif tab == 'resultados':
+            flash(f"Error al generar reporte: {str(e)}", "error")
+            return redirect(url_for("validacion_poligonos", tab="lista"))
+
+    elif tab == "resultados":
         try:
             # Query polygons that have been edited (have estatus set)
-            query = Poligono.query.filter(Poligono.estatus.isnot(None), Poligono.estatus != '')
+            query = Poligono.query.filter(
+                Poligono.estatus.isnot(None), Poligono.estatus != ""
+            )
 
             # Non-admins only see their assigned polygons
             if not current_user.is_admin:
@@ -1016,77 +1180,117 @@ def validacion_poligonos(tab):
 
             resultados_data = []
             for p in poligonos:
-                editado_por_username = p.editado_por.username if p.editado_por else '--'
-                fecha_editado_str = p.fecha_editado.strftime('%Y-%m-%d %H:%M') if p.fecha_editado else '--'
-                resultados_data.append({
-                    'db_id': p.id,
-                    'ID_POLIGONO': p.id_poligono,
-                    'ID_CREDITO': p.id_credito,
-                    'SUPERFICIE': p.superficie,
-                    'AREA_DIGITALIZADA': p.area_digitalizada,
-                    'ESTATUS': p.estatus,
-                    'COMENTARIOS': p.comentarios,
-                    'DESCRIPCION': p.descripcion,
-                    'EDITADO_POR': editado_por_username,
-                    'FECHA_EDITADO': fecha_editado_str,
-                })
+                editado_por_username = p.editado_por.username if p.editado_por else "--"
+                fecha_editado_str = (
+                    p.fecha_editado.strftime("%Y-%m-%d %H:%M")
+                    if p.fecha_editado
+                    else "--"
+                )
+                resultados_data.append(
+                    {
+                        "db_id": p.id,
+                        "ID_POLIGONO": p.id_poligono,
+                        "ID_CREDITO": p.id_credito,
+                        "SUPERFICIE": p.superficie,
+                        "AREA_DIGITALIZADA": p.area_digitalizada,
+                        "ESTATUS": p.estatus,
+                        "COMENTARIOS": p.comentarios,
+                        "DESCRIPCION": p.descripcion,
+                        "EDITADO_POR": editado_por_username,
+                        "FECHA_EDITADO": fecha_editado_str,
+                    }
+                )
 
-            return render_template('validacion_poligonos.html',
-                                   tab=tab,
-                                   resultados_data=resultados_data,
-                                   is_admin=current_user.is_admin)
+            return render_template(
+                "validacion_poligonos.html",
+                tab=tab,
+                resultados_data=resultados_data,
+                is_admin=current_user.is_admin,
+            )
         except Exception as e:
-            app.logger.error(f'Error en tab resultados: {e}')
-            flash(f'Error: {str(e)}', 'error')
-            return render_template('validacion_poligonos.html', tab=tab, resultados_data=[], is_admin=current_user.is_admin)
+            app.logger.error(f"Error en tab resultados: {e}")
+            flash(f"Error: {str(e)}", "error")
+            return render_template(
+                "validacion_poligonos.html",
+                tab=tab,
+                resultados_data=[],
+                is_admin=current_user.is_admin,
+            )
 
     else:  # tab == 'cargar'
         columnas_ejemplo = [
-            'ID_POLIGONO', 'ESTADO', 'AREA_REPORTADA', 'AREA_DIGITALIZADA',
-            'COORDENADAS', 'MUNICIPIO', 'ID_CREDITO_FIRA', 'ID_PERSONA',
-            'NOMBRE_IF', 'OBSERVACIONES', 'COMENTARIOS', 'CURP_PRODUCTOR', 'RFC'
+            "ID_POLIGONO",
+            "ESTADO",
+            "AREA_REPORTADA",
+            "AREA_DIGITALIZADA",
+            "COORDENADAS",
+            "MUNICIPIO",
+            "ID_CREDITO_FIRA",
+            "ID_PERSONA",
+            "NOMBRE_IF",
+            "OBSERVACIONES",
+            "COMENTARIOS",
+            "CURP_PRODUCTOR",
+            "RFC",
         ]
-        return render_template('validacion_poligonos.html', 
-                           tab=tab,
-                           columnas=columnas_ejemplo,
-                           uploaded_columns=excel_data['columns'],
-                           filename=excel_data['filename'])
+        return render_template(
+            "validacion_poligonos.html",
+            tab=tab,
+            columnas=columnas_ejemplo,
+            uploaded_columns=excel_data["columns"],
+            filename=excel_data["filename"],
+        )
 
-@app.route('/cargar-excel', methods=['POST'])
+
+@app.route("/cargar-excel", methods=["POST"])
 @login_required
 @limiter.limit("10 per hour")
 def cargar_excel():
     global excel_data
-    
-    if 'archivo' not in request.files:
-        flash('No se seleccionó ningún archivo', 'error')
-        return redirect(url_for('validacion_poligonos'))
-    
-    archivo = request.files['archivo']
-    
-    if archivo.filename == '':
-        flash('No se seleccionó ningún archivo', 'error')
-        return redirect(url_for('validacion_poligonos'))
-    
+
+    if "archivo" not in request.files:
+        flash("No se seleccionó ningún archivo", "error")
+        return redirect(url_for("validacion_poligonos"))
+
+    archivo = request.files["archivo"]
+
+    if archivo.filename == "":
+        flash("No se seleccionó ningún archivo", "error")
+        return redirect(url_for("validacion_poligonos"))
+
     if archivo and allowed_file(archivo.filename):
         try:
             # Guardar el archivo
             filename = secure_filename(archivo.filename)
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            filepath = os.path.join(app.config["UPLOAD_FOLDER"], filename)
             archivo.save(filepath)
-            
+
             # Leer el archivo Excel
             app.logger.info(f"Leyendo archivo Excel: {filename}")
             df = pd.read_excel(filepath)
             app.logger.info(f"Columnas encontradas en el Excel: {df.columns.tolist()}")
-            
+
             # Normalizar nombres de columnas (eliminar espacios, convertir a mayúsculas)
-            df.columns = [col.strip().upper().replace(' ', '_') for col in df.columns]
+            df.columns = [col.strip().upper().replace(" ", "_") for col in df.columns]
             app.logger.info(f"Columnas normalizadas: {df.columns.tolist()}")
-            
+
             # --- INICIO: Validar columnas requeridas ---
-            legacy_required = {'IF', 'ID_CREDITO', 'ID_PERSONA', 'ID_POLIGONO', 'SUPERFICIE', 'COORDENADAS'}
-            consolidado_required = {'IF', 'ID_CREDITO', 'ID_ACREDITADO', 'ID_POLIGONO', 'SUPERFICIE', 'COORDENADAS_NORMALIZADAS'}
+            legacy_required = {
+                "IF",
+                "ID_CREDITO",
+                "ID_PERSONA",
+                "ID_POLIGONO",
+                "SUPERFICIE",
+                "COORDENADAS",
+            }
+            consolidado_required = {
+                "IF",
+                "ID_CREDITO",
+                "ID_ACREDITADO",
+                "ID_POLIGONO",
+                "SUPERFICIE",
+                "COORDENADAS_NORMALIZADAS",
+            }
             actual = set(df.columns)
 
             is_legacy = legacy_required.issubset(actual)
@@ -1100,15 +1304,21 @@ def cargar_excel():
                     f"Formato legacy — faltan columnas: {', '.join(sorted(missing_legacy))}. "
                     f"Formato consolidado — faltan columnas: {', '.join(sorted(missing_consolidado))}."
                 )
-                flash(error_msg, 'error')
-                return redirect(url_for('validacion_poligonos', tab='cargar'))
+                flash(error_msg, "error")
+                return redirect(url_for("validacion_poligonos", tab="cargar"))
 
             # Detect format and normalise column names for consolidado
             if is_consolidado and not is_legacy:
-                formato_excel = 'consolidado'
-                df.rename(columns={'ID_ACREDITADO': 'ID_PERSONA', 'COORDENADAS_NORMALIZADAS': 'COORDENADAS_NORMALIZADAS_SRC'}, inplace=True)
+                formato_excel = "consolidado"
+                df.rename(
+                    columns={
+                        "ID_ACREDITADO": "ID_PERSONA",
+                        "COORDENADAS_NORMALIZADAS": "COORDENADAS_NORMALIZADAS_SRC",
+                    },
+                    inplace=True,
+                )
             else:
-                formato_excel = 'legacy'
+                formato_excel = "legacy"
 
             app.logger.info(f"Formato Excel detectado: {formato_excel}")
             # --- FIN: Validar columnas requeridas ---
@@ -1121,58 +1331,64 @@ def cargar_excel():
             #             app.logger.debug(f"Se encontró columna con posibles coordenadas: {col}")
             #             df['COORDENADAS'] = df[col]
             #             break
-            #     
+            #
             #     if 'COORDENADAS' not in df.columns:
             #         flash('El archivo debe contener una columna con coordenadas', 'error')
             #         return redirect(url_for('validacion_poligonos'))
-            
+
             # Procesar coordenadas
-            if formato_excel == 'consolidado':
+            if formato_excel == "consolidado":
                 # COORDENADAS_NORMALIZADAS already has decimal coords in format: lat,lon|lat,lon|...
                 # Normalize separator to ' | ' (with spaces) to match what downstream code expects
                 def normalizar_separador(val):
-                    if pd.isna(val) or str(val).strip() == '':
-                        return ''
+                    if pd.isna(val) or str(val).strip() == "":
+                        return ""
                     # Replace '|' with ' | ' but avoid double-spacing if already spaced
-                    return ' | '.join(part.strip() for part in str(val).split('|'))
+                    return " | ".join(part.strip() for part in str(val).split("|"))
 
-                df['COORDENADAS_DECIMALES'] = df['COORDENADAS_NORMALIZADAS_SRC'].apply(
-                    lambda x: str(x) if pd.notna(x) else ''
+                df["COORDENADAS_DECIMALES"] = df["COORDENADAS_NORMALIZADAS_SRC"].apply(
+                    lambda x: str(x) if pd.notna(x) else ""
                 )
-                df['COORDENADAS_DECIMALES_CORREGIDAS'] = df['COORDENADAS_NORMALIZADAS_SRC'].apply(normalizar_separador)
+                df["COORDENADAS_DECIMALES_CORREGIDAS"] = df[
+                    "COORDENADAS_NORMALIZADAS_SRC"
+                ].apply(normalizar_separador)
                 # Also keep original COORDENADAS if present, otherwise use the normalized as original
-                if 'COORDENADAS' not in df.columns:
-                    df['COORDENADAS'] = df['COORDENADAS_NORMALIZADAS_SRC']
+                if "COORDENADAS" not in df.columns:
+                    df["COORDENADAS"] = df["COORDENADAS_NORMALIZADAS_SRC"]
             else:
                 # Legacy flow — process DMS coordinates as before
-                df['COORDENADAS_DECIMALES'] = df.apply(procesar_coordenadas_dms, axis=1)
-                df['COORDENADAS_DECIMALES_CORREGIDAS'] = df['COORDENADAS_DECIMALES'].apply(corregir_longitud)
-            
+                df["COORDENADAS_DECIMALES"] = df.apply(procesar_coordenadas_dms, axis=1)
+                df["COORDENADAS_DECIMALES_CORREGIDAS"] = df[
+                    "COORDENADAS_DECIMALES"
+                ].apply(corregir_longitud)
+
             # Ordenar coordenadas para evitar polígonos auto-intersectados (moños)
-            df['COORDENADAS_DECIMALES_CORREGIDAS'] = df['COORDENADAS_DECIMALES_CORREGIDAS'].apply(
-                lambda x: ordenar_coordenadas(x) if x else x
-            )
+            df["COORDENADAS_DECIMALES_CORREGIDAS"] = df[
+                "COORDENADAS_DECIMALES_CORREGIDAS"
+            ].apply(lambda x: ordenar_coordenadas(x) if x else x)
 
             # No calculamos el área aquí, la dejamos como None inicialmente
             # df['AREA_DIGITALIZADA'] = areas
 
             # Limpiar variable global excel_data ya que usaremos la BD
             excel_data = {
-                'data': [],
-                'columns': [],
-                'filename': filename, # Guardamos el nombre del último archivo cargado
-                'original_coords': []
+                "data": [],
+                "columns": [],
+                "filename": filename,  # Guardamos el nombre del último archivo cargado
+                "original_coords": [],
             }
-            
+
             # GUARDAR EN LA BASE DE DATOS
             try:
                 app.logger.info("Intentando guardar datos en la base de datos...")
                 # Primero limpiamos la tabla para evitar duplicaciones al cargar un nuevo archivo
                 db.session.query(Poligono).delete()
                 db.session.commit()
-                app.logger.info(f"Tabla 'poligono' limpiada. Insertando {len(df)} registros...")
-                
-                def safe_str(val, default=''):
+                app.logger.info(
+                    f"Tabla 'poligono' limpiada. Insertando {len(df)} registros..."
+                )
+
+                def safe_str(val, default=""):
                     if val is None:
                         return default
                     try:
@@ -1187,24 +1403,36 @@ def cargar_excel():
                     # Crear objeto Poligono mapeando columnas del DF a atributos del modelo
                     # Usar .get() para manejar columnas opcionales en el Excel
                     try:
-                        superficie_val = float(row.get('SUPERFICIE', None)) if pd.notna(row.get('SUPERFICIE')) else None
+                        superficie_val = (
+                            float(row.get("SUPERFICIE", None))
+                            if pd.notna(row.get("SUPERFICIE"))
+                            else None
+                        )
                     except (ValueError, TypeError):
                         superficie_val = None
 
                     poligono = Poligono(
-                        id_poligono=safe_str(row.get('ID_POLIGONO')),
-                        if_val=safe_str(row.get('IF')),  # Mapeado a if_val
-                        id_credito=safe_str(row.get('ID_CREDITO')),
-                        id_persona=safe_str(row.get('ID_PERSONA')),  # Already renamed from ID_ACREDITADO in task 1
+                        id_poligono=safe_str(row.get("ID_POLIGONO")),
+                        if_val=safe_str(row.get("IF")),  # Mapeado a if_val
+                        id_credito=safe_str(row.get("ID_CREDITO")),
+                        id_persona=safe_str(
+                            row.get("ID_PERSONA")
+                        ),  # Already renamed from ID_ACREDITADO in task 1
                         superficie=superficie_val,
-                        estado=safe_str(row.get('ESTADO')),          # Populated from XLSX for consolidado
-                        municipio=safe_str(row.get('MUNICIPIO')),     # Populated from XLSX for consolidado
-                        coordenadas=safe_str(row.get('COORDENADAS')),
-                        coordenadas_corregidas=safe_str(row.get('COORDENADAS_DECIMALES_CORREGIDAS')),  # Usar las corregidas
+                        estado=safe_str(
+                            row.get("ESTADO")
+                        ),  # Populated from XLSX for consolidado
+                        municipio=safe_str(
+                            row.get("MUNICIPIO")
+                        ),  # Populated from XLSX for consolidado
+                        coordenadas=safe_str(row.get("COORDENADAS")),
+                        coordenadas_corregidas=safe_str(
+                            row.get("COORDENADAS_DECIMALES_CORREGIDAS")
+                        ),  # Usar las corregidas
                         area_digitalizada=None,  # Se inicializa como None
-                        estatus=None,            # Se inicializa como None
-                        comentarios=None,        # Se inicializa como None
-                        descripcion=None         # Se inicializa como None
+                        estatus=None,  # Se inicializa como None
+                        comentarios=None,  # Se inicializa como None
+                        descripcion=None,  # Se inicializa como None
                         # datos_json ya no existe
                     )
                     db.session.add(poligono)
@@ -1214,92 +1442,114 @@ def cargar_excel():
                     if count % 100 == 0:
                         db.session.commit()
                         app.logger.info(f"Guardados {count} registros...")
-                
+
                 # Commit final
                 db.session.commit()
-                app.logger.info(f"¡Guardados {count} registros en total en la base de datos!")
-                flash(f'Archivo \'{filename}\' cargado y {count} registros guardados en la base de datos', 'success')
-                
+                app.logger.info(
+                    f"¡Guardados {count} registros en total en la base de datos!"
+                )
+                flash(
+                    f"Archivo '{filename}' cargado y {count} registros guardados en la base de datos",
+                    "success",
+                )
+
             except Exception as db_error:
-                app.logger.error(f"ERROR AL GUARDAR EN LA BASE DE DATOS: {str(db_error)}")
+                app.logger.error(
+                    f"ERROR AL GUARDAR EN LA BASE DE DATOS: {str(db_error)}"
+                )
                 import traceback
+
                 traceback.print_exc()
-                flash(f'Error al guardar en la base de datos: {str(db_error)}', 'error')
+                flash(f"Error al guardar en la base de datos: {str(db_error)}", "error")
                 try:
                     db.session.rollback()
-                except: pass
+                except:
+                    pass
                 # Redirigir a cargar si falla la BD
-                return redirect(url_for('validacion_poligonos', tab='cargar'))
-            
+                return redirect(url_for("validacion_poligonos", tab="cargar"))
+
             # Redirigir a la lista después de guardar exitosamente
-            return redirect(url_for('validacion_poligonos', tab='lista'))
-            
+            return redirect(url_for("validacion_poligonos", tab="lista"))
+
         except Exception as e:
-            flash(f'Error al procesar el archivo: {str(e)}', 'error')
+            flash(f"Error al procesar el archivo: {str(e)}", "error")
             app.logger.error(f"ERROR GENERAL: {str(e)}")
             import traceback
-            traceback.print_exc()
-            return redirect(url_for('validacion_poligonos'))
-    
-    flash('Formato de archivo no permitido. Solo se aceptan .xlsx o .xls', 'error')
-    return redirect(url_for('validacion_poligonos'))
 
-@app.route('/ejecutar-validacion-megacapa', methods=['POST'])
+            traceback.print_exc()
+            return redirect(url_for("validacion_poligonos"))
+
+    flash("Formato de archivo no permitido. Solo se aceptan .xlsx o .xls", "error")
+    return redirect(url_for("validacion_poligonos"))
+
+
+@app.route("/ejecutar-validacion-megacapa", methods=["POST"])
 @login_required
 def ejecutar_validacion_megacapa_route():
     try:
         # Clear previous results
         db.session.query(ValidacionMegacapa).delete()
         db.session.commit()
-        
+
         # Get all loaded polygons
         poligonos = Poligono.query.all()
         if not poligonos:
-            flash('No hay polígonos cargados. Primero cargue un archivo Excel.', 'warning')
-            return redirect(url_for('validacion_poligonos', tab='megacapa'))
-        
-        app.logger.info(f'Ejecutando validación megacapa para {len(poligonos)} polígonos...')
-        
+            flash(
+                "No hay polígonos cargados. Primero cargue un archivo Excel.", "warning"
+            )
+            return redirect(url_for("validacion_poligonos", tab="megacapa"))
+
+        app.logger.info(
+            f"Ejecutando validación megacapa para {len(poligonos)} polígonos..."
+        )
+
         # Run spatial validation
         resultados = ejecutar_validacion_megacapa(poligonos)
-        
+
         # Save results to DB
         count = 0
         for r in resultados:
             registro = ValidacionMegacapa(
-                poligono_id=r['poligono_id'],
-                id_poligono=r['id_poligono'],
-                id_credito=r['id_credito'],
-                estatus_megacapa=r['estatus_megacapa'],
-                id_poligono_unico=r['id_poligono_unico'],
-                porcentaje_traslape=r['porcentaje_traslape'],
-                id_credito_megacapa=r['id_credito_megacapa'],
-                motivo=r['motivo'],
+                poligono_id=r["poligono_id"],
+                id_poligono=r["id_poligono"],
+                id_credito=r["id_credito"],
+                estatus_megacapa=r["estatus_megacapa"],
+                id_poligono_unico=r["id_poligono_unico"],
+                porcentaje_traslape=r["porcentaje_traslape"],
+                id_credito_megacapa=r["id_credito_megacapa"],
+                motivo=r["motivo"],
             )
             db.session.add(registro)
             count += 1
             if count % 100 == 0:
                 db.session.commit()
-        
+
         db.session.commit()
-        
-        vincular = sum(1 for r in resultados if r['estatus_megacapa'] == 'VINCULAR')
-        nuevo = sum(1 for r in resultados if r['estatus_megacapa'] == 'NUEVO')
-        
-        app.logger.info(f'Validación megacapa completada: {vincular} VINCULAR, {nuevo} NUEVO')
-        flash(f'Validación completada: {vincular} VINCULAR, {nuevo} NUEVO de {len(resultados)} polígonos', 'success')
-        
-        return redirect(url_for('validacion_poligonos', tab='megacapa'))
-        
+
+        vincular = sum(1 for r in resultados if r["estatus_megacapa"] == "VINCULAR")
+        nuevo = sum(1 for r in resultados if r["estatus_megacapa"] == "NUEVO")
+
+        app.logger.info(
+            f"Validación megacapa completada: {vincular} VINCULAR, {nuevo} NUEVO"
+        )
+        flash(
+            f"Validación completada: {vincular} VINCULAR, {nuevo} NUEVO de {len(resultados)} polígonos",
+            "success",
+        )
+
+        return redirect(url_for("validacion_poligonos", tab="megacapa"))
+
     except Exception as e:
-        app.logger.error(f'Error en validación megacapa: {e}')
+        app.logger.error(f"Error en validación megacapa: {e}")
         import traceback
+
         traceback.print_exc()
         db.session.rollback()
-        flash(f'Error al ejecutar validación: {str(e)}', 'error')
-        return redirect(url_for('validacion_poligonos', tab='megacapa'))
+        flash(f"Error al ejecutar validación: {str(e)}", "error")
+        return redirect(url_for("validacion_poligonos", tab="megacapa"))
 
-@app.route('/api/validacion-megacapa-mapa/<int:validacion_id>')
+
+@app.route("/api/validacion-megacapa-mapa/<int:validacion_id>")
 @login_required
 def api_validacion_megacapa_mapa(validacion_id):
     """Return GeoJSON for map visualization of a validation result."""
@@ -1314,117 +1564,131 @@ def api_validacion_megacapa_mapa(validacion_id):
         # Get the loaded polygon
         poligono = Poligono.query.get(registro.poligono_id)
         if not poligono:
-            return jsonify({'error': 'Polígono no encontrado'}), 404
+            return jsonify({"error": "Polígono no encontrado"}), 404
 
         features = []
 
         # Build geometry from loaded polygon's coordenadas_corregidas
         geom_cargado, error = construir_geometria(poligono.coordenadas_corregidas)
         if geom_cargado:
-            features.append({
-                'type': 'Feature',
-                'properties': {
-                    'tipo': 'cargado',
-                    'id_poligono': registro.id_poligono,
-                    'id_credito': registro.id_credito,
-                    'label': f'Polígono Cargado: {registro.id_poligono}',
-                    'color': '#3388ff',
-                },
-                'geometry': mapping(geom_cargado),
-            })
+            features.append(
+                {
+                    "type": "Feature",
+                    "properties": {
+                        "tipo": "cargado",
+                        "id_poligono": registro.id_poligono,
+                        "id_credito": registro.id_credito,
+                        "label": f"Polígono Cargado: {registro.id_poligono}",
+                        "color": "#3388ff",
+                    },
+                    "geometry": mapping(geom_cargado),
+                }
+            )
 
         # If VINCULAR, find the megacapa polygon
-        if registro.estatus_megacapa == 'VINCULAR' and registro.id_poligono_unico:
+        if registro.estatus_megacapa == "VINCULAR" and registro.id_poligono_unico:
             mega = shp_cache.mega
-            match = mega[mega['ID_POLIGON'] == registro.id_poligono_unico]
+            match = mega[mega["ID_POLIGON"] == registro.id_poligono_unico]
             if len(match) > 0:
                 mega_geom = match.iloc[0].geometry
-                features.append({
-                    'type': 'Feature',
-                    'properties': {
-                        'tipo': 'megacapa',
-                        'id_poligono': registro.id_poligono_unico,
-                        'id_credito': registro.id_credito_megacapa,
-                        'label': f'Megacapa: {registro.id_poligono_unico}',
-                        'color': '#28a745',
-                    },
-                    'geometry': mapping(mega_geom),
-                })
+                features.append(
+                    {
+                        "type": "Feature",
+                        "properties": {
+                            "tipo": "megacapa",
+                            "id_poligono": registro.id_poligono_unico,
+                            "id_credito": registro.id_credito_megacapa,
+                            "label": f"Megacapa: {registro.id_poligono_unico}",
+                            "color": "#28a745",
+                        },
+                        "geometry": mapping(mega_geom),
+                    }
+                )
 
         geojson = {
-            'type': 'FeatureCollection',
-            'features': features,
-            'properties': {
-                'estatus': registro.estatus_megacapa,
-                'porcentaje_traslape': registro.porcentaje_traslape,
-                'motivo': registro.motivo,
-            }
+            "type": "FeatureCollection",
+            "features": features,
+            "properties": {
+                "estatus": registro.estatus_megacapa,
+                "porcentaje_traslape": registro.porcentaje_traslape,
+                "motivo": registro.motivo,
+            },
         }
 
         return jsonify(geojson)
 
     except Exception as e:
-        app.logger.error(f'Error en api_validacion_megacapa_mapa: {e}')
-        return jsonify({'error': str(e)}), 500
+        app.logger.error(f"Error en api_validacion_megacapa_mapa: {e}")
+        return jsonify({"error": str(e)}), 500
 
-@app.route('/api/validacion-megacapa/cambiar-estatus', methods=['POST'])
+
+@app.route("/api/validacion-megacapa/cambiar-estatus", methods=["POST"])
 @login_required
 def api_cambiar_estatus_megacapa():
     """Change the estatus_megacapa of a validation result (VINCULAR <-> NUEVO)."""
     try:
         data = request.get_json()
-        if not data or 'validacion_id' not in data or 'nuevo_estatus' not in data:
-            return jsonify({'error': 'Faltan parámetros: validacion_id, nuevo_estatus'}), 400
-        
-        validacion_id = data['validacion_id']
-        nuevo_estatus = data['nuevo_estatus']
-        
-        if nuevo_estatus not in ('VINCULAR', 'NUEVO'):
-            return jsonify({'error': 'Estatus debe ser VINCULAR o NUEVO'}), 400
-        
+        if not data or "validacion_id" not in data or "nuevo_estatus" not in data:
+            return jsonify(
+                {"error": "Faltan parámetros: validacion_id, nuevo_estatus"}
+            ), 400
+
+        validacion_id = data["validacion_id"]
+        nuevo_estatus = data["nuevo_estatus"]
+
+        if nuevo_estatus not in ("VINCULAR", "NUEVO"):
+            return jsonify({"error": "Estatus debe ser VINCULAR o NUEVO"}), 400
+
         registro = ValidacionMegacapa.query.get(validacion_id)
         if not registro:
-            return jsonify({'error': 'Registro no encontrado'}), 404
-        
+            return jsonify({"error": "Registro no encontrado"}), 404
+
         estatus_anterior = registro.estatus_megacapa
         registro.estatus_megacapa = nuevo_estatus
         db.session.commit()
-        
-        app.logger.info(f'Estatus megacapa cambiado: validacion_id={validacion_id}, {estatus_anterior} -> {nuevo_estatus} (por {current_user.username})')
-        
-        return jsonify({
-            'success': True,
-            'validacion_id': validacion_id,
-            'estatus_anterior': estatus_anterior,
-            'estatus_nuevo': nuevo_estatus,
-            'message': f'Estatus cambiado de {estatus_anterior} a {nuevo_estatus}'
-        })
+
+        app.logger.info(
+            f"Estatus megacapa cambiado: validacion_id={validacion_id}, {estatus_anterior} -> {nuevo_estatus} (por {current_user.username})"
+        )
+
+        return jsonify(
+            {
+                "success": True,
+                "validacion_id": validacion_id,
+                "estatus_anterior": estatus_anterior,
+                "estatus_nuevo": nuevo_estatus,
+                "message": f"Estatus cambiado de {estatus_anterior} a {nuevo_estatus}",
+            }
+        )
     except Exception as e:
         db.session.rollback()
-        app.logger.error(f'Error al cambiar estatus megacapa: {e}')
-        return jsonify({'error': str(e)}), 500
+        app.logger.error(f"Error al cambiar estatus megacapa: {e}")
+        return jsonify({"error": str(e)}), 500
 
-@app.route('/actualizar-fila', methods=['POST'])
+
+@app.route("/actualizar-fila", methods=["POST"])
 @login_required
 def actualizar_fila():
     global excel_data
-    
-    row_index = request.form.get('row_index', type=int)
-    db_id = request.form.get('db_id', type=int)
-    
+
+    row_index = request.form.get("row_index", type=int)
+    db_id = request.form.get("db_id", type=int)
+
     # Imprimir información de la solicitud para depuración
     app.logger.debug(f"Actualizando fila - db_id: {db_id}, row_index: {row_index}")
     app.logger.debug(f"Datos del formulario: {request.form}")
-    
+
     try:
         # Si tenemos db_id, actualizamos en la base de datos
         if db_id is not None:
             poligono = Poligono.query.get(db_id)
             if poligono is None:
-                flash('Registro no encontrado en la base de datos', 'error')
-                return redirect(url_for('validacion_poligonos', tab='lista'))
-            
-            app.logger.debug(f"Actualizando polígono en la base de datos con ID: {db_id}")
+                flash("Registro no encontrado en la base de datos", "error")
+                return redirect(url_for("validacion_poligonos", tab="lista"))
+
+            app.logger.debug(
+                f"Actualizando polígono en la base de datos con ID: {db_id}"
+            )
 
             # Cargar datos JSON actuales -> YA NO SE USA JSON
             # try:
@@ -1435,7 +1699,7 @@ def actualizar_fila():
             # Actualizar campos directamente en el objeto Poligono
             for campo_form, valor_form in request.form.items():
                 # Evitar campos especiales
-                if campo_form in ['row_index', 'db_id']:
+                if campo_form in ["row_index", "db_id"]:
                     continue
 
                 # Note: SUPERFICIE, ESTADO, MUNICIPIO are read-only in the UI (hidden inputs).
@@ -1444,41 +1708,67 @@ def actualizar_fila():
 
                 # Mapear nombre de campo del formulario (UPPERCASE) a atributo del modelo (lowercase)
                 atributo_modelo = None
-                if campo_form == 'ID_POLIGONO': atributo_modelo = 'id_poligono'
-                elif campo_form == 'IF': atributo_modelo = 'if_val'
-                elif campo_form == 'ID_CREDITO': atributo_modelo = 'id_credito'
-                elif campo_form == 'ID_PERSONA': atributo_modelo = 'id_persona'
-                elif campo_form == 'SUPERFICIE': atributo_modelo = 'superficie'
-                elif campo_form == 'ESTADO': atributo_modelo = 'estado'
-                elif campo_form == 'MUNICIPIO': atributo_modelo = 'municipio'
+                if campo_form == "ID_POLIGONO":
+                    atributo_modelo = "id_poligono"
+                elif campo_form == "IF":
+                    atributo_modelo = "if_val"
+                elif campo_form == "ID_CREDITO":
+                    atributo_modelo = "id_credito"
+                elif campo_form == "ID_PERSONA":
+                    atributo_modelo = "id_persona"
+                elif campo_form == "SUPERFICIE":
+                    atributo_modelo = "superficie"
+                elif campo_form == "ESTADO":
+                    atributo_modelo = "estado"
+                elif campo_form == "MUNICIPIO":
+                    atributo_modelo = "municipio"
                 # COORDENADAS originales no se editan aquí
-                elif campo_form == 'COORDENADAS_DECIMALES_CORREGIDAS': atributo_modelo = 'coordenadas_corregidas'
-                elif campo_form == 'AREA_DIGITALIZADA': atributo_modelo = 'area_digitalizada'
-                elif campo_form == 'ESTATUS': atributo_modelo = 'estatus'
-                elif campo_form == 'COMENTARIOS': atributo_modelo = 'comentarios'
-                elif campo_form == 'DESCRIPCION': atributo_modelo = 'descripcion'
-                elif campo_form == 'ORDEN': atributo_modelo = 'orden'
+                elif campo_form == "COORDENADAS_DECIMALES_CORREGIDAS":
+                    atributo_modelo = "coordenadas_corregidas"
+                elif campo_form == "AREA_DIGITALIZADA":
+                    atributo_modelo = "area_digitalizada"
+                elif campo_form == "ESTATUS":
+                    atributo_modelo = "estatus"
+                elif campo_form == "COMENTARIOS":
+                    atributo_modelo = "comentarios"
+                elif campo_form == "DESCRIPCION":
+                    atributo_modelo = "descripcion"
+                elif campo_form == "ORDEN":
+                    atributo_modelo = "orden"
                 # Añadir más mapeos si se agregan más campos editables
 
                 if atributo_modelo:
                     try:
                         # Intentar convertir a float si es un campo numérico
-                        if atributo_modelo in ['superficie', 'area_digitalizada']:
-                            valor_actualizado = float(valor_form) if valor_form.strip() else None
+                        if atributo_modelo in ["superficie", "area_digitalizada"]:
+                            valor_actualizado = (
+                                float(valor_form) if valor_form.strip() else None
+                            )
                         else:
                             # Para campos de texto, usar None en lugar de strings vacíos o 'None'
-                            valor_actualizado = valor_form.strip() if valor_form.strip() and valor_form.strip().lower() != 'none' else None
+                            valor_actualizado = (
+                                valor_form.strip()
+                                if valor_form.strip()
+                                and valor_form.strip().lower() != "none"
+                                else None
+                            )
                         setattr(poligono, atributo_modelo, valor_actualizado)
-                        app.logger.debug(f"Actualizado {atributo_modelo} a: {valor_actualizado}")
+                        app.logger.debug(
+                            f"Actualizado {atributo_modelo} a: {valor_actualizado}"
+                        )
                     except ValueError:
-                         app.logger.error(f"Error al convertir {campo_form} ('{valor_form}') a número para {atributo_modelo}. Se guarda como None/String.")
-                         # Si falla la conversión numérica, decidir si guardar como None o string (depende del campo)
-                         if atributo_modelo in ['superficie', 'area_digitalizada']:
-                             setattr(poligono, atributo_modelo, None)
-                         else: # Para campos de texto, guardar el valor original
-                             setattr(poligono, atributo_modelo, valor_form)
+                        app.logger.error(
+                            f"Error al convertir {campo_form} ('{valor_form}') a número para {atributo_modelo}. Se guarda como None/String."
+                        )
+                        # Si falla la conversión numérica, decidir si guardar como None o string (depende del campo)
+                        if atributo_modelo in ["superficie", "area_digitalizada"]:
+                            setattr(poligono, atributo_modelo, None)
+                        else:  # Para campos de texto, guardar el valor original
+                            setattr(poligono, atributo_modelo, valor_form)
                     except Exception as set_err:
-                         app.logger.error(f"Error al actualizar {atributo_modelo}: {set_err}")
+                        app.logger.error(
+                            f"Error al actualizar {atributo_modelo}: {set_err}"
+                        )
 
             # Guardar explícitamente el área digitalizada del formulario (redundante con el bucle, pero asegura tipo)
             # if 'AREA_DIGITALIZADA' in request.form and request.form['AREA_DIGITALIZADA'].strip():
@@ -1503,186 +1793,255 @@ def actualizar_fila():
             poligono.fecha_modificacion = datetime.utcnow()
             poligono.editado_por_id = current_user.id
             poligono.fecha_editado = datetime.utcnow()
-            
+
             # Guardar cambios en la base de datos
             try:
                 db.session.commit()
                 app.logger.info("Cambios guardados exitosamente en la base de datos")
-                flash('Cambios guardados correctamente en la base de datos', 'success')
-                
+                flash("Cambios guardados correctamente en la base de datos", "success")
+
                 # Verificar si el usuario quiere ir al siguiente registro
-                if 'guardar_y_siguiente' in request.form:
+                if "guardar_y_siguiente" in request.form:
                     # Buscar el siguiente registro en la base de datos
+                    filtro_estatus = request.form.get("filtro_estatus", "pendiente")
+
                     # Build query for next polygon
                     next_query = Poligono.query.filter(Poligono.id > db_id)
-                    
+
+                    # Apply estatus filter to 'next' navigation
+                    if filtro_estatus == "pendiente":
+                        next_query = next_query.filter(
+                            db.or_(
+                                Poligono.estatus.is_(None),
+                                Poligono.estatus == "",
+                            )
+                        )
+                    elif filtro_estatus == "6":
+                        next_query = next_query.filter(Poligono.estatus == "6")
+                    elif filtro_estatus == "7":
+                        next_query = next_query.filter(Poligono.estatus == "7")
+                    # 'todos' = no additional filter (current behavior)
+
                     # Non-admins: only navigate within their assigned polygons
                     if not current_user.is_admin:
                         next_query = next_query.filter(
                             db.or_(
                                 Poligono.usuario_asignado_id == current_user.id,
-                                Poligono.usuario_asignado_id.is_(None)
+                                Poligono.usuario_asignado_id.is_(None),
                             )
                         )
-                    
+
                     siguiente_poligono = next_query.order_by(Poligono.id.asc()).first()
-                    
+
                     if siguiente_poligono:
-                        flash('Pasando al siguiente registro...', 'info')
-                        return redirect(url_for('validacion_poligonos', tab='editar', db_id=siguiente_poligono.id))
+                        flash("Pasando al siguiente registro...", "info")
+                        return redirect(
+                            url_for(
+                                "validacion_poligonos",
+                                tab="editar",
+                                db_id=siguiente_poligono.id,
+                                filtro_estatus=filtro_estatus,
+                            )
+                        )
                     else:
-                        flash('No hay más registros. Este era el último.', 'warning')
-                        return redirect(url_for('validacion_poligonos', tab='lista'))
-                
+                        flash(
+                            "No hay más registros con ese filtro. Este era el último.",
+                            "warning",
+                        )
+                        return redirect(url_for("validacion_poligonos", tab="lista"))
+
             except Exception as db_error:
                 app.logger.error(f"Error al guardar en la base de datos: {db_error}")
                 db.session.rollback()
-                flash(f'Error al guardar en la base de datos: {str(db_error)}', 'error')
-            
-            return redirect(url_for('validacion_poligonos', tab='lista'))
-        
+                flash(f"Error al guardar en la base de datos: {str(db_error)}", "error")
+
+            return redirect(url_for("validacion_poligonos", tab="lista"))
+
         # Compatibilidad con el código anterior (mediante index)
-        elif row_index is not None and row_index < len(excel_data['data']):
-            app.logger.debug(f"Actualizando polígono en memoria con índice: {row_index}")
-            
+        elif row_index is not None and row_index < len(excel_data["data"]):
+            app.logger.debug(
+                f"Actualizando polígono en memoria con índice: {row_index}"
+            )
+
             # Actualizar todos los campos editables
-            for col in excel_data['columns']:
+            for col in excel_data["columns"]:
                 if col in request.form:
-                    excel_data['data'][row_index][col] = request.form[col]
-            
+                    excel_data["data"][row_index][col] = request.form[col]
+
             # Guardar explícitamente el área digitalizada del formulario
-            if 'AREA_DIGITALIZADA' in request.form and request.form['AREA_DIGITALIZADA'].strip():
+            if (
+                "AREA_DIGITALIZADA" in request.form
+                and request.form["AREA_DIGITALIZADA"].strip()
+            ):
                 try:
-                    area_manual = float(request.form['AREA_DIGITALIZADA'])
-                    excel_data['data'][row_index]['AREA_DIGITALIZADA'] = area_manual
-                    app.logger.debug(f"Usando área ingresada manualmente: {area_manual} hectáreas")
+                    area_manual = float(request.form["AREA_DIGITALIZADA"])
+                    excel_data["data"][row_index]["AREA_DIGITALIZADA"] = area_manual
+                    app.logger.debug(
+                        f"Usando área ingresada manualmente: {area_manual} hectáreas"
+                    )
                 except ValueError:
                     app.logger.debug("Valor de área digitalizada no válido")
-            
+
             # Actualizar coordenadas si se proporcionaron
-            if 'COORDENADAS_DECIMALES_CORREGIDAS' in request.form:
-                excel_data['data'][row_index]['COORDENADAS_DECIMALES_CORREGIDAS'] = request.form['COORDENADAS_DECIMALES_CORREGIDAS']
+            if "COORDENADAS_DECIMALES_CORREGIDAS" in request.form:
+                excel_data["data"][row_index]["COORDENADAS_DECIMALES_CORREGIDAS"] = (
+                    request.form["COORDENADAS_DECIMALES_CORREGIDAS"]
+                )
                 # Ya no recalculamos el área basada en coordenadas
-            
-            flash('Cambios guardados correctamente (modo memoria)', 'success')
-            
+
+            flash("Cambios guardados correctamente (modo memoria)", "success")
+
             # Verificar si el usuario quiere ir al siguiente registro
-            if 'guardar_y_siguiente' in request.form:
-                # Buscar el siguiente registro en memoria
-                siguiente_indice = row_index + 1
-                if siguiente_indice < len(excel_data['data']):
-                    siguiente_row = excel_data['data'][siguiente_indice]
-                    siguiente_db_id = siguiente_row.get('db_id')
-                    
-                    if siguiente_db_id:
-                        flash('Pasando al siguiente registro...', 'info')
-                        return redirect(url_for('validacion_poligonos', tab='editar', db_id=siguiente_db_id))
+            if "guardar_y_siguiente" in request.form:
+                filtro_estatus = request.form.get("filtro_estatus", "pendiente")
+
+                # Buscar el siguiente registro en memoria que coincida con el filtro
+                for i in range(row_index + 1, len(excel_data["data"])):
+                    row = excel_data["data"][i]
+                    row_estatus = row.get("ESTATUS", "")
+
+                    if filtro_estatus == "pendiente" and (
+                        row_estatus is None or row_estatus == ""
+                    ):
+                        pass  # This row matches
+                    elif filtro_estatus == "6" and row_estatus == "6":
+                        pass  # This row matches
+                    elif filtro_estatus == "7" and row_estatus == "7":
+                        pass  # This row matches
+                    elif filtro_estatus == "todos":
+                        pass  # All rows match
                     else:
-                        flash('Pasando al siguiente registro...', 'info')
-                        return redirect(url_for('validacion_poligonos', tab='editar', row_index=siguiente_indice))
-                else:
-                    flash('No hay más registros. Este era el último.', 'warning')
-                    return redirect(url_for('validacion_poligonos', tab='lista'))
-            
-            return redirect(url_for('validacion_poligonos', tab='lista'))
-        
+                        continue  # Skip this row
+
+                    # Found a matching row
+                    siguiente_db_id = row.get("db_id")
+                    if siguiente_db_id:
+                        flash("Pasando al siguiente registro...", "info")
+                        return redirect(
+                            url_for(
+                                "validacion_poligonos",
+                                tab="editar",
+                                db_id=siguiente_db_id,
+                                filtro_estatus=filtro_estatus,
+                            )
+                        )
+                    else:
+                        flash("Pasando al siguiente registro...", "info")
+                        return redirect(
+                            url_for(
+                                "validacion_poligonos",
+                                tab="editar",
+                                row_index=i,
+                                filtro_estatus=filtro_estatus,
+                            )
+                        )
+
+                flash(
+                    "No hay más registros con ese filtro. Este era el último.",
+                    "warning",
+                )
+                return redirect(url_for("validacion_poligonos", tab="lista"))
+
+            return redirect(url_for("validacion_poligonos", tab="lista"))
+
         else:
-            flash('Índice de fila inválido', 'error')
-            return redirect(url_for('validacion_poligonos', tab='lista'))
-    
+            flash("Índice de fila inválido", "error")
+            return redirect(url_for("validacion_poligonos", tab="lista"))
+
     except Exception as e:
         app.logger.error(f"ERROR GENERAL AL ACTUALIZAR: {str(e)}")
         import traceback
-        traceback.print_exc()
-        flash(f'Error al actualizar: {str(e)}', 'error')
-        return redirect(url_for('validacion_poligonos', tab='lista'))
 
-@app.route('/get-original-coords/<int:row_index>')
+        traceback.print_exc()
+        flash(f"Error al actualizar: {str(e)}", "error")
+        return redirect(url_for("validacion_poligonos", tab="lista"))
+
+
+@app.route("/get-original-coords/<int:row_index>")
 @login_required
 def get_original_coords(row_index):
     """Endpoint para obtener coordenadas originales (AJAX)"""
     # Intentar obtener el ID de la base de datos si está presente
-    db_id = request.args.get('db_id', type=int)
-    
+    db_id = request.args.get("db_id", type=int)
+
     if db_id is not None:
         # Obtener de la base de datos
         poligono = Poligono.query.get(db_id)
         if poligono is None:
-            return jsonify({'error': 'Registro no encontrado en la base de datos'}), 404
-        
-        return jsonify({
-            'coordenadas': poligono.coordenadas_corregidas
-        })
-    elif row_index >= 0 and row_index < len(excel_data.get('original_coords', [])):
-        # Obtener del almacenamiento en memoria (compatibilidad)
-        return jsonify({
-            'coordenadas': excel_data['original_coords'][row_index]
-        })
-    else:
-        return jsonify({'error': 'Índice inválido'}), 404
+            return jsonify({"error": "Registro no encontrado en la base de datos"}), 404
 
-@app.route('/marcar-como-modificado', methods=['POST'])
+        return jsonify({"coordenadas": poligono.coordenadas_corregidas})
+    elif row_index >= 0 and row_index < len(excel_data.get("original_coords", [])):
+        # Obtener del almacenamiento en memoria (compatibilidad)
+        return jsonify({"coordenadas": excel_data["original_coords"][row_index]})
+    else:
+        return jsonify({"error": "Índice inválido"}), 404
+
+
+@app.route("/marcar-como-modificado", methods=["POST"])
 @login_required
 def marcar_como_modificado():
     """Endpoint para marcar un polígono como modificado cuando se edita en el mapa"""
     try:
         data = request.get_json()
-        db_id = data.get('db_id')
-        
+        db_id = data.get("db_id")
+
         if db_id is None:
-            return jsonify({'error': 'ID de polígono no proporcionado'}), 400
-        
+            return jsonify({"error": "ID de polígono no proporcionado"}), 400
+
         # Buscar el polígono en la base de datos
         poligono = Poligono.query.get(db_id)
         if poligono is None:
-            return jsonify({'error': 'Polígono no encontrado'}), 404
-        
+            return jsonify({"error": "Polígono no encontrado"}), 404
+
         # Marcar como modificado
-        poligono.se_modifico = 'Sí'
+        poligono.se_modifico = "Sí"
         poligono.fecha_modificacion = datetime.utcnow()
-        
+
         # Guardar cambios
         db.session.commit()
-        
-        return jsonify({'success': True, 'message': 'Polígono marcado como modificado'})
-        
+
+        return jsonify({"success": True, "message": "Polígono marcado como modificado"})
+
     except Exception as e:
         app.logger.error(f"Error al marcar como modificado: {str(e)}")
         db.session.rollback()
-        return jsonify({'error': f'Error al marcar como modificado: {str(e)}'}), 500
+        return jsonify({"error": f"Error al marcar como modificado: {str(e)}"}), 500
 
-@app.route('/diagnostico-poligono/<int:db_id>')
+
+@app.route("/diagnostico-poligono/<int:db_id>")
 @login_required
 def diagnostico_poligono(db_id):
     """Endpoint para mostrar información de diagnóstico de un polígono"""
     poligono = Poligono.query.get(db_id)
     if poligono is None:
-        return jsonify({'error': 'Registro no encontrado en la base de datos'}), 404
-    
+        return jsonify({"error": "Registro no encontrado en la base de datos"}), 404
+
     # Devolver todos los datos del polígono para diagnosticar
     datos = {
-        'id': poligono.id,
-        'id_poligono': poligono.id_poligono,
-        'if_val': poligono.if_val,
-        'id_credito': poligono.id_credito,
-        'id_persona': poligono.id_persona,
-        'superficie': poligono.superficie,
-        'estado': poligono.estado,
-        'municipio': poligono.municipio,
-        'coordenadas': poligono.coordenadas,
-        'coordenadas_corregidas': poligono.coordenadas_corregidas,
-        'area_digitalizada': poligono.area_digitalizada,
-        'estatus': poligono.estatus,
-        'comentarios': poligono.comentarios,
-        'descripcion': poligono.descripcion,
-        'orden': poligono.orden,
-        'fecha_creacion': str(poligono.fecha_creacion),
-        'fecha_modificacion': str(poligono.fecha_modificacion)
+        "id": poligono.id,
+        "id_poligono": poligono.id_poligono,
+        "if_val": poligono.if_val,
+        "id_credito": poligono.id_credito,
+        "id_persona": poligono.id_persona,
+        "superficie": poligono.superficie,
+        "estado": poligono.estado,
+        "municipio": poligono.municipio,
+        "coordenadas": poligono.coordenadas,
+        "coordenadas_corregidas": poligono.coordenadas_corregidas,
+        "area_digitalizada": poligono.area_digitalizada,
+        "estatus": poligono.estatus,
+        "comentarios": poligono.comentarios,
+        "descripcion": poligono.descripcion,
+        "orden": poligono.orden,
+        "fecha_creacion": str(poligono.fecha_creacion),
+        "fecha_modificacion": str(poligono.fecha_modificacion),
     }
-    
+
     return jsonify(datos)
 
-@app.route('/get-historico-poligonos')
+
+@app.route("/get-historico-poligonos")
 @login_required
 @limiter.exempt
 def get_historico_poligonos():
@@ -1690,39 +2049,40 @@ def get_historico_poligonos():
     try:
         # Ruta al archivo shapefile histórico
         historico_shapefile = "data/MEGA_CAPA_V1_OL.shp"
-        
+
         # Leer el shapefile con geopandas
         historico_gdf = gpd.read_file(historico_shapefile)
-        
+
         # Verificar/convertir CRS a WGS84 (EPSG:4326) si es necesario
         if historico_gdf.crs != "EPSG:4326":
             historico_gdf = historico_gdf.to_crs(epsg=4326)
-        
+
         # Convertir a GeoJSON
         geojson_data = json.loads(historico_gdf.to_json())
-        
+
         # Asegurar que tenemos el campo ID_POLIGON (si existe)
         id_field = None
         orden_field = None
         for field in historico_gdf.columns:
-            if field.upper() == 'ID_POLIGON':
+            if field.upper() == "ID_POLIGON":
                 id_field = field
-            elif field.upper() in ['ORDEN', 'ORDER']:
+            elif field.upper() in ["ORDEN", "ORDER"]:
                 orden_field = field
-            
+
         # Agregar información sobre el campo de ID y orden para facilitar el etiquetado en el frontend
         respuesta = {
-            'geojson': geojson_data,
-            'id_field': id_field,
-            'orden_field': orden_field
+            "geojson": geojson_data,
+            "id_field": id_field,
+            "orden_field": orden_field,
         }
-        
+
         return jsonify(respuesta)
     except Exception as e:
         app.logger.error(f"Error al cargar el shapefile histórico: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"error": str(e)}), 500
 
-@app.route('/get-historico-poligonos-radio/<int:polygon_id>')
+
+@app.route("/get-historico-poligonos-radio/<int:polygon_id>")
 @login_required
 @limiter.exempt
 def get_historico_poligonos_radio(polygon_id):
@@ -1731,42 +2091,42 @@ def get_historico_poligonos_radio(polygon_id):
         # Buscar el polígono en la base de datos
         poligono = Poligono.query.get(polygon_id)
         if poligono is None:
-            return jsonify({'error': 'Polígono no encontrado'}), 404
-            
+            return jsonify({"error": "Polígono no encontrado"}), 404
+
         # Obtener coordenadas del polígono
         coordenadas_corregidas = poligono.coordenadas_corregidas
         if not coordenadas_corregidas:
-            return jsonify({'error': 'El polígono no tiene coordenadas válidas'}), 400
-            
+            return jsonify({"error": "El polígono no tiene coordenadas válidas"}), 400
+
         # Extraer el primer punto del polígono como punto de referencia
-        coords_list = coordenadas_corregidas.split(' | ')
+        coords_list = coordenadas_corregidas.split(" | ")
         if not coords_list:
-            return jsonify({'error': 'Formato de coordenadas inválido'}), 400
-            
-        first_point = coords_list[0].split(',')
+            return jsonify({"error": "Formato de coordenadas inválido"}), 400
+
+        first_point = coords_list[0].split(",")
         if len(first_point) < 2:
-            return jsonify({'error': 'Formato de coordenadas inválido'}), 400
-            
+            return jsonify({"error": "Formato de coordenadas inválido"}), 400
+
         lat_ref = float(first_point[0])
         lon_ref = float(first_point[1])
-        
+
         # Ruta al archivo shapefile histórico
         historico_shapefile = "data/MEGA_CAPA_V1_OL.shp"
-        
+
         # Leer el shapefile con geopandas
         historico_gdf = gpd.read_file(historico_shapefile)
-        
+
         # Verificar/convertir CRS a WGS84 (EPSG:4326) si es necesario
         if historico_gdf.crs != "EPSG:4326":
             historico_gdf = historico_gdf.to_crs(epsg=4326)
-        
+
         # Filtrar polígonos en el radio de 5km
         from shapely.geometry import Point
         import math
-        
+
         # Radio de la tierra en km
         R = 6371.0
-        
+
         # Función para calcular distancia haversine
         def haversine(lat1, lon1, lat2, lon2):
             # Convertir de grados a radianes
@@ -1774,124 +2134,130 @@ def get_historico_poligonos_radio(polygon_id):
             lon1 = math.radians(lon1)
             lat2 = math.radians(lat2)
             lon2 = math.radians(lon2)
-            
+
             # Fórmula haversine
             dlon = lon2 - lon1
             dlat = lat2 - lat1
-            a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
-            c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+            a = (
+                math.sin(dlat / 2) ** 2
+                + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+            )
+            c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
             distance = R * c
-            
+
             return distance
-        
+
         # Crear una función para aplicar a cada geometría
         def en_radio(geometry):
             # Para polígonos, usamos el centroide
             centroid = geometry.centroid
             lat = centroid.y
             lon = centroid.x
-            
+
             # Calcular la distancia
             distancia = haversine(lat_ref, lon_ref, lat, lon)
-            
+
             # Retornar True si está dentro del radio (1km)
             return distancia <= 1.0
-        
+
         # Aplicar el filtro a todas las geometrías
         mask = historico_gdf.geometry.apply(en_radio)
         historico_filtrado = historico_gdf[mask]
-        
+
         # Convertir a GeoJSON
         geojson_data = json.loads(historico_filtrado.to_json())
-        
+
         # Asegurar que tenemos el campo ID_POLIGON y ORDEN (si existen)
         id_field = None
         orden_field = None
         for field in historico_filtrado.columns:
-            if field.upper() == 'ID_POLIGON':
+            if field.upper() == "ID_POLIGON":
                 id_field = field
-            elif field.upper() in ['ORDEN', 'ORDER']:
+            elif field.upper() in ["ORDEN", "ORDER"]:
                 orden_field = field
-            
+
         # Agregar información sobre el campo de ID, orden y contador
         respuesta = {
-            'geojson': geojson_data,
-            'id_field': id_field,
-            'orden_field': orden_field,
-            'total': len(historico_filtrado),
-            'radio_km': 1.0
+            "geojson": geojson_data,
+            "id_field": id_field,
+            "orden_field": orden_field,
+            "total": len(historico_filtrado),
+            "radio_km": 1.0,
         }
-        
+
         return jsonify(respuesta)
     except Exception as e:
         app.logger.error(f"Error al cargar el shapefile histórico filtrado: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"error": str(e)}), 500
 
-@app.route('/obtener_ubicacion', methods=['POST'])
+
+@app.route("/obtener_ubicacion", methods=["POST"])
 @login_required
 def get_ubicacion():
     """Endpoint para obtener municipio y estado desde coordenadas"""
     try:
         data = request.get_json()
-        lat = float(data.get('lat'))
-        lon = float(data.get('lon'))
-        
+        lat = float(data.get("lat"))
+        lon = float(data.get("lon"))
+
         # Usar la función para obtener el municipio y estado
         ubicacion = obtener_ubicacion(lat, lon)
-        
+
         if ubicacion:
             return jsonify(ubicacion)
         return jsonify({"error": "Ubicación no encontrada"}), 404
     except Exception as e:
         return jsonify({"error": f"Datos inválidos: {str(e)}"}), 400
 
+
 # Función para obtener ubicación desde las coordenadas de un polígono
 def obtener_ubicacion_desde_poligono(coordenadas_str):
     """Obtiene el municipio y estado desde las coordenadas de un polígono"""
     if not coordenadas_str:
         return None
-    
+
     try:
         # Usar el primer punto del polígono para determinar ubicación
-        coords_list = coordenadas_str.split(' | ')
+        coords_list = coordenadas_str.split(" | ")
         if not coords_list:
             return None
-            
-        first_point = coords_list[0].split(',')
+
+        first_point = coords_list[0].split(",")
         if len(first_point) < 2:
             return None
-            
+
         lat = float(first_point[0])
         lon = float(first_point[1])
-        
+
         ubicacion = obtener_ubicacion(lat, lon)
         if ubicacion:
             # Asegurar que los nombres tengan codificación correcta
-            ubicacion['municipio'] = corregir_codificacion(ubicacion['municipio'])
-            ubicacion['estado'] = corregir_codificacion(ubicacion['estado'])
+            ubicacion["municipio"] = corregir_codificacion(ubicacion["municipio"])
+            ubicacion["estado"] = corregir_codificacion(ubicacion["estado"])
         return ubicacion
     except Exception as e:
         app.logger.error(f"Error al obtener ubicación desde polígono: {e}")
         return None
 
-def allowed_file(filename):
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in {'xlsx', 'xls'}
 
-@app.route('/generar_shapefiles', methods=['POST'])
+def allowed_file(filename):
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in {"xlsx", "xls"}
+
+
+@app.route("/generar_shapefiles", methods=["POST"])
 @login_required
 def generar_shapefiles():
     """Ruta para generar archivos shapefile de polígonos seleccionados"""
     # Obtener los índices de polígonos seleccionados
-    selected_rows = request.json.get('selected_rows', [])
-    
+    selected_rows = request.json.get("selected_rows", [])
+
     if not selected_rows:
-        return jsonify({'error': 'No se seleccionaron polígonos'}), 400
-    
+        return jsonify({"error": "No se seleccionaron polígonos"}), 400
+
     try:
         # Preparar un archivo ZIP en memoria para contener todos los shapefiles
         memory_file = io.BytesIO()
-        with zipfile.ZipFile(memory_file, 'w') as zf:
+        with zipfile.ZipFile(memory_file, "w") as zf:
             # Para cada polígono seleccionado
             for row_id in selected_rows:
                 # Buscar el polígono en la base de datos por su ID
@@ -1899,310 +2265,387 @@ def generar_shapefiles():
                     row_id = int(row_id)
                     # Primero intentar buscar por ID exacto
                     poligono = Poligono.query.get(row_id)
-                    
+
                     if poligono is None:
                         # Si no se encuentra, imprimir para depuración
-                        app.logger.error(f"No se encontró polígono con ID {row_id}, buscando en posición")
-                        
+                        app.logger.error(
+                            f"No se encontró polígono con ID {row_id}, buscando en posición"
+                        )
+
                         # Intentar buscar por posición como fallback
                         poligonos = Poligono.query.all()
                         if 0 <= row_id < len(poligonos):
                             poligono = poligonos[row_id]
                         else:
-                            app.logger.debug(f"Índice {row_id} fuera de rango, hay {len(poligonos)} polígonos")
+                            app.logger.debug(
+                                f"Índice {row_id} fuera de rango, hay {len(poligonos)} polígonos"
+                            )
                             continue
-                    
-                    app.logger.debug(f"Generando shapefile para polígono ID={poligono.id}, ID_POLIGONO={poligono.id_poligono}")
+
+                    app.logger.debug(
+                        f"Generando shapefile para polígono ID={poligono.id}, ID_POLIGONO={poligono.id_poligono}"
+                    )
                 except Exception as e:
                     app.logger.error(f"Error al recuperar polígono {row_id}: {e}")
                     # Si no es un índice válido, continuar con el siguiente
                     continue
-                
+
                 # Generar shapefile para este polígono
-                shapefile_buffer = generar_shapefile_individual(poligono, f'polygon-{row_id}')
-                
+                shapefile_buffer = generar_shapefile_individual(
+                    poligono, f"polygon-{row_id}"
+                )
+
                 # Añadir el shapefile al archivo ZIP
                 if shapefile_buffer:
-                    zf.writestr(f'polygon-{row_id}.zip', shapefile_buffer.getvalue())
-        
+                    zf.writestr(f"polygon-{row_id}.zip", shapefile_buffer.getvalue())
+
         # Regresar al inicio del archivo en memoria
         memory_file.seek(0)
-        
+
         # Enviar el archivo ZIP como respuesta
         return send_file(
             memory_file,
-            mimetype='application/zip',
+            mimetype="application/zip",
             as_attachment=True,
-            download_name='poligonos_shapefiles.zip'
+            download_name="poligonos_shapefiles.zip",
         )
-    
+
     except Exception as e:
         app.logger.error(f"Error al generar shapefiles: {e}")
         import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
 
-@app.route('/generar_paquete_completo', methods=['POST'])
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/generar_paquete_completo", methods=["POST"])
 @login_required
 def generar_paquete_completo():
     """Ruta para generar un paquete completo con fichas PDF y shapefiles"""
     # Obtener los índices de polígonos seleccionados
-    selected_rows = request.json.get('selected_rows', [])
-    
+    selected_rows = request.json.get("selected_rows", [])
+
     if not selected_rows:
-        return jsonify({'error': 'No se seleccionaron polígonos'}), 400
-    
+        return jsonify({"error": "No se seleccionaron polígonos"}), 400
+
     try:
         # Preparar un archivo ZIP en memoria para contener todos los archivos
         memory_file = io.BytesIO()
-        with zipfile.ZipFile(memory_file, 'w') as zf:
+        with zipfile.ZipFile(memory_file, "w") as zf:
             # Crear carpeta para fichas técnicas
-            zf.writestr('fichas_tecnicas/', '')
+            zf.writestr("fichas_tecnicas/", "")
             # Crear carpeta para shapefiles
-            zf.writestr('shapefiles/', '')
+            zf.writestr("shapefiles/", "")
             # Crear carpeta para mapas
-            zf.writestr('mapas/', '')
-            
+            zf.writestr("mapas/", "")
+
             # Para cada polígono seleccionado
             for row_id in selected_rows:
                 try:
                     row_id = int(row_id)
                     # Primero intentar buscar por ID exacto
                     poligono = Poligono.query.get(row_id)
-                    
+
                     if poligono is None:
                         # Si no se encuentra, imprimir para depuración
-                        app.logger.error(f"No se encontró polígono con ID {row_id}, buscando en posición")
-                        
+                        app.logger.error(
+                            f"No se encontró polígono con ID {row_id}, buscando en posición"
+                        )
+
                         # Intentar buscar por posición como fallback
                         poligonos = Poligono.query.all()
                         if 0 <= row_id < len(poligonos):
                             poligono = poligonos[row_id]
                         else:
-                            app.logger.debug(f"Índice {row_id} fuera de rango, hay {len(poligonos)} polígonos")
+                            app.logger.debug(
+                                f"Índice {row_id} fuera de rango, hay {len(poligonos)} polígonos"
+                            )
                             continue
-                            
-                    app.logger.debug(f"Generando fichas para polígono ID={poligono.id}, ID_POLIGONO={poligono.id_poligono}")
+
+                    app.logger.debug(
+                        f"Generando fichas para polígono ID={poligono.id}, ID_POLIGONO={poligono.id_poligono}"
+                    )
                 except Exception as e:
                     app.logger.error(f"Error al recuperar polígono {row_id}: {e}")
                     # Si no es un ID válido, continuar con el siguiente
                     continue
-                
+
                 # Generar shapefile para este polígono
-                shapefile_buffer = generar_shapefile_individual(poligono, f'polygon-{row_id}')
+                shapefile_buffer = generar_shapefile_individual(
+                    poligono, f"polygon-{row_id}"
+                )
                 png_filepath = None
-                
+
                 if shapefile_buffer:
                     # Usar ID_POLIGONO para nombrar el archivo si está disponible
-                    archivo_nombre = poligono.id_poligono if poligono.id_poligono else f'polygon-{row_id}'
-                    zf.writestr(f'shapefiles/{archivo_nombre}.zip', shapefile_buffer.getvalue())
-                    
+                    archivo_nombre = (
+                        poligono.id_poligono
+                        if poligono.id_poligono
+                        else f"polygon-{row_id}"
+                    )
+                    zf.writestr(
+                        f"shapefiles/{archivo_nombre}.zip", shapefile_buffer.getvalue()
+                    )
+
                     # Generar mapas PNG a partir del shapefile
                     try:
                         # Crear un directorio temporal para guardar los PNG
                         with tempfile.TemporaryDirectory() as temp_png_dir:
                             # Generar PNG a partir del shapefile
-                            png_dir = plot_shapefile_to_png(shapefile_buffer, temp_png_dir)
-                            
+                            png_dir = plot_shapefile_to_png(
+                                shapefile_buffer, temp_png_dir
+                            )
+
                             # Añadir todos los archivos PNG al ZIP y guardar la ruta del primer PNG para la ficha técnica
                             if png_dir:
                                 for png_filename in os.listdir(png_dir):
-                                    if png_filename.endswith('.png'):
+                                    if png_filename.endswith(".png"):
                                         png_path = os.path.join(png_dir, png_filename)
                                         # Guardar la ruta del primer PNG para usarla en la ficha
                                         if png_filepath is None:
                                             png_filepath = png_path
-                                        
+
                                         # Guardar la imagen en un archivo temporal más permanente que podamos usar para el PDF
-                                        temp_img_path = tempfile.NamedTemporaryFile(delete=False, suffix='.png').name
+                                        temp_img_path = tempfile.NamedTemporaryFile(
+                                            delete=False, suffix=".png"
+                                        ).name
                                         shutil.copy2(png_path, temp_img_path)
                                         png_filepath = temp_img_path
-                                        
-                                        with open(png_path, 'rb') as png_file:
+
+                                        with open(png_path, "rb") as png_file:
                                             # Guardar con un nombre predecible basado en ID_POLIGONO
                                             png_name = f"{poligono.id_poligono or f'polygon-{row_id}'}.png"
-                                            zf.writestr(f'mapas/{png_name}', png_file.read())
+                                            zf.writestr(
+                                                f"mapas/{png_name}", png_file.read()
+                                            )
                     except Exception as e:
-                        app.logger.error(f"Error al generar mapa PNG para polígono {row_id}: {e}")
-                        error_msg = f"Error al generar mapa PNG para polígono {row_id}: {e}"
+                        app.logger.error(
+                            f"Error al generar mapa PNG para polígono {row_id}: {e}"
+                        )
+                        error_msg = (
+                            f"Error al generar mapa PNG para polígono {row_id}: {e}"
+                        )
                         errores_detalles.append(error_msg)
                         errores += 1
                         import traceback
+
                         traceback.print_exc()
-                
+
                 # Generar ficha técnica PDF con la nueva plantilla
                 if png_filepath:
-                    pdf_buffer = generar_ficha_tecnica_desde_plantilla(poligono, png_filepath)
+                    pdf_buffer = generar_ficha_tecnica_desde_plantilla(
+                        poligono, png_filepath
+                    )
                     if pdf_buffer:
                         # Usar ID_POLIGONO para nombrar el archivo si está disponible
-                        archivo_nombre = poligono.id_poligono if poligono.id_poligono else f'polygon-{row_id}'
-                        zf.writestr(f'fichas_tecnicas/ficha_{archivo_nombre}.pdf', pdf_buffer.getvalue())
+                        archivo_nombre = (
+                            poligono.id_poligono
+                            if poligono.id_poligono
+                            else f"polygon-{row_id}"
+                        )
+                        zf.writestr(
+                            f"fichas_tecnicas/ficha_{archivo_nombre}.pdf",
+                            pdf_buffer.getvalue(),
+                        )
                     else:
                         # Si falla la generación con la plantilla, intentar el método original como respaldo
-                        pdf_buffer = generar_ficha_tecnica(poligono, f'polygon-{row_id}')
+                        pdf_buffer = generar_ficha_tecnica(
+                            poligono, f"polygon-{row_id}"
+                        )
                         if pdf_buffer:
                             # Usar ID_POLIGONO para nombrar el archivo si está disponible
-                            archivo_nombre = poligono.id_poligono if poligono.id_poligono else f'polygon-{row_id}'
-                            zf.writestr(f'fichas_tecnicas/ficha_{archivo_nombre}.pdf', pdf_buffer.getvalue())
+                            archivo_nombre = (
+                                poligono.id_poligono
+                                if poligono.id_poligono
+                                else f"polygon-{row_id}"
+                            )
+                            zf.writestr(
+                                f"fichas_tecnicas/ficha_{archivo_nombre}.pdf",
+                                pdf_buffer.getvalue(),
+                            )
                 else:
                     # Si no hay imagen, usar el método tradicional
-                    pdf_buffer = generar_ficha_tecnica(poligono, f'polygon-{row_id}')
+                    pdf_buffer = generar_ficha_tecnica(poligono, f"polygon-{row_id}")
                     if pdf_buffer:
                         # Usar ID_POLIGONO para nombrar el archivo si está disponible
-                        archivo_nombre = poligono.id_poligono if poligono.id_poligono else f'polygon-{row_id}'
-                        zf.writestr(f'fichas_tecnicas/ficha_{archivo_nombre}.pdf', pdf_buffer.getvalue())
-        
+                        archivo_nombre = (
+                            poligono.id_poligono
+                            if poligono.id_poligono
+                            else f"polygon-{row_id}"
+                        )
+                        zf.writestr(
+                            f"fichas_tecnicas/ficha_{archivo_nombre}.pdf",
+                            pdf_buffer.getvalue(),
+                        )
+
         # Regresar al inicio del archivo en memoria
         memory_file.seek(0)
-        
+
         # Enviar el archivo ZIP como respuesta
         return send_file(
             memory_file,
-            mimetype='application/zip',
+            mimetype="application/zip",
             as_attachment=True,
-            download_name='paquete_completo.zip'
+            download_name="paquete_completo.zip",
         )
-    
+
     except Exception as e:
         app.logger.error(f"Error al generar paquete completo: {e}")
         import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
 
-@app.route('/generar_shapefile_unico', methods=['POST'])
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/generar_shapefile_unico", methods=["POST"])
 @login_required
 def generar_shapefile_unico():
     """Ruta para generar un único shapefile con todos los polígonos seleccionados"""
     try:
         data = request.get_json()
-        selected_rows = data.get('selected_rows', [])
-        
+        selected_rows = data.get("selected_rows", [])
+
         if not selected_rows:
-            return jsonify({'error': 'No se seleccionaron filas'}), 400
-        
+            return jsonify({"error": "No se seleccionaron filas"}), 400
+
         # Obtener polígonos de la base de datos
         poligonos = []
         for row_id in selected_rows:
             try:
                 row_id = int(row_id)
                 poligono = Poligono.query.get(row_id)
-                
+
                 if poligono:
                     poligonos.append(poligono)
                 else:
                     app.logger.debug(f"Polígono con ID {row_id} no encontrado")
-                    
+
             except Exception as e:
                 app.logger.error(f"Error al recuperar polígono {row_id}: {e}")
                 continue
-        
+
         if not poligonos:
-            return jsonify({'error': 'No se encontraron polígonos válidos'}), 400
-        
+            return jsonify({"error": "No se encontraron polígonos válidos"}), 400
+
         # Generar shapefile único con todos los polígonos
-        shapefile_bytes = generar_shapefile_unificado(poligonos, 'poligonos_unificados')
-        
+        shapefile_bytes = generar_shapefile_unificado(poligonos, "poligonos_unificados")
+
         if not shapefile_bytes:
-            return jsonify({'error': 'Error al generar el shapefile'}), 500
-        
+            return jsonify({"error": "Error al generar el shapefile"}), 500
+
         return send_file(
             shapefile_bytes,
-            mimetype='application/zip',
+            mimetype="application/zip",
             as_attachment=True,
-            download_name='poligonos_unificados.zip'
+            download_name="poligonos_unificados.zip",
         )
-    
+
     except Exception as e:
         app.logger.error(f"Error general: {str(e)}")
         import traceback
+
         traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"error": str(e)}), 500
+
 
 def generar_shapefile_individual(poligono, nombre_archivo):
     """Genera un archivo shapefile para un polígono individual"""
     try:
         # Crear un objeto de memoria para el archivo ZIP
         zip_buffer = io.BytesIO()
-        
+
         # Crear un directorio temporal para los archivos del shapefile
         with tempfile.TemporaryDirectory() as tempdir:
             # Crear el writer de shapefile
-            w = shapefile.Writer(os.path.join(tempdir, 'poligono'))
-            
+            w = shapefile.Writer(os.path.join(tempdir, "poligono"))
+
             # Definir campos de atributos
-            w.field('ID_POLIG', 'C', 40)
-            w.field('IF', 'C', 40)
-            w.field('ID_CRED', 'C', 40)
-            w.field('ID_PERS', 'C', 40)
-            w.field('SUPERF', 'N', 10, 4)
-            w.field('ESTADO', 'C', 40)
-            w.field('MUNICIP', 'C', 40)
-            w.field('AREA_HA', 'N', 10, 4)
-            w.field('ESTATUS', 'C', 10)
-            w.field('COMENT', 'C', 254)
-            w.field('DESCRIP', 'C', 254)  # Campo para descripción
-            w.field('ORDEN', 'C', 100)    # Campo para número de orden
-            
+            w.field("ID_POLIG", "C", 40)
+            w.field("IF", "C", 40)
+            w.field("ID_CRED", "C", 40)
+            w.field("ID_PERS", "C", 40)
+            w.field("SUPERF", "N", 10, 4)
+            w.field("ESTADO", "C", 40)
+            w.field("MUNICIP", "C", 40)
+            w.field("AREA_HA", "N", 10, 4)
+            w.field("ESTATUS", "C", 10)
+            w.field("COMENT", "C", 254)
+            w.field("DESCRIP", "C", 254)  # Campo para descripción
+            w.field("ORDEN", "C", 100)  # Campo para número de orden
+
             # Función auxiliar para limpiar campos de texto que pueden tener saltos de línea
             def limpiar_campo_texto(valor):
                 """Limpia un campo de texto reemplazando saltos de línea con comas y eliminando caracteres problemáticos"""
                 if valor is None:
-                    return ''
-                
+                    return ""
+
                 # Convertir a string si no lo es
                 valor_str = str(valor)
-                
+
                 # Reemplazar saltos de línea con comas y espacios
-                valor_limpio = valor_str.replace('\n', ', ').replace('\r\n', ', ').replace('\r', ', ')
-                
+                valor_limpio = (
+                    valor_str.replace("\n", ", ")
+                    .replace("\r\n", ", ")
+                    .replace("\r", ", ")
+                )
+
                 # Reemplazar múltiples comas seguidas con una sola coma
                 import re
-                valor_limpio = re.sub(r',\s*,+', ', ', valor_limpio)
-                
+
+                valor_limpio = re.sub(r",\s*,+", ", ", valor_limpio)
+
                 # Eliminar comas al inicio y al final
-                valor_limpio = valor_limpio.strip(', ')
-                
+                valor_limpio = valor_limpio.strip(", ")
+
                 # Reemplazar caracteres problemáticos que pueden causar errores en DBF
-                valor_limpio = valor_limpio.replace('\t', ' ')  # Reemplazar tabs con espacios
-                valor_limpio = re.sub(r'\s+', ' ', valor_limpio)  # Reemplazar múltiples espacios con uno solo
-                
+                valor_limpio = valor_limpio.replace(
+                    "\t", " "
+                )  # Reemplazar tabs con espacios
+                valor_limpio = re.sub(
+                    r"\s+", " ", valor_limpio
+                )  # Reemplazar múltiples espacios con uno solo
+
                 return valor_limpio
-            
+
             # Obtener coordenadas del polígono
             coords = []
             if poligono.coordenadas_corregidas:
                 # Verificar qué separador usa: ' | ' o '|'
-                if ' | ' in poligono.coordenadas_corregidas:
-                    pares = poligono.coordenadas_corregidas.split(' | ')
+                if " | " in poligono.coordenadas_corregidas:
+                    pares = poligono.coordenadas_corregidas.split(" | ")
                 else:
-                    pares = poligono.coordenadas_corregidas.split('|')
-                
+                    pares = poligono.coordenadas_corregidas.split("|")
+
                 for par in pares:
                     par = par.strip()
-                    if par and ',' in par:
+                    if par and "," in par:
                         try:
-                            partes = par.split(',')
+                            partes = par.split(",")
                             lat = float(partes[0].strip())
                             lon = float(partes[1].strip())
                             coords.append([lon, lat])  # Shapefile usa [lon, lat]
                         except (ValueError, IndexError) as e:
                             app.logger.error(f"Error al procesar coordenada {par}: {e}")
                             continue
-                
+
                 app.logger.debug(f"Coordenadas procesadas para shapefile: {coords}")
-            
+
             # Limpiar todos los campos de texto antes de escribirlos al DBF
             id_poligono_limpio = limpiar_campo_texto(poligono.id_poligono)[:40]
             if_val_limpio = limpiar_campo_texto(poligono.if_val)[:40]
             id_credito_limpio = limpiar_campo_texto(poligono.id_credito)[:40]
             id_persona_limpio = limpiar_campo_texto(poligono.id_persona)[:40]
-            estado_limpio = limpiar_campo_texto(corregir_codificacion(poligono.estado))[:40]
-            municipio_limpio = limpiar_campo_texto(corregir_codificacion(poligono.municipio))[:40]
+            estado_limpio = limpiar_campo_texto(corregir_codificacion(poligono.estado))[
+                :40
+            ]
+            municipio_limpio = limpiar_campo_texto(
+                corregir_codificacion(poligono.municipio)
+            )[:40]
             estatus_limpio = limpiar_campo_texto(poligono.estatus)[:10]
             comentarios_limpio = limpiar_campo_texto(poligono.comentarios)[:254]
             descripcion_limpio = limpiar_campo_texto(poligono.descripcion)[:254]
             orden_limpio = limpiar_campo_texto(poligono.orden)[:100]
-            
+
             # Si no hay suficientes coordenadas, usar un punto
             if len(coords) < 3:
                 if len(coords) == 1:
@@ -2220,7 +2663,7 @@ def generar_shapefile_individual(poligono, nombre_archivo):
                         estatus_limpio,
                         comentarios_limpio,
                         descripcion_limpio,
-                        orden_limpio
+                        orden_limpio,
                     )
                 else:
                     # No hay coordenadas válidas
@@ -2240,351 +2683,468 @@ def generar_shapefile_individual(poligono, nombre_archivo):
                     estatus_limpio,
                     comentarios_limpio,
                     descripcion_limpio,
-                    orden_limpio
+                    orden_limpio,
                 )
-            
+
             # Guardar el shapefile
             w.close()
-            
+
             # Crear archivo .prj para la proyección (WGS84)
-            with open(os.path.join(tempdir, 'poligono.prj'), 'w') as prj:
-                prj.write('GEOGCS["GCS_WGS_1984",DATUM["D_WGS_1984",SPHEROID["WGS_1984",6378137.0,298.257223563]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]]')
-            
+            with open(os.path.join(tempdir, "poligono.prj"), "w") as prj:
+                prj.write(
+                    'GEOGCS["GCS_WGS_1984",DATUM["D_WGS_1984",SPHEROID["WGS_1984",6378137.0,298.257223563]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]]'
+                )
+
             # Comprimir todos los archivos en un ZIP
-            with zipfile.ZipFile(zip_buffer, 'w') as zf:
+            with zipfile.ZipFile(zip_buffer, "w") as zf:
                 for filename in os.listdir(tempdir):
                     filepath = os.path.join(tempdir, filename)
                     zf.write(filepath, filename)
-        
+
         # Regresar al inicio del buffer
         zip_buffer.seek(0)
         return zip_buffer
-    
+
     except Exception as e:
         app.logger.error(f"Error al generar shapefile individual: {e}")
         import traceback
+
         traceback.print_exc()
         return None
+
 
 def generar_ficha_tecnica(poligono, nombre_archivo):
     """Genera una ficha técnica en formato PDF para un polígono"""
     try:
         # Crear un buffer de memoria para el PDF
         buffer = io.BytesIO()
-        
+
         # Crear el canvas
         c = canvas.Canvas(buffer, pagesize=letter)
         width, height = letter
-        
+
         # Agregar logos
         try:
             # Logo FIRA (izquierda)
             logo_fira_path = "static/images/logo_fira.png"
             if os.path.exists(logo_fira_path):
-                c.drawImage(logo_fira_path, 1*inch, 9.5*inch, width=2*inch, height=0.75*inch, preserveAspectRatio=True)
-            
+                c.drawImage(
+                    logo_fira_path,
+                    1 * inch,
+                    9.5 * inch,
+                    width=2 * inch,
+                    height=0.75 * inch,
+                    preserveAspectRatio=True,
+                )
+
             # Logo secundario (derecha)
             logo_sec_path = "static/images/logo_sec.png"
             if os.path.exists(logo_sec_path):
-                c.drawImage(logo_sec_path, 6.5*inch, 9.5*inch, width=1*inch, height=1*inch, preserveAspectRatio=True)
+                c.drawImage(
+                    logo_sec_path,
+                    6.5 * inch,
+                    9.5 * inch,
+                    width=1 * inch,
+                    height=1 * inch,
+                    preserveAspectRatio=True,
+                )
         except Exception as e:
             app.logger.error(f"Error al cargar logos: {e}")
-        
+
         # Título
         c.setFont("Helvetica-Bold", 14)
-        c.drawCentredString(width/2, 9.25*inch, "FICHA TÉCNICA")
-        
+        c.drawCentredString(width / 2, 9.25 * inch, "FICHA TÉCNICA")
+
         # Línea separadora
-        c.line(1*inch, 9.15*inch, width-1*inch, 9.15*inch)
-        
+        c.line(1 * inch, 9.15 * inch, width - 1 * inch, 9.15 * inch)
+
         # Detalles del polígono en formato tabular
         c.setFont("Helvetica-Bold", 10)
-        y_start = 8.9*inch
-        
+        y_start = 8.9 * inch
+
         # Primera columna (etiquetas)
-        c.drawString(1*inch, y_start, "Nombre del IF:")
-        c.drawString(1*inch, y_start - 0.3*inch, "ID Polígono:")
-        c.drawString(1*inch, y_start - 0.6*inch, "ID Crédito FIRA:")
-        c.drawString(1*inch, y_start - 0.9*inch, "ID Persona:")
-        c.drawString(1*inch, y_start - 1.2*inch, "Superficie (reportada):")
-        c.drawString(1*inch, y_start - 1.5*inch, "Superficie (digitalizada):")
-        
+        c.drawString(1 * inch, y_start, "Nombre del IF:")
+        c.drawString(1 * inch, y_start - 0.3 * inch, "ID Polígono:")
+        c.drawString(1 * inch, y_start - 0.6 * inch, "ID Crédito FIRA:")
+        c.drawString(1 * inch, y_start - 0.9 * inch, "ID Persona:")
+        c.drawString(1 * inch, y_start - 1.2 * inch, "Superficie (reportada):")
+        c.drawString(1 * inch, y_start - 1.5 * inch, "Superficie (digitalizada):")
+
         # Segunda columna (valores) - Desplazado para alinear mejor
         c.setFont("Helvetica", 10)
-        c.drawString(2.5*inch, y_start, f"{poligono.if_val or 'N/A'}")
-        c.drawString(2.5*inch, y_start - 0.3*inch, f"{poligono.id_poligono or 'N/A'}")
-        c.drawString(2.5*inch, y_start - 0.6*inch, f"{poligono.id_credito or 'N/A'}")
-        c.drawString(2.5*inch, y_start - 0.9*inch, f"{poligono.id_persona or 'N/A'}")
-        c.drawString(2.5*inch, y_start - 1.2*inch, f"{poligono.superficie or 0} ha")
-        c.drawString(2.5*inch, y_start - 1.5*inch, f"{poligono.area_digitalizada or 0} ha")
-        
+        c.drawString(2.5 * inch, y_start, f"{poligono.if_val or 'N/A'}")
+        c.drawString(
+            2.5 * inch, y_start - 0.3 * inch, f"{poligono.id_poligono or 'N/A'}"
+        )
+        c.drawString(
+            2.5 * inch, y_start - 0.6 * inch, f"{poligono.id_credito or 'N/A'}"
+        )
+        c.drawString(
+            2.5 * inch, y_start - 0.9 * inch, f"{poligono.id_persona or 'N/A'}"
+        )
+        c.drawString(2.5 * inch, y_start - 1.2 * inch, f"{poligono.superficie or 0} ha")
+        c.drawString(
+            2.5 * inch, y_start - 1.5 * inch, f"{poligono.area_digitalizada or 0} ha"
+        )
+
         # Tercera columna (etiquetas) - Mayor separación horizontal
         c.setFont("Helvetica-Bold", 10)
-        c.drawString(5*inch, y_start, "Estado:")
-        c.drawString(5*inch, y_start - 0.3*inch, "Municipio:")
-        
+        c.drawString(5 * inch, y_start, "Estado:")
+        c.drawString(5 * inch, y_start - 0.3 * inch, "Municipio:")
+
         # Cuarta columna (valores) - Desplazado para alinear mejor
         c.setFont("Helvetica", 10)
-        c.drawString(5.8*inch, y_start, f"{corregir_codificacion(poligono.estado) or 'N/A'}")
-        c.drawString(5.8*inch, y_start - 0.3*inch, f"{corregir_codificacion(poligono.municipio) or 'N/A'}")
-        
+        c.drawString(
+            5.8 * inch, y_start, f"{corregir_codificacion(poligono.estado) or 'N/A'}"
+        )
+        c.drawString(
+            5.8 * inch,
+            y_start - 0.3 * inch,
+            f"{corregir_codificacion(poligono.municipio) or 'N/A'}",
+        )
+
         # Ajustar posición del mapa
-        mapa_y_pos = 4.3*inch
-        
+        mapa_y_pos = 4.3 * inch
+
         # Añadir borde para el mapa
-        c.rect(1*inch, mapa_y_pos, 6.5*inch, 3*inch, stroke=1, fill=0)
-        
+        c.rect(1 * inch, mapa_y_pos, 6.5 * inch, 3 * inch, stroke=1, fill=0)
+
         # Generar el mapa para este polígono
         mapa_image_path = None
         try:
             # Generar shapefile para este polígono
-            shapefile_buffer = generar_shapefile_individual(poligono, f'temp-{nombre_archivo}')
-            
+            shapefile_buffer = generar_shapefile_individual(
+                poligono, f"temp-{nombre_archivo}"
+            )
+
             if shapefile_buffer:
                 # Crear un directorio temporal para guardar el PNG
                 with tempfile.TemporaryDirectory() as temp_png_dir:
                     # Generar PNG a partir del shapefile
                     png_dir = plot_shapefile_to_png(shapefile_buffer, temp_png_dir)
-                    
+
                     # Buscar el archivo PNG generado
                     if png_dir:
                         for png_filename in os.listdir(png_dir):
-                            if png_filename.endswith('.png'):
+                            if png_filename.endswith(".png"):
                                 mapa_image_path = os.path.join(png_dir, png_filename)
                                 break
-                        
+
                         # Insertar el mapa si se encontró
                         if mapa_image_path and os.path.exists(mapa_image_path):
                             # Ajustar dimensiones para mantener el aspecto pero ajustarse al espacio disponible
-                            map_width = 6.3*inch
-                            map_height = 2.8*inch
+                            map_width = 6.3 * inch
+                            map_height = 2.8 * inch
                             # Centrar el mapa en el recuadro
-                            c.drawImage(mapa_image_path, 1.1*inch, mapa_y_pos + 0.1*inch, 
-                                       width=map_width, height=map_height, preserveAspectRatio=True)
+                            c.drawImage(
+                                mapa_image_path,
+                                1.1 * inch,
+                                mapa_y_pos + 0.1 * inch,
+                                width=map_width,
+                                height=map_height,
+                                preserveAspectRatio=True,
+                            )
         except Exception as map_error:
             app.logger.error(f"Error al generar o insertar el mapa: {map_error}")
             import traceback
+
             traceback.print_exc()
-        
+
         # Información del metadata (parte inferior)
-        y_metadata = 3.9*inch
+        y_metadata = 3.9 * inch
         c.setFont("Helvetica-Bold", 10)
-        c.drawString(1*inch, y_metadata, "Información del metadato:")
-        
+        c.drawString(1 * inch, y_metadata, "Información del metadato:")
+
         # Crear recuadros para los metadatos
         # Primero dibujamos los recuadros - Ajustar altura para evitar superposición
         c.setFillColorRGB(0.9, 0.9, 0.9)  # Gris claro
-        c.rect(1*inch, y_metadata - 2.4*inch, 3.5*inch, 2.2*inch, fill=1, stroke=1)  # Recuadro izquierdo
-        c.rect(5*inch, y_metadata - 2.4*inch, 2.5*inch, 2.2*inch, fill=1, stroke=1)  # Recuadro derecho
-        
+        c.rect(
+            1 * inch, y_metadata - 2.4 * inch, 3.5 * inch, 2.2 * inch, fill=1, stroke=1
+        )  # Recuadro izquierdo
+        c.rect(
+            5 * inch, y_metadata - 2.4 * inch, 2.5 * inch, 2.2 * inch, fill=1, stroke=1
+        )  # Recuadro derecho
+
         # Texto metadatos (izquierda)
         c.setFillColorRGB(0, 0, 0)  # Negro
         c.setFont("Helvetica-Bold", 9)
         # Aumentar espacio entre etiquetas
-        metadata_y = y_metadata - 0.2*inch
-        
+        metadata_y = y_metadata - 0.2 * inch
+
         # Calcular espaciados más uniformes
-        meta_spacing = 0.27*inch
-        
+        meta_spacing = 0.27 * inch
+
         # Etiquetas de metadatos izquierda
-        c.drawString(1.1*inch, metadata_y, "1.- Polígono")
-        c.drawString(1.1*inch, metadata_y - meta_spacing, "2.- Fecha de referencia del conjunto de datos")
-        c.drawString(1.1*inch, metadata_y - (meta_spacing*1.7), "    espaciales o producto:")
-        c.drawString(1.1*inch, metadata_y - (meta_spacing*2.7), "3.- Unidad del estado responsable del conjunto")
-        c.drawString(1.1*inch, metadata_y - (meta_spacing*3.4), "    de datos espaciales o producto:")
-        c.drawString(1.1*inch, metadata_y - (meta_spacing*4.4), "4.- Calidad de la información, alcance o ámbito;")
-        c.drawString(1.1*inch, metadata_y - (meta_spacing*5.1), "    nivel: Atributo:")
-        
+        c.drawString(1.1 * inch, metadata_y, "1.- Polígono")
+        c.drawString(
+            1.1 * inch,
+            metadata_y - meta_spacing,
+            "2.- Fecha de referencia del conjunto de datos",
+        )
+        c.drawString(
+            1.1 * inch, metadata_y - (meta_spacing * 1.7), "    espaciales o producto:"
+        )
+        c.drawString(
+            1.1 * inch,
+            metadata_y - (meta_spacing * 2.7),
+            "3.- Unidad del estado responsable del conjunto",
+        )
+        c.drawString(
+            1.1 * inch,
+            metadata_y - (meta_spacing * 3.4),
+            "    de datos espaciales o producto:",
+        )
+        c.drawString(
+            1.1 * inch,
+            metadata_y - (meta_spacing * 4.4),
+            "4.- Calidad de la información, alcance o ámbito;",
+        )
+        c.drawString(
+            1.1 * inch, metadata_y - (meta_spacing * 5.1), "    nivel: Atributo:"
+        )
+
         # Valores metadatos (izquierda) - Alineados horizontalmente con las etiquetas
         c.setFont("Helvetica", 9)
         # ID de polígono alineado
-        c.drawString(2.5*inch, metadata_y, f"{poligono.id_poligono or 'N/A'}")
-        
+        c.drawString(2.5 * inch, metadata_y, f"{poligono.id_poligono or 'N/A'}")
+
         # Fecha actual
         from datetime import datetime
+
         fecha_actual = datetime.now().strftime("%d de %B de %Y")
-        c.drawString(2.5*inch, metadata_y - (meta_spacing*1.7), fecha_actual)
-        
+        c.drawString(2.5 * inch, metadata_y - (meta_spacing * 1.7), fecha_actual)
+
         # Texto de "Instituto vinculados..." alineado
-        c.drawString(1.5*inch, metadata_y - (meta_spacing*3.4), "Institutos vinculados en Relación con la")
-        c.drawString(1.5*inch, metadata_y - (meta_spacing*4.0), "Agricultura (FIRA).")
-        
+        c.drawString(
+            1.5 * inch,
+            metadata_y - (meta_spacing * 3.4),
+            "Institutos vinculados en Relación con la",
+        )
+        c.drawString(
+            1.5 * inch, metadata_y - (meta_spacing * 4.0), "Agricultura (FIRA)."
+        )
+
         # Información aplicada al valor...
-        c.drawString(1.5*inch, metadata_y - (meta_spacing*5.1), "Información aplicada al valor de atributo")
-        
+        c.drawString(
+            1.5 * inch,
+            metadata_y - (meta_spacing * 5.1),
+            "Información aplicada al valor de atributo",
+        )
+
         # Información adicional - Observaciones (derecha)
         c.setFillColorRGB(0, 0, 0)  # Negro
         c.setFont("Helvetica-Bold", 9)
-        c.drawString(5.1*inch, metadata_y, "Observaciones:")
-        
+        c.drawString(5.1 * inch, metadata_y, "Observaciones:")
+
         # Comentarios con mejor espaciado
         c.setFont("Helvetica", 9)
         comentarios = poligono.comentarios or "NO CUMPLE CON LA SUPERFICIE."
         # Ajustar comentarios al espacio disponible
         import textwrap
+
         comentario_lines = textwrap.wrap(comentarios, width=30)
-        for i, line in enumerate(comentario_lines[:3]):  # Limitar a 3 líneas para dejar espacio a la descripción
-            c.drawString(5.1*inch, metadata_y - 0.3*inch - (i * 0.2*inch), line)
-        
+        for i, line in enumerate(
+            comentario_lines[:3]
+        ):  # Limitar a 3 líneas para dejar espacio a la descripción
+            c.drawString(5.1 * inch, metadata_y - 0.3 * inch - (i * 0.2 * inch), line)
+
         # Añadir descripción
-        descripcion_y = metadata_y - 0.3*inch - (len(comentario_lines[:3]) * 0.2*inch) - 0.3*inch
+        descripcion_y = (
+            metadata_y
+            - 0.3 * inch
+            - (len(comentario_lines[:3]) * 0.2 * inch)
+            - 0.3 * inch
+        )
         c.setFont("Helvetica-Bold", 9)
-        c.drawString(5.1*inch, descripcion_y, "Descripción:")
-        
+        c.drawString(5.1 * inch, descripcion_y, "Descripción:")
+
         c.setFont("Helvetica", 9)
         descripcion = poligono.descripcion or ""
         descripcion_lines = textwrap.wrap(descripcion, width=30)
         for i, line in enumerate(descripcion_lines[:2]):  # Limitar a 2 líneas
-            c.drawString(5.1*inch, descripcion_y - 0.2*inch - (i * 0.2*inch), line)
-        
+            c.drawString(
+                5.1 * inch, descripcion_y - 0.2 * inch - (i * 0.2 * inch), line
+            )
+
         # Información SRC mejor espaciada
         c.setFont("Helvetica-Bold", 9)
-        
+
         # Ajustar la posición vertical del sistema de coordenadas
-        src_y = metadata_y - (meta_spacing*3.5)
-        c.drawString(5.1*inch, src_y, "Sistema de coordenadas")
-        c.drawString(5.1*inch, src_y - 0.2*inch, "geográficas:")
-        c.drawString(5.1*inch, src_y - 0.6*inch, "Dato:")
-        c.drawString(5.1*inch, src_y - 1*inch, "Unidad:")
-        
+        src_y = metadata_y - (meta_spacing * 3.5)
+        c.drawString(5.1 * inch, src_y, "Sistema de coordenadas")
+        c.drawString(5.1 * inch, src_y - 0.2 * inch, "geográficas:")
+        c.drawString(5.1 * inch, src_y - 0.6 * inch, "Dato:")
+        c.drawString(5.1 * inch, src_y - 1 * inch, "Unidad:")
+
         # Valores SRC alineados con etiquetas
         c.setFont("Helvetica", 9)
-        c.drawString(6.3*inch, src_y - 0.1*inch, "GCS WGS 1984")
-        c.drawString(5.6*inch, src_y - 0.6*inch, "D WGS 1984")
-        c.drawString(5.6*inch, src_y - 1*inch, "Grados")
-        
+        c.drawString(6.3 * inch, src_y - 0.1 * inch, "GCS WGS 1984")
+        c.drawString(5.6 * inch, src_y - 0.6 * inch, "D WGS 1984")
+        c.drawString(5.6 * inch, src_y - 1 * inch, "Grados")
+
         # Metadata adicional
         c.setFont("Helvetica-Bold", 9)
-        c.drawString(1*inch, y_metadata - 2.6*inch, "5.- Información del contexto para los metadatos: FIRA -")
-        c.drawString(1*inch, y_metadata - 2.9*inch, "    Subdirector Técnico y de Redes de Valor")
-        
+        c.drawString(
+            1 * inch,
+            y_metadata - 2.6 * inch,
+            "5.- Información del contexto para los metadatos: FIRA -",
+        )
+        c.drawString(
+            1 * inch,
+            y_metadata - 2.9 * inch,
+            "    Subdirector Técnico y de Redes de Valor",
+        )
+
         # Línea divisoria
-        c.line(1*inch, 1.2*inch, width-1*inch, 1.2*inch)
-        
+        c.line(1 * inch, 1.2 * inch, width - 1 * inch, 1.2 * inch)
+
         # Firmas
-        firma_y = 0.9*inch
+        firma_y = 0.9 * inch
         c.setFont("Helvetica-Bold", 10)
         nombre1 = "José Renato Navarrete Pérez"
         nombre2 = "Oswaldo Rahmses Castro Martínez"
-        
+
         # Firma 1 (izquierda)
-        c.drawCentredString(width/4, firma_y, nombre1)
-        c.line(width/8, firma_y - 0.1*inch, 3*width/8, firma_y - 0.1*inch)
+        c.drawCentredString(width / 4, firma_y, nombre1)
+        c.line(width / 8, firma_y - 0.1 * inch, 3 * width / 8, firma_y - 0.1 * inch)
         c.setFont("Helvetica", 9)
-        c.drawCentredString(width/4, firma_y - 0.3*inch, "Subdirector en Innovación Tecnológica")
-        
+        c.drawCentredString(
+            width / 4, firma_y - 0.3 * inch, "Subdirector en Innovación Tecnológica"
+        )
+
         # Firma 2 (derecha)
         c.setFont("Helvetica-Bold", 10)
-        c.drawCentredString(3*width/4, firma_y, nombre2)
-        c.line(5*width/8, firma_y - 0.1*inch, 7*width/8, firma_y - 0.1*inch)
+        c.drawCentredString(3 * width / 4, firma_y, nombre2)
+        c.line(5 * width / 8, firma_y - 0.1 * inch, 7 * width / 8, firma_y - 0.1 * inch)
         c.setFont("Helvetica", 9)
-        c.drawCentredString(3*width/4, firma_y - 0.3*inch, "Responsable Operativo del Proyecto")
-        
+        c.drawCentredString(
+            3 * width / 4, firma_y - 0.3 * inch, "Responsable Operativo del Proyecto"
+        )
+
         # Fecha
         c.setFont("Helvetica", 9)
         today = datetime.now().strftime("%d de %B de %Y")
-        c.drawString(width/8, 0.3*inch, f"FECHA: {today}")
-        
+        c.drawString(width / 8, 0.3 * inch, f"FECHA: {today}")
+
         # Guardar el PDF
         c.save()
-        
+
         # Regresar al inicio del buffer
         buffer.seek(0)
         return buffer
-    
+
     except Exception as e:
         app.logger.error(f"Error al generar ficha técnica: {e}")
         import traceback
+
         traceback.print_exc()
         return None
+
 
 def generar_shapefile_unificado(poligonos, nombre_archivo):
     """Genera un único archivo shapefile con todos los polígonos especificados"""
     try:
         # Crear un objeto de memoria para el archivo ZIP
         zip_buffer = io.BytesIO()
-        
+
         # Crear un directorio temporal para los archivos del shapefile
         with tempfile.TemporaryDirectory() as tempdir:
             # Crear el writer de shapefile
             w = shapefile.Writer(os.path.join(tempdir, nombre_archivo))
-            
+
             # Definir campos de atributos
-            w.field('ID_POLIG', 'C', 40)
-            w.field('IF', 'C', 40)
-            w.field('ID_CRED', 'C', 40)
-            w.field('ID_PERS', 'C', 40)
-            w.field('SUPERF', 'N', 10, 4)
-            w.field('ESTADO', 'C', 40)
-            w.field('MUNICIP', 'C', 40)
-            w.field('AREA_HA', 'N', 10, 4)
-            w.field('ESTATUS', 'C', 10)
-            w.field('COMENT', 'C', 254)
-            w.field('DESCRIP', 'C', 254)  # Campo para descripción
-            w.field('ORDEN', 'C', 100)    # Campo para número de orden
-            
+            w.field("ID_POLIG", "C", 40)
+            w.field("IF", "C", 40)
+            w.field("ID_CRED", "C", 40)
+            w.field("ID_PERS", "C", 40)
+            w.field("SUPERF", "N", 10, 4)
+            w.field("ESTADO", "C", 40)
+            w.field("MUNICIP", "C", 40)
+            w.field("AREA_HA", "N", 10, 4)
+            w.field("ESTATUS", "C", 10)
+            w.field("COMENT", "C", 254)
+            w.field("DESCRIP", "C", 254)  # Campo para descripción
+            w.field("ORDEN", "C", 100)  # Campo para número de orden
+
             # Función auxiliar para limpiar campos de texto que pueden tener saltos de línea
             def limpiar_campo_texto(valor):
                 """Limpia un campo de texto reemplazando saltos de línea con comas y eliminando caracteres problemáticos"""
                 if valor is None:
-                    return ''
-                
+                    return ""
+
                 # Convertir a string si no lo es
                 valor_str = str(valor)
-                
+
                 # Reemplazar saltos de línea con comas y espacios
-                valor_limpio = valor_str.replace('\n', ', ').replace('\r\n', ', ').replace('\r', ', ')
-                
+                valor_limpio = (
+                    valor_str.replace("\n", ", ")
+                    .replace("\r\n", ", ")
+                    .replace("\r", ", ")
+                )
+
                 # Reemplazar múltiples comas seguidas con una sola coma
                 import re
-                valor_limpio = re.sub(r',\s*,+', ', ', valor_limpio)
-                
+
+                valor_limpio = re.sub(r",\s*,+", ", ", valor_limpio)
+
                 # Eliminar comas al inicio y al final
-                valor_limpio = valor_limpio.strip(', ')
-                
+                valor_limpio = valor_limpio.strip(", ")
+
                 # Reemplazar caracteres problemáticos que pueden causar errores en DBF
-                valor_limpio = valor_limpio.replace('\t', ' ')  # Reemplazar tabs con espacios
-                valor_limpio = re.sub(r'\s+', ' ', valor_limpio)  # Reemplazar múltiples espacios con uno solo
-                
+                valor_limpio = valor_limpio.replace(
+                    "\t", " "
+                )  # Reemplazar tabs con espacios
+                valor_limpio = re.sub(
+                    r"\s+", " ", valor_limpio
+                )  # Reemplazar múltiples espacios con uno solo
+
                 return valor_limpio
-            
+
             # Procesar cada polígono
             for poligono in poligonos:
                 # Obtener coordenadas del polígono
                 coords = []
                 if poligono.coordenadas_corregidas:
                     # Verificar qué separador usa: ' | ' o '|'
-                    if ' | ' in poligono.coordenadas_corregidas:
-                        pares = poligono.coordenadas_corregidas.split(' | ')
+                    if " | " in poligono.coordenadas_corregidas:
+                        pares = poligono.coordenadas_corregidas.split(" | ")
                     else:
-                        pares = poligono.coordenadas_corregidas.split('|')
-                    
+                        pares = poligono.coordenadas_corregidas.split("|")
+
                     for par in pares:
                         par = par.strip()
-                        if par and ',' in par:
+                        if par and "," in par:
                             try:
-                                partes = par.split(',')
+                                partes = par.split(",")
                                 lat = float(partes[0].strip())
                                 lon = float(partes[1].strip())
                                 coords.append([lon, lat])  # Shapefile usa [lon, lat]
                             except (ValueError, IndexError) as e:
-                                app.logger.error(f"Error al procesar coordenada {par}: {e}")
+                                app.logger.error(
+                                    f"Error al procesar coordenada {par}: {e}"
+                                )
                                 continue
-                    
-                    app.logger.debug(f"Coordenadas procesadas para polígono {poligono.id}: {coords}")
-                
+
+                    app.logger.debug(
+                        f"Coordenadas procesadas para polígono {poligono.id}: {coords}"
+                    )
+
                 # Limpiar todos los campos de texto antes de escribirlos al DBF
                 id_poligono_limpio = limpiar_campo_texto(poligono.id_poligono)[:40]
                 if_val_limpio = limpiar_campo_texto(poligono.if_val)[:40]
                 id_credito_limpio = limpiar_campo_texto(poligono.id_credito)[:40]
                 id_persona_limpio = limpiar_campo_texto(poligono.id_persona)[:40]
-                estado_limpio = limpiar_campo_texto(corregir_codificacion(poligono.estado))[:40]
-                municipio_limpio = limpiar_campo_texto(corregir_codificacion(poligono.municipio))[:40]
+                estado_limpio = limpiar_campo_texto(
+                    corregir_codificacion(poligono.estado)
+                )[:40]
+                municipio_limpio = limpiar_campo_texto(
+                    corregir_codificacion(poligono.municipio)
+                )[:40]
                 estatus_limpio = limpiar_campo_texto(poligono.estatus)[:10]
                 comentarios_limpio = limpiar_campo_texto(poligono.comentarios)[:254]
                 descripcion_limpio = limpiar_campo_texto(poligono.descripcion)[:254]
                 orden_limpio = limpiar_campo_texto(poligono.orden)[:100]
-                
+
                 # Si no hay suficientes coordenadas, usar un punto o saltar
                 if len(coords) < 3:
                     if len(coords) == 1:
@@ -2602,11 +3162,13 @@ def generar_shapefile_unificado(poligonos, nombre_archivo):
                             estatus_limpio,
                             comentarios_limpio,
                             descripcion_limpio,
-                            orden_limpio
+                            orden_limpio,
                         )
                     else:
                         # No hay coordenadas válidas, saltar este polígono
-                        app.logger.debug(f"Saltando polígono {poligono.id} - coordenadas insuficientes")
+                        app.logger.debug(
+                            f"Saltando polígono {poligono.id} - coordenadas insuficientes"
+                        )
                         continue
                 else:
                     # Crear un polígono
@@ -2623,187 +3185,225 @@ def generar_shapefile_unificado(poligonos, nombre_archivo):
                         estatus_limpio,
                         comentarios_limpio,
                         descripcion_limpio,
-                        orden_limpio
+                        orden_limpio,
                     )
-            
+
             # Guardar el shapefile
             w.close()
-            
+
             # Crear archivo .prj para la proyección (WGS84)
-            with open(os.path.join(tempdir, f'{nombre_archivo}.prj'), 'w') as prj:
-                prj.write('GEOGCS["GCS_WGS_1984",DATUM["D_WGS_1984",SPHEROID["WGS_1984",6378137.0,298.257223563]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]]')
-            
+            with open(os.path.join(tempdir, f"{nombre_archivo}.prj"), "w") as prj:
+                prj.write(
+                    'GEOGCS["GCS_WGS_1984",DATUM["D_WGS_1984",SPHEROID["WGS_1984",6378137.0,298.257223563]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]]'
+                )
+
             # Comprimir todos los archivos en un ZIP
-            with zipfile.ZipFile(zip_buffer, 'w') as zf:
+            with zipfile.ZipFile(zip_buffer, "w") as zf:
                 for filename in os.listdir(tempdir):
                     filepath = os.path.join(tempdir, filename)
                     zf.write(filepath, filename)
-        
+
         # Regresar al inicio del buffer
         zip_buffer.seek(0)
         return zip_buffer
-    
+
     except Exception as e:
         app.logger.error(f"Error al generar shapefile unificado: {e}")
         import traceback
+
         traceback.print_exc()
         return None
+
 
 # Función para corregir la codificación de un texto
 def corregir_codificacion(texto):
     if not texto:
         return texto
-        
+
     try:
         # Si los nombres están en Latin-1 pero interpretados como UTF-8
-        if isinstance(texto, str) and any(c in texto for c in ['Ã', 'Â']):
-            return texto.encode('latin-1').decode('utf-8')
+        if isinstance(texto, str) and any(c in texto for c in ["Ã", "Â"]):
+            return texto.encode("latin-1").decode("utf-8")
         return texto
     except Exception as e:
         app.logger.error(f"Error al corregir codificación: {e}")
         return texto
 
-@app.route('/generar_shapefiles_y_mapas', methods=['POST'])
+
+@app.route("/generar_shapefiles_y_mapas", methods=["POST"])
 @login_required
 def generar_shapefiles_y_mapas():
     """Ruta para generar archivos shapefile y mapas PNG de polígonos seleccionados"""
     # Obtener los índices de polígonos seleccionados
-    selected_rows = request.json.get('selected_rows', [])
-    
+    selected_rows = request.json.get("selected_rows", [])
+
     if not selected_rows:
-        return jsonify({'error': 'No se seleccionaron polígonos'}), 400
-    
+        return jsonify({"error": "No se seleccionaron polígonos"}), 400
+
     try:
         # Preparar un archivo ZIP en memoria para contener todos los shapefiles y mapas
         memory_file = io.BytesIO()
-        with zipfile.ZipFile(memory_file, 'w') as zf:
+        with zipfile.ZipFile(memory_file, "w") as zf:
             # Crear carpetas dentro del ZIP
-            zf.writestr('shapefiles/', '')
-            zf.writestr('mapas/', '')
-            
+            zf.writestr("shapefiles/", "")
+            zf.writestr("mapas/", "")
+
             # Para cada polígono seleccionado
             for row_id in selected_rows:
                 try:
                     row_id = int(row_id)
                     # Primero intentar buscar por ID exacto
                     poligono = Poligono.query.get(row_id)
-                    
+
                     if poligono is None:
                         # Si no se encuentra, imprimir para depuración
-                        app.logger.error(f"No se encontró polígono con ID {row_id}, buscando en posición")
-                        
+                        app.logger.error(
+                            f"No se encontró polígono con ID {row_id}, buscando en posición"
+                        )
+
                         # Intentar buscar por posición como fallback
                         poligonos = Poligono.query.all()
                         if 0 <= row_id < len(poligonos):
                             poligono = poligonos[row_id]
                         else:
-                            app.logger.debug(f"Índice {row_id} fuera de rango, hay {len(poligonos)} polígonos")
+                            app.logger.debug(
+                                f"Índice {row_id} fuera de rango, hay {len(poligonos)} polígonos"
+                            )
                             continue
-                    
-                    app.logger.debug(f"Generando shapefile para polígono ID={poligono.id}, ID_POLIGONO={poligono.id_poligono}")
+
+                    app.logger.debug(
+                        f"Generando shapefile para polígono ID={poligono.id}, ID_POLIGONO={poligono.id_poligono}"
+                    )
                 except Exception as e:
                     app.logger.error(f"Error al recuperar polígono {row_id}: {e}")
                     # Si no es un índice válido, continuar con el siguiente
                     continue
-                
+
                 # Generar shapefile para este polígono
-                shapefile_buffer = generar_shapefile_individual(poligono, f'polygon-{row_id}')
-                
+                shapefile_buffer = generar_shapefile_individual(
+                    poligono, f"polygon-{row_id}"
+                )
+
                 if shapefile_buffer:
                     # Usar ID_POLIGONO para nombrar el archivo si está disponible
-                    archivo_nombre = poligono.id_poligono if poligono.id_poligono else f'polygon-{row_id}'
-                    zf.writestr(f'shapefiles/{archivo_nombre}.zip', shapefile_buffer.getvalue())
-                    
+                    archivo_nombre = (
+                        poligono.id_poligono
+                        if poligono.id_poligono
+                        else f"polygon-{row_id}"
+                    )
+                    zf.writestr(
+                        f"shapefiles/{archivo_nombre}.zip", shapefile_buffer.getvalue()
+                    )
+
                     # Generar y añadir el mapa PNG
                     try:
                         # Crear un directorio temporal para guardar los PNG
                         with tempfile.TemporaryDirectory() as temp_png_dir:
                             # Generar PNG a partir del shapefile
-                            png_dir = plot_shapefile_to_png(shapefile_buffer, temp_png_dir)
-                            
+                            png_dir = plot_shapefile_to_png(
+                                shapefile_buffer, temp_png_dir
+                            )
+
                             # Añadir todos los archivos PNG al ZIP
                             if png_dir:
                                 for png_filename in os.listdir(png_dir):
-                                    if png_filename.endswith('.png'):
+                                    if png_filename.endswith(".png"):
                                         png_path = os.path.join(png_dir, png_filename)
-                                        with open(png_path, 'rb') as png_file:
-                                            zf.writestr(f'mapas/{png_filename}', png_file.read())
+                                        with open(png_path, "rb") as png_file:
+                                            zf.writestr(
+                                                f"mapas/{png_filename}", png_file.read()
+                                            )
                     except Exception as e:
-                        app.logger.error(f"Error al generar mapa PNG para polígono {row_id}: {e}")
+                        app.logger.error(
+                            f"Error al generar mapa PNG para polígono {row_id}: {e}"
+                        )
                         import traceback
+
                         traceback.print_exc()
-        
+
         # Regresar al inicio del archivo en memoria
         memory_file.seek(0)
-        
+
         # Enviar el archivo ZIP como respuesta
         return send_file(
             memory_file,
-            mimetype='application/zip',
+            mimetype="application/zip",
             as_attachment=True,
-            download_name='poligonos_shapefiles_y_mapas.zip'
+            download_name="poligonos_shapefiles_y_mapas.zip",
         )
-    
+
     except Exception as e:
         app.logger.error(f"Error al generar shapefiles y mapas: {e}")
         import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
 
-@app.route('/procesar-shp', methods=['POST'])
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/procesar-shp", methods=["POST"])
 @login_required
 @limiter.limit("10 per hour")
 def procesar_shp():
     try:
         app.logger.debug("Ruta /procesar-shp llamada")
-        
+
         # Verificar que el directorio de uploads existe
-        if not os.path.exists(app.config['UPLOAD_FOLDER']):
-            os.makedirs(app.config['UPLOAD_FOLDER'])
-            app.logger.info(f"Directorio de uploads creado: {app.config['UPLOAD_FOLDER']}")
-        
+        if not os.path.exists(app.config["UPLOAD_FOLDER"]):
+            os.makedirs(app.config["UPLOAD_FOLDER"])
+            app.logger.info(
+                f"Directorio de uploads creado: {app.config['UPLOAD_FOLDER']}"
+            )
+
         # Verificar que el directorio de uploads tiene permisos de escritura
-        if not os.access(app.config['UPLOAD_FOLDER'], os.W_OK):
+        if not os.access(app.config["UPLOAD_FOLDER"], os.W_OK):
             error_msg = f"Error: No hay permisos de escritura en el directorio {app.config['UPLOAD_FOLDER']}"
             app.logger.error(error_msg)
-            return jsonify({'error': error_msg}), 500
-        
-        if 'zipfile' not in request.files:
+            return jsonify({"error": error_msg}), 500
+
+        if "zipfile" not in request.files:
             app.logger.error("Error: No hay archivo en la solicitud")
             # Verificar si es una solicitud AJAX o un formulario directo
-            if request.is_xhr or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return jsonify({'error': 'No se ha enviado ningún archivo'}), 400
+            if (
+                request.is_xhr
+                or request.headers.get("X-Requested-With") == "XMLHttpRequest"
+            ):
+                return jsonify({"error": "No se ha enviado ningún archivo"}), 400
             else:
-                flash('No se ha enviado ningún archivo', 'error')
-                return redirect(url_for('unir_archivos'))
-        
-        archivo = request.files['zipfile']
+                flash("No se ha enviado ningún archivo", "error")
+                return redirect(url_for("unir_archivos"))
+
+        archivo = request.files["zipfile"]
         app.logger.debug(f"Archivo recibido: {archivo.filename}")
-        
-        if archivo.filename == '':
+
+        if archivo.filename == "":
             app.logger.error("Error: Nombre de archivo vacío")
             # Verificar si es una solicitud AJAX o un formulario directo
-            if request.is_xhr or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return jsonify({'error': 'No se ha seleccionado ningún archivo'}), 400
+            if (
+                request.is_xhr
+                or request.headers.get("X-Requested-With") == "XMLHttpRequest"
+            ):
+                return jsonify({"error": "No se ha seleccionado ningún archivo"}), 400
             else:
-                flash('No se ha seleccionado ningún archivo', 'error')
-                return redirect(url_for('unir_archivos'))
-        
+                flash("No se ha seleccionado ningún archivo", "error")
+                return redirect(url_for("unir_archivos"))
+
         # Verificar tamaño del archivo
         MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
         archivo.seek(0, os.SEEK_END)
         file_size = archivo.tell()
         archivo.seek(0)  # Resetear el puntero al inicio
-        
+
         if file_size > MAX_FILE_SIZE:
-            error_msg = f"El archivo es demasiado grande. Tamaño máximo permitido: 50 MB"
+            error_msg = (
+                f"El archivo es demasiado grande. Tamaño máximo permitido: 50 MB"
+            )
             app.logger.error(error_msg)
-            return jsonify({'error': error_msg}), 413  # Request Entity Too Large
-        
-        if archivo and archivo.filename.endswith('.zip'):
+            return jsonify({"error": error_msg}), 413  # Request Entity Too Large
+
+        if archivo and archivo.filename.endswith(".zip"):
             try:
                 app.logger.debug(f"Procesando archivo ZIP: {archivo.filename}")
-                
+
                 # Crear directorio temporal para extracción
                 try:
                     temp_dir = tempfile.mkdtemp()
@@ -2811,140 +3411,166 @@ def procesar_shp():
                 except Exception as e:
                     error_msg = f"Error al crear directorio temporal: {str(e)}"
                     app.logger.error(error_msg)
-                    return jsonify({'error': error_msg}), 500
-                
+                    return jsonify({"error": error_msg}), 500
+
                 # Guardar archivo ZIP
                 try:
-                    zip_path = os.path.join(temp_dir, 'input.zip')
+                    zip_path = os.path.join(temp_dir, "input.zip")
                     archivo.save(zip_path)
                     app.logger.debug(f"Archivo guardado en: {zip_path}")
                 except Exception as e:
                     error_msg = f"Error al guardar archivo: {str(e)}"
                     app.logger.error(error_msg)
-                    return jsonify({'error': error_msg}), 500
-                
+                    return jsonify({"error": error_msg}), 500
+
                 # Verificar si es un ZIP válido
                 try:
-                    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                    with zipfile.ZipFile(zip_path, "r") as zip_ref:
                         # Verificar si el ZIP no está dañado
                         if zip_ref.testzip() is not None:
                             error_msg = "El archivo ZIP está dañado"
                             app.logger.error(error_msg)
-                            return jsonify({'error': error_msg}), 400
-                        
+                            return jsonify({"error": error_msg}), 400
+
                         # Limitar el número de archivos dentro del ZIP
                         MAX_FILES = 500
                         if len(zip_ref.namelist()) > MAX_FILES:
                             error_msg = f"El archivo ZIP contiene demasiados archivos (máximo {MAX_FILES})"
                             app.logger.error(error_msg)
-                            return jsonify({'error': error_msg}), 413
-                        
+                            return jsonify({"error": error_msg}), 413
+
                         # Verificar que el tamaño descomprimido no sea excesivo
                         MAX_UNCOMPRESSED_SIZE = 200 * 1024 * 1024  # 200 MB
                         total_size = sum(info.file_size for info in zip_ref.infolist())
                         if total_size > MAX_UNCOMPRESSED_SIZE:
                             error_msg = f"El tamaño descomprimido del ZIP es demasiado grande (máximo 200 MB)"
                             app.logger.error(error_msg)
-                            return jsonify({'error': error_msg}), 413
-                        
+                            return jsonify({"error": error_msg}), 413
+
                         # Extraer el ZIP
                         zip_ref.extractall(temp_dir)
                     app.logger.debug(f"Archivo ZIP extraído en: {temp_dir}")
                 except zipfile.BadZipFile:
                     error_msg = "El archivo no es un ZIP válido"
                     app.logger.error(error_msg)
-                    return jsonify({'error': error_msg}), 400
+                    return jsonify({"error": error_msg}), 400
                 except Exception as e:
                     error_msg = f"Error al extraer archivo ZIP: {str(e)}"
                     app.logger.error(error_msg)
-                    return jsonify({'error': error_msg}), 500
-                
+                    return jsonify({"error": error_msg}), 500
+
                 # Buscar archivos SHP o ZIPs anidados
                 try:
                     shp_files = []
                     internal_zips = []
-                    
+
                     # Buscar archivos SHP y ZIPs anidados en el primer nivel
                     for root, dirs, files in os.walk(temp_dir):
                         for file in files:
-                            if file.endswith('.shp'):
+                            if file.endswith(".shp"):
                                 shp_files.append(os.path.join(root, file))
-                            elif file.endswith('.zip'):
+                            elif file.endswith(".zip"):
                                 internal_zips.append(os.path.join(root, file))
-                    
-                    app.logger.debug(f"Archivos SHP encontrados (primer nivel): {len(shp_files)}")
-                    app.logger.debug(f"Archivos ZIP internos encontrados: {len(internal_zips)}")
-                    
+
+                    app.logger.debug(
+                        f"Archivos SHP encontrados (primer nivel): {len(shp_files)}"
+                    )
+                    app.logger.debug(
+                        f"Archivos ZIP internos encontrados: {len(internal_zips)}"
+                    )
+
                     # Extraer y procesar ZIPs anidados si no se encontraron archivos SHP
                     if not shp_files and internal_zips:
                         app.logger.debug("Extrayendo archivos ZIP internos...")
                         # Limitar el número de ZIPs anidados a procesar
                         MAX_NESTED_ZIPS = 10
                         if len(internal_zips) > MAX_NESTED_ZIPS:
-                            app.logger.debug(f"Limitando a {MAX_NESTED_ZIPS} ZIPs anidados")
+                            app.logger.debug(
+                                f"Limitando a {MAX_NESTED_ZIPS} ZIPs anidados"
+                            )
                             internal_zips = internal_zips[:MAX_NESTED_ZIPS]
-                        
+
                         for zip_file in internal_zips:
                             zip_name = os.path.basename(zip_file)
-                            extract_subdir = os.path.join(temp_dir, f"extracted_{zip_name.replace('.zip', '')}")
+                            extract_subdir = os.path.join(
+                                temp_dir, f"extracted_{zip_name.replace('.zip', '')}"
+                            )
                             os.makedirs(extract_subdir, exist_ok=True)
-                            
+
                             try:
-                                app.logger.debug(f"Extrayendo ZIP interno: {zip_name} en {extract_subdir}")
+                                app.logger.debug(
+                                    f"Extrayendo ZIP interno: {zip_name} en {extract_subdir}"
+                                )
                                 # Verificar el ZIP interno antes de extraerlo
-                                with zipfile.ZipFile(zip_file, 'r') as zip_ref:
+                                with zipfile.ZipFile(zip_file, "r") as zip_ref:
                                     # Verificar ZIP no dañado
                                     if zip_ref.testzip() is not None:
-                                        app.logger.error(f"ZIP interno {zip_name} está dañado, omitiendo")
+                                        app.logger.error(
+                                            f"ZIP interno {zip_name} está dañado, omitiendo"
+                                        )
                                         continue
-                                    
+
                                     # Verificar número de archivos
                                     if len(zip_ref.namelist()) > MAX_FILES:
-                                        app.logger.debug(f"ZIP interno {zip_name} tiene demasiados archivos, omitiendo")
+                                        app.logger.debug(
+                                            f"ZIP interno {zip_name} tiene demasiados archivos, omitiendo"
+                                        )
                                         continue
-                                    
+
                                     # Verificar tamaño descomprimido
-                                    nested_total_size = sum(info.file_size for info in zip_ref.infolist())
+                                    nested_total_size = sum(
+                                        info.file_size for info in zip_ref.infolist()
+                                    )
                                     if nested_total_size > MAX_UNCOMPRESSED_SIZE:
-                                        app.logger.debug(f"ZIP interno {zip_name} es demasiado grande, omitiendo")
+                                        app.logger.debug(
+                                            f"ZIP interno {zip_name} es demasiado grande, omitiendo"
+                                        )
                                         continue
-                                    
+
                                     # Extraer archivos
                                     zip_ref.extractall(extract_subdir)
-                                
+
                                 # Buscar archivos SHP en el ZIP extraído
                                 for root, dirs, files in os.walk(extract_subdir):
                                     for file in files:
-                                        if file.endswith('.shp'):
+                                        if file.endswith(".shp"):
                                             shp_path = os.path.join(root, file)
                                             shp_files.append(shp_path)
-                                            app.logger.debug(f"  - SHP encontrado en ZIP interno: {shp_path}")
+                                            app.logger.debug(
+                                                f"  - SHP encontrado en ZIP interno: {shp_path}"
+                                            )
                             except zipfile.BadZipFile:
-                                app.logger.debug(f"ZIP interno {zip_name} no es válido, omitiendo")
+                                app.logger.debug(
+                                    f"ZIP interno {zip_name} no es válido, omitiendo"
+                                )
                                 continue
                             except Exception as e:
-                                app.logger.error(f"Error al extraer ZIP interno {zip_name}: {str(e)}")
+                                app.logger.error(
+                                    f"Error al extraer ZIP interno {zip_name}: {str(e)}"
+                                )
                                 # Continúa con el siguiente ZIP
-                    
-                    app.logger.debug(f"Total de archivos SHP encontrados: {len(shp_files)}")
+
+                    app.logger.debug(
+                        f"Total de archivos SHP encontrados: {len(shp_files)}"
+                    )
                     for shp in shp_files:
                         app.logger.debug(f"  - {shp}")
-                    
+
                     if not shp_files:
                         error_msg = "No se encontraron archivos SHP en el archivo ZIP"
                         app.logger.error(error_msg)
-                        return jsonify({'error': error_msg}), 400
+                        return jsonify({"error": error_msg}), 400
                 except Exception as e:
                     error_msg = f"Error al buscar archivos SHP: {str(e)}"
                     app.logger.error(error_msg)
-                    return jsonify({'error': error_msg}), 500
-                
+                    return jsonify({"error": error_msg}), 500
+
                 # Limitar el número de archivos SHP a procesar
                 MAX_SHP_FILES = 20
                 if len(shp_files) > MAX_SHP_FILES:
                     app.logger.debug(f"Limitando a {MAX_SHP_FILES} archivos SHP")
                     shp_files = shp_files[:MAX_SHP_FILES]
-                
+
                 # Unir archivos SHP con geopandas
                 try:
                     merged_gdf = None
@@ -2953,40 +3579,56 @@ def procesar_shp():
                         try:
                             # Verificar tamaño del archivo SHP
                             if os.path.getsize(shp_file) > 20 * 1024 * 1024:  # 20 MB
-                                app.logger.debug(f"  - SHP demasiado grande, omitiendo: {shp_file}")
+                                app.logger.debug(
+                                    f"  - SHP demasiado grande, omitiendo: {shp_file}"
+                                )
                                 continue
-                            
+
                             gdf = gpd.read_file(shp_file)
-                            
+
                             # Limitar el número de geometrías
                             MAX_FEATURES = 5000
                             if len(gdf) > MAX_FEATURES:
-                                app.logger.debug(f"  - Demasiadas geometrías ({len(gdf)}), limitando a {MAX_FEATURES}")
+                                app.logger.debug(
+                                    f"  - Demasiadas geometrías ({len(gdf)}), limitando a {MAX_FEATURES}"
+                                )
                                 gdf = gdf.head(MAX_FEATURES)
-                            
-                            app.logger.debug(f"  - Geometrías: {len(gdf)}, CRS: {gdf.crs}")
-                            
+
+                            app.logger.debug(
+                                f"  - Geometrías: {len(gdf)}, CRS: {gdf.crs}"
+                            )
+
                             if merged_gdf is None:
                                 merged_gdf = gdf
                             else:
                                 # Asegurarse de que tienen el mismo CRS
                                 if gdf.crs != merged_gdf.crs and gdf.crs is not None:
-                                    app.logger.debug(f"  - Convirtiendo CRS de {gdf.crs} a {merged_gdf.crs}")
+                                    app.logger.debug(
+                                        f"  - Convirtiendo CRS de {gdf.crs} a {merged_gdf.crs}"
+                                    )
                                     gdf = gdf.to_crs(merged_gdf.crs)
-                                
+
                                 # Concatenar con seguridad
                                 try:
                                     merged_gdf = pd.concat([merged_gdf, gdf])
                                 except Exception as concat_error:
-                                    app.logger.error(f"  - Error al concatenar: {str(concat_error)}")
+                                    app.logger.error(
+                                        f"  - Error al concatenar: {str(concat_error)}"
+                                    )
                                     # Si falla la concatenación, intentar solo con geometrías
                                     try:
-                                        app.logger.debug("  - Intentando concatenar solo geometrías...")
+                                        app.logger.debug(
+                                            "  - Intentando concatenar solo geometrías..."
+                                        )
                                         # Crear un nuevo GeoDataFrame con solo geometrías
-                                        simple_gdf = gpd.GeoDataFrame(geometry=gdf.geometry)
+                                        simple_gdf = gpd.GeoDataFrame(
+                                            geometry=gdf.geometry
+                                        )
                                         merged_gdf = pd.concat([merged_gdf, simple_gdf])
                                     except Exception as simple_concat_error:
-                                        app.logger.error(f"  - Error en concatenación simple: {str(simple_concat_error)}")
+                                        app.logger.error(
+                                            f"  - Error en concatenación simple: {str(simple_concat_error)}"
+                                        )
                                         # Continuar con el siguiente archivo
                                         continue
                         except Exception as e:
@@ -2994,70 +3636,78 @@ def procesar_shp():
                             app.logger.error(error_msg)
                             # Continuamos con el siguiente archivo en lugar de fallar completamente
                             continue
-                    
+
                     if merged_gdf is None or len(merged_gdf) == 0:
                         error_msg = "No se pudieron procesar los archivos SHP"
                         app.logger.error(error_msg)
-                        return jsonify({'error': error_msg}), 500
-                    
+                        return jsonify({"error": error_msg}), 500
+
                     # Limitar el tamaño final del GeoDataFrame
                     MAX_FINAL_FEATURES = 10000
                     if len(merged_gdf) > MAX_FINAL_FEATURES:
-                        app.logger.debug(f"GeoDataFrame final demasiado grande ({len(merged_gdf)}), limitando a {MAX_FINAL_FEATURES}")
+                        app.logger.debug(
+                            f"GeoDataFrame final demasiado grande ({len(merged_gdf)}), limitando a {MAX_FINAL_FEATURES}"
+                        )
                         merged_gdf = merged_gdf.head(MAX_FINAL_FEATURES)
-                    
+
                     app.logger.info(f"Unión completada: {len(merged_gdf)} geometrías")
                 except Exception as e:
                     error_msg = f"Error al unir archivos SHP: {str(e)}"
                     app.logger.error(error_msg)
-                    return jsonify({'error': error_msg}), 500
-                
+                    return jsonify({"error": error_msg}), 500
+
                 # Guardar el archivo unificado
                 try:
-                    output_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'shp_unified')
+                    output_dir = os.path.join(
+                        app.config["UPLOAD_FOLDER"], "shp_unified"
+                    )
                     if not os.path.exists(output_dir):
                         os.makedirs(output_dir)
                     app.logger.debug(f"Directorio de salida creado: {output_dir}")
-                    
-                    output_shp = os.path.join(temp_dir, 'unified.shp')
+
+                    output_shp = os.path.join(temp_dir, "unified.shp")
                     app.logger.debug(f"Guardando archivo unificado en: {output_shp}")
-                    
+
                     # Simplificar el GeoDataFrame para la escritura
                     try:
                         # Intentar guardar con todas las columnas
                         merged_gdf.to_file(output_shp)
                     except Exception as save_error:
-                        app.logger.error(f"Error al guardar GeoDataFrame completo: {str(save_error)}")
+                        app.logger.error(
+                            f"Error al guardar GeoDataFrame completo: {str(save_error)}"
+                        )
                         app.logger.debug("Intentando guardar con columnas reducidas...")
-                        
+
                         # Crear un GeoDataFrame simplificado con solo la geometría
                         simple_gdf = gpd.GeoDataFrame(geometry=merged_gdf.geometry)
                         simple_gdf.to_file(output_shp)
-                    
+
                     app.logger.debug(f"Archivo guardado correctamente")
                 except Exception as e:
                     error_msg = f"Error al guardar archivo unificado: {str(e)}"
                     app.logger.error(error_msg)
-                    return jsonify({'error': error_msg}), 500
-                
+                    return jsonify({"error": error_msg}), 500
+
                 # Crear archivo ZIP con los archivos resultantes
                 try:
-                    output_zip = os.path.join(output_dir, 'unified_shp.zip')
+                    output_zip = os.path.join(output_dir, "unified_shp.zip")
                     app.logger.debug(f"Creando archivo ZIP de salida: {output_zip}")
-                    
+
                     # Incluir archivos auxiliares (.dbf, .shx, .prj)
                     base_name = os.path.splitext(output_shp)[0]
-                    with zipfile.ZipFile(output_zip, 'w') as zipf:
-                        for ext in ['.shp', '.dbf', '.shx', '.prj']:
+                    with zipfile.ZipFile(output_zip, "w") as zipf:
+                        for ext in [".shp", ".dbf", ".shx", ".prj"]:
                             file_path = base_name + ext
                             if os.path.exists(file_path):
-                                app.logger.debug(f"  - Añadiendo archivo: {os.path.basename(file_path)}")
+                                app.logger.debug(
+                                    f"  - Añadiendo archivo: {os.path.basename(file_path)}"
+                                )
                                 zipf.write(file_path, os.path.basename(file_path))
                 except Exception as e:
                     error_msg = f"Error al crear archivo ZIP de salida: {str(e)}"
                     app.logger.error(error_msg)
-                    return jsonify({'error': error_msg}), 500
-                
+                    return jsonify({"error": error_msg}), 500
+
                 # Preparar datos para respuesta
                 try:
                     # Crear una versión extremadamente simplificada del GeoJSON para la respuesta
@@ -3068,20 +3718,30 @@ def procesar_shp():
                         if len(merged_gdf) > 0:
                             # Tomar solo los primeros 5 polígonos como muestra
                             sample_gdf = merged_gdf.head(5).copy()
-                            
+
                             # Aplicar una simplificación agresiva a las geometrías
                             try:
-                                sample_gdf.geometry = sample_gdf.geometry.simplify(tolerance=0.01)
+                                sample_gdf.geometry = sample_gdf.geometry.simplify(
+                                    tolerance=0.01
+                                )
                             except Exception as simplify_error:
-                                app.logger.error(f"Error al simplificar geometrías de muestra: {str(simplify_error)}")
-                            
+                                app.logger.error(
+                                    f"Error al simplificar geometrías de muestra: {str(simplify_error)}"
+                                )
+
                             # Eliminar todas las columnas excepto la geometría
-                            simplified_gdf = gpd.GeoDataFrame(geometry=sample_gdf.geometry)
-                            app.logger.debug(f"GeoJSON simplificado creado con {len(simplified_gdf)} geometrías de muestra")
+                            simplified_gdf = gpd.GeoDataFrame(
+                                geometry=sample_gdf.geometry
+                            )
+                            app.logger.debug(
+                                f"GeoJSON simplificado creado con {len(simplified_gdf)} geometrías de muestra"
+                            )
                     except Exception as sample_error:
-                        app.logger.error(f"Error al crear muestra de GeoJSON: {str(sample_error)}")
+                        app.logger.error(
+                            f"Error al crear muestra de GeoJSON: {str(sample_error)}"
+                        )
                         # Continuar sin GeoJSON si hay error
-                    
+
                     # Si no se pudo crear una versión simplificada, usar un GeoJSON vacío
                     if simplified_gdf is None or len(simplified_gdf) == 0:
                         geojson_data = '{"type":"FeatureCollection","features":[]}'
@@ -3092,23 +3752,33 @@ def procesar_shp():
                             geojson_data = simplified_gdf.to_json()
                             # Verificar tamaño del JSON
                             if len(geojson_data) > 1000000:  # Más de 1MB
-                                app.logger.debug(f"GeoJSON demasiado grande ({len(geojson_data)} bytes), usando vacío")
-                                geojson_data = '{"type":"FeatureCollection","features":[]}'
+                                app.logger.debug(
+                                    f"GeoJSON demasiado grande ({len(geojson_data)} bytes), usando vacío"
+                                )
+                                geojson_data = (
+                                    '{"type":"FeatureCollection","features":[]}'
+                                )
                         except Exception as json_error:
-                            app.logger.error(f"Error al convertir a GeoJSON: {str(json_error)}")
+                            app.logger.error(
+                                f"Error al convertir a GeoJSON: {str(json_error)}"
+                            )
                             geojson_data = '{"type":"FeatureCollection","features":[]}'
-                    
+
                     # Obtener conteo de polígonos
                     num_poligonos = len(merged_gdf)
-                    
+
                     # Calcular área con manejo de errores
                     try:
-                        area_total = merged_gdf.geometry.area.sum() / 10000  # Convertir a hectáreas
+                        area_total = (
+                            merged_gdf.geometry.area.sum() / 10000
+                        )  # Convertir a hectáreas
                     except Exception as area_error:
                         app.logger.error(f"Error al calcular área: {str(area_error)}")
                         area_total = 0
-                    
-                    app.logger.debug(f"Datos preparados: {num_poligonos} polígonos, {area_total:.2f} ha")
+
+                    app.logger.debug(
+                        f"Datos preparados: {num_poligonos} polígonos, {area_total:.2f} ha"
+                    )
                 except Exception as e:
                     error_msg = f"Error al preparar datos para respuesta: {str(e)}"
                     app.logger.error(error_msg)
@@ -3116,263 +3786,317 @@ def procesar_shp():
                     geojson_data = '{"type":"FeatureCollection","features":[]}'
                     num_poligonos = 0
                     area_total = 0
-                
+
                 # Crear un diccionario de respuesta mínimo
                 response_data = {
-                    'success': True,
-                    'message': 'Archivos SHP unidos correctamente',
-                    'archivo_salida': '/uploads/shp_unified/unified_shp.zip',
-                    'num_archivos': len(shp_files),
-                    'num_poligonos': num_poligonos,
-                    'area_total': round(area_total, 2)
+                    "success": True,
+                    "message": "Archivos SHP unidos correctamente",
+                    "archivo_salida": "/uploads/shp_unified/unified_shp.zip",
+                    "num_archivos": len(shp_files),
+                    "num_poligonos": num_poligonos,
+                    "area_total": round(area_total, 2),
                 }
-                
+
                 # Añadir geojson solo si no está vacío y es pequeño
                 if geojson_data != '{"type":"FeatureCollection","features":[]}':
-                    response_data['geojson'] = geojson_data
+                    response_data["geojson"] = geojson_data
                 else:
                     # Indicar que el GeoJSON está disponible pero no se incluye en la respuesta
-                    response_data['geojson_status'] = 'no_incluido_por_tamano'
-                
+                    response_data["geojson_status"] = "no_incluido_por_tamano"
+
                 # Limpiar directorio temporal
                 try:
                     import shutil
+
                     shutil.rmtree(temp_dir)
                     app.logger.debug(f"Directorio temporal eliminado: {temp_dir}")
                 except Exception as e:
-                    app.logger.error(f"Advertencia: No se pudo eliminar el directorio temporal: {str(e)}")
-                
+                    app.logger.error(
+                        f"Advertencia: No se pudo eliminar el directorio temporal: {str(e)}"
+                    )
+
                 # Verificar si es una solicitud AJAX o un formulario directo
-                is_ajax = request.is_xhr or request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+                is_ajax = (
+                    request.is_xhr
+                    or request.headers.get("X-Requested-With") == "XMLHttpRequest"
+                )
                 if is_ajax:
                     app.logger.debug("Enviando respuesta JSON")
                     try:
                         return jsonify(response_data)
                     except Exception as json_error:
-                        app.logger.error(f"Error al serializar respuesta JSON: {str(json_error)}")
+                        app.logger.error(
+                            f"Error al serializar respuesta JSON: {str(json_error)}"
+                        )
                         # Intentar con una respuesta más sencilla sin GeoJSON
-                        del response_data['geojson']
-                        response_data['geojson_status'] = 'error_serializacion'
+                        del response_data["geojson"]
+                        response_data["geojson_status"] = "error_serializacion"
                         return jsonify(response_data)
                 else:
                     # Si es un formulario directo, guardar datos en sesión y redirigir
                     app.logger.debug("Redireccionando con datos en sesión")
-                    flash('Archivos SHP unidos correctamente. Puede descargar el resultado.', 'success')
-                    session['resultado_shp'] = {
-                        'num_archivos': len(shp_files),
-                        'num_poligonos': num_poligonos,
-                        'area_total': round(area_total, 2)
+                    flash(
+                        "Archivos SHP unidos correctamente. Puede descargar el resultado.",
+                        "success",
+                    )
+                    session["resultado_shp"] = {
+                        "num_archivos": len(shp_files),
+                        "num_poligonos": num_poligonos,
+                        "area_total": round(area_total, 2),
                     }
-                    return redirect(url_for('unir_archivos'))
-                
+                    return redirect(url_for("unir_archivos"))
+
             except Exception as e:
                 import traceback
+
                 traceback.print_exc()
                 error_msg = f"Error al procesar archivos: {str(e)}"
                 app.logger.error(f"Error al procesar: {error_msg}")
-                
+
                 # Verificar si es una solicitud AJAX o un formulario directo
-                if request.is_xhr or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                    return jsonify({'error': error_msg}), 500
+                if (
+                    request.is_xhr
+                    or request.headers.get("X-Requested-With") == "XMLHttpRequest"
+                ):
+                    return jsonify({"error": error_msg}), 500
                 else:
-                    flash(error_msg, 'error')
-                    return redirect(url_for('unir_archivos'))
+                    flash(error_msg, "error")
+                    return redirect(url_for("unir_archivos"))
         else:
             error_msg = "Formato de archivo no válido. Debe ser un archivo ZIP"
             app.logger.error(error_msg)
             # Verificar si es una solicitud AJAX o un formulario directo
-            if request.is_xhr or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return jsonify({'error': error_msg}), 400
+            if (
+                request.is_xhr
+                or request.headers.get("X-Requested-With") == "XMLHttpRequest"
+            ):
+                return jsonify({"error": error_msg}), 400
             else:
-                flash(error_msg, 'error')
-                return redirect(url_for('unir_archivos'))
+                flash(error_msg, "error")
+                return redirect(url_for("unir_archivos"))
     except Exception as e:
         # Capturar cualquier excepción no manejada para evitar respuestas HTML de error 500
         import traceback
+
         traceback.print_exc()
         error_msg = f"Error interno del servidor: {str(e)}"
         app.logger.error(f"ERROR NO MANEJADO: {error_msg}")
-        
-        # Siempre devolver una respuesta JSON válida
-        if request.is_xhr or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-            return jsonify({'error': error_msg}), 500
-        else:
-            flash(error_msg, 'error')
-            return redirect(url_for('unir_archivos'))
 
-@app.route('/descargar-shp-unificado')
+        # Siempre devolver una respuesta JSON válida
+        if (
+            request.is_xhr
+            or request.headers.get("X-Requested-With") == "XMLHttpRequest"
+        ):
+            return jsonify({"error": error_msg}), 500
+        else:
+            flash(error_msg, "error")
+            return redirect(url_for("unir_archivos"))
+
+
+@app.route("/descargar-shp-unificado")
 @login_required
 def descargar_shp_unificado():
-    zip_path = os.path.join(app.config['UPLOAD_FOLDER'], 'shp_unified', 'unified_shp.zip')
+    zip_path = os.path.join(
+        app.config["UPLOAD_FOLDER"], "shp_unified", "unified_shp.zip"
+    )
     if os.path.exists(zip_path):
-        return send_file(zip_path, as_attachment=True, download_name='poligonos_unificados.zip')
+        return send_file(
+            zip_path, as_attachment=True, download_name="poligonos_unificados.zip"
+        )
     else:
-        flash('No se encontró el archivo unificado. Procese los archivos primero.', 'error')
-        return redirect(url_for('unir_archivos'))
+        flash(
+            "No se encontró el archivo unificado. Procese los archivos primero.",
+            "error",
+        )
+        return redirect(url_for("unir_archivos"))
 
-@app.route('/generar_ficha_tecnica_template/<int:db_id>')
+
+@app.route("/generar_ficha_tecnica_template/<int:db_id>")
 @login_required
 def generar_ficha_tecnica_template_route(db_id):
     """Genera una ficha técnica con la nueva plantilla para un polígono específico"""
     try:
         # Obtener las fechas del formulario
-        fecha_referencia = request.args.get('fecha_referencia')
-        fecha_final = request.args.get('fecha_final')
-        
+        fecha_referencia = request.args.get("fecha_referencia")
+        fecha_final = request.args.get("fecha_final")
+
         # Buscar el polígono en la base de datos
         poligono = Poligono.query.get(db_id)
         if not poligono:
             return jsonify({"error": "Polígono no encontrado"}), 404
-        
+
         # Verificar que PyMuPDF esté correctamente configurado
         pymupdf_funcional = garantizar_pymupdf()
         if not pymupdf_funcional:
-            app.logger.error("ADVERTENCIA: PyMuPDF no está correctamente configurado, se usará el método alternativo")
-        
+            app.logger.error(
+                "ADVERTENCIA: PyMuPDF no está correctamente configurado, se usará el método alternativo"
+            )
+
         # Generar mapa del polígono
-        shapefile_buffer = generar_shapefile_individual(poligono, f'polygon-{db_id}')
+        shapefile_buffer = generar_shapefile_individual(poligono, f"polygon-{db_id}")
         if not shapefile_buffer:
             return jsonify({"error": "No se pudo generar el shapefile"}), 500
-        
+
         png_filepath = None
         # Crear un directorio temporal para guardar los PNG
         with tempfile.TemporaryDirectory() as temp_png_dir:
             # Generar PNG a partir del shapefile
             png_dir = plot_shapefile_to_png(shapefile_buffer, temp_png_dir)
-            
+
             # Buscar el archivo PNG generado
             if png_dir:
                 for png_filename in os.listdir(png_dir):
-                    if png_filename.endswith('.png'):
+                    if png_filename.endswith(".png"):
                         png_filepath = os.path.join(png_dir, png_filename)
                         break
-            
+
             if not png_filepath:
                 return jsonify({"error": "No se pudo generar la imagen del mapa"}), 500
-            
+
             # Generar ficha técnica con la plantilla
-            pdf_buffer = generar_ficha_tecnica_desde_plantilla(poligono, png_filepath, fecha_referencia, fecha_final)
-            
+            pdf_buffer = generar_ficha_tecnica_desde_plantilla(
+                poligono, png_filepath, fecha_referencia, fecha_final
+            )
+
             if not pdf_buffer:
                 return jsonify({"error": "No se pudo generar la ficha técnica"}), 500
-            
+
             # Enviar el PDF como respuesta
             return send_file(
                 pdf_buffer,
-                mimetype='application/pdf',
+                mimetype="application/pdf",
                 as_attachment=True,
-                download_name=f'ficha_tecnica_{poligono.id_poligono or db_id}.pdf'
+                download_name=f"ficha_tecnica_{poligono.id_poligono or db_id}.pdf",
             )
-    
+
     except Exception as e:
         app.logger.error(f"Error al generar ficha técnica con plantilla: {e}")
         import traceback
+
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
-@app.route('/generar_paquete_completo_con_plantilla', methods=['POST'])
+
+@app.route("/generar_paquete_completo_con_plantilla", methods=["POST"])
 @login_required
 def generar_paquete_completo_con_plantilla():
     """Ruta para generar un paquete completo con fichas PDF basadas en plantilla y shapefiles"""
     # Obtener los índices de polígonos seleccionados
-    selected_rows = request.json.get('selected_rows', [])
-    fecha_referencia = request.json.get('fecha_referencia')
-    fecha_final = request.json.get('fecha_final')
-    
+    selected_rows = request.json.get("selected_rows", [])
+    fecha_referencia = request.json.get("fecha_referencia")
+    fecha_final = request.json.get("fecha_final")
+
     # Debugging: Log the received dates
     app.logger.debug(f"DEBUG - Fecha de Referencia recibida: {fecha_referencia}")
     app.logger.debug(f"DEBUG - Fecha Final recibida: {fecha_final}")
-    
+
     if not selected_rows:
-        return jsonify({'error': 'No se seleccionaron polígonos'}), 400
-    
+        return jsonify({"error": "No se seleccionaron polígonos"}), 400
+
     try:
         # Verificamos PyMuPDF usando la función mejorada
         from utils.pdf_generator import garantizar_pymupdf
+
         pymupdf_funcional = garantizar_pymupdf()
         if not pymupdf_funcional:
-            app.logger.error("ADVERTENCIA: PyMuPDF no está correctamente configurado, se usará el método alternativo")
-            
+            app.logger.error(
+                "ADVERTENCIA: PyMuPDF no está correctamente configurado, se usará el método alternativo"
+            )
+
         # Verificar que la plantilla existe - usar el directorio static/plantilla
-        plantilla_path = os.path.join('static', 'plantilla', 'Plantilla_2.pdf')
+        plantilla_path = os.path.join("static", "plantilla", "Plantilla_2.pdf")
         plantilla_encontrada = False
-        
+
         if os.path.exists(plantilla_path):
             plantilla_encontrada = True
-            app.logger.debug(f"Plantilla encontrada en: {os.path.abspath(plantilla_path)}")
+            app.logger.debug(
+                f"Plantilla encontrada en: {os.path.abspath(plantilla_path)}"
+            )
         else:
             # Verificar rutas alternativas
             rutas_alternativas = [
-                'Plantilla_2.pdf',
-                './plantilla/Plantilla_2.pdf',
-                '../plantilla/Plantilla_2.pdf',
-                './static/plantilla/Plantilla_2.pdf'
+                "Plantilla_2.pdf",
+                "./plantilla/Plantilla_2.pdf",
+                "../plantilla/Plantilla_2.pdf",
+                "./static/plantilla/Plantilla_2.pdf",
             ]
-            
+
             for ruta in rutas_alternativas:
                 if os.path.exists(ruta):
                     plantilla_path = ruta
                     plantilla_encontrada = True
-                    app.logger.debug(f"Plantilla encontrada en ruta alternativa: {os.path.abspath(ruta)}")
+                    app.logger.debug(
+                        f"Plantilla encontrada en ruta alternativa: {os.path.abspath(ruta)}"
+                    )
                     break
-            
+
         # Añadir mensaje de advertencia si no se encontró la plantilla
         if not plantilla_encontrada:
-            app.logger.error("ADVERTENCIA: No se encontró la plantilla, se usará el método alternativo")
-            
+            app.logger.error(
+                "ADVERTENCIA: No se encontró la plantilla, se usará el método alternativo"
+            )
+
         # Continuamos con el proceso independientemente de la plantilla
 
         # Verificar permisos de lectura del archivo
         try:
             if plantilla_encontrada:
-                with open(plantilla_path, 'rb') as f:
+                with open(plantilla_path, "rb") as f:
                     _ = f.read(1)  # Leer un byte para verificar acceso
-                    app.logger.debug(f"Archivo de plantilla accesible: {plantilla_path}")
+                    app.logger.debug(
+                        f"Archivo de plantilla accesible: {plantilla_path}"
+                    )
         except Exception as e:
             app.logger.error(f"Error al acceder a la plantilla: {e}")
             app.logger.debug("Se utilizará el método alternativo para generar PDFs")
-            
+
         # Preparar un archivo ZIP en memoria para contener todos los archivos
         memory_file = io.BytesIO()
-        with zipfile.ZipFile(memory_file, 'w') as zf:
+        with zipfile.ZipFile(memory_file, "w") as zf:
             # Crear carpeta para fichas técnicas
-            zf.writestr('fichas_tecnicas/', '')
+            zf.writestr("fichas_tecnicas/", "")
             # Crear carpeta para shapefiles
-            zf.writestr('shapefiles/', '')
+            zf.writestr("shapefiles/", "")
             # Crear carpeta para mapas
-            zf.writestr('mapas/', '')
+            zf.writestr("mapas/", "")
             # Crear una carpeta para logs
-            zf.writestr('logs/', '')
-            
+            zf.writestr("logs/", "")
+
             # Contadores para estadísticas
             total_poligonos = len(selected_rows)
             poligonos_procesados = 0
             errores = 0
             errores_detalles = []
-            
+
             # Para cada polígono seleccionado
             for row_id in selected_rows:
                 try:
                     row_id = int(row_id)
                     # Primero intentar buscar por ID exacto
                     poligono = Poligono.query.get(row_id)
-                    
+
                     if poligono is None:
                         # Si no se encuentra, imprimir para depuración
-                        app.logger.error(f"No se encontró polígono con ID {row_id}, buscando en posición")
-                        
+                        app.logger.error(
+                            f"No se encontró polígono con ID {row_id}, buscando en posición"
+                        )
+
                         # Intentar buscar por posición como fallback
                         poligonos = Poligono.query.all()
                         if 0 <= row_id < len(poligonos):
                             poligono = poligonos[row_id]
                         else:
-                            app.logger.debug(f"Índice {row_id} fuera de rango, hay {len(poligonos)} polígonos")
+                            app.logger.debug(
+                                f"Índice {row_id} fuera de rango, hay {len(poligonos)} polígonos"
+                            )
                             error_msg = f"Índice {row_id} fuera de rango, hay {len(poligonos)} polígonos"
                             errores_detalles.append(error_msg)
                             errores += 1
                             continue
-                            
-                    app.logger.debug(f"Generando fichas para polígono ID={poligono.id}, ID_POLIGONO={poligono.id_poligono}")
+
+                    app.logger.debug(
+                        f"Generando fichas para polígono ID={poligono.id}, ID_POLIGONO={poligono.id_poligono}"
+                    )
                 except Exception as e:
                     app.logger.error(f"Error al recuperar polígono {row_id}: {e}")
                     error_msg = f"Error al recuperar polígono {row_id}: {e}"
@@ -3380,129 +4104,198 @@ def generar_paquete_completo_con_plantilla():
                     errores += 1
                     # Si no es un ID válido, continuar con el siguiente
                     continue
-                
+
                 # Generar shapefile para este polígono
-                shapefile_buffer = generar_shapefile_individual(poligono, f'polygon-{row_id}')
+                shapefile_buffer = generar_shapefile_individual(
+                    poligono, f"polygon-{row_id}"
+                )
                 png_filepath = None
-                
+
                 if shapefile_buffer:
                     # Usar ID_POLIGONO para nombrar el archivo si está disponible
-                    archivo_nombre = poligono.id_poligono if poligono.id_poligono else f'polygon-{row_id}'
-                    zf.writestr(f'shapefiles/{archivo_nombre}.zip', shapefile_buffer.getvalue())
-                    
+                    archivo_nombre = (
+                        poligono.id_poligono
+                        if poligono.id_poligono
+                        else f"polygon-{row_id}"
+                    )
+                    zf.writestr(
+                        f"shapefiles/{archivo_nombre}.zip", shapefile_buffer.getvalue()
+                    )
+
                     # Generar mapas PNG a partir del shapefile
                     try:
                         # Crear un directorio temporal para guardar los PNG
                         with tempfile.TemporaryDirectory() as temp_png_dir:
                             # Generar PNG a partir del shapefile
-                            png_dir = plot_shapefile_to_png(shapefile_buffer, temp_png_dir)
-                            
+                            png_dir = plot_shapefile_to_png(
+                                shapefile_buffer, temp_png_dir
+                            )
+
                             # Añadir todos los archivos PNG al ZIP y guardar la ruta del primer PNG para la ficha técnica
                             if png_dir:
                                 for png_filename in os.listdir(png_dir):
-                                    if png_filename.endswith('.png'):
+                                    if png_filename.endswith(".png"):
                                         png_path = os.path.join(png_dir, png_filename)
                                         # Guardar la ruta del primer PNG para usarla en la ficha
                                         if png_filepath is None:
                                             png_filepath = png_path
-                                        
+
                                         # Guardar la imagen en un archivo temporal más permanente que podamos usar para el PDF
-                                        temp_img_path = tempfile.NamedTemporaryFile(delete=False, suffix='.png').name
+                                        temp_img_path = tempfile.NamedTemporaryFile(
+                                            delete=False, suffix=".png"
+                                        ).name
                                         shutil.copy2(png_path, temp_img_path)
                                         png_filepath = temp_img_path
-                                        
-                                        with open(png_path, 'rb') as png_file:
+
+                                        with open(png_path, "rb") as png_file:
                                             # Guardar con un nombre predecible basado en ID_POLIGONO
                                             png_name = f"{poligono.id_poligono or f'polygon-{row_id}'}.png"
-                                            zf.writestr(f'mapas/{png_name}', png_file.read())
+                                            zf.writestr(
+                                                f"mapas/{png_name}", png_file.read()
+                                            )
                     except Exception as e:
-                        app.logger.error(f"Error al generar mapa PNG para polígono {row_id}: {e}")
-                        error_msg = f"Error al generar mapa PNG para polígono {row_id}: {e}"
+                        app.logger.error(
+                            f"Error al generar mapa PNG para polígono {row_id}: {e}"
+                        )
+                        error_msg = (
+                            f"Error al generar mapa PNG para polígono {row_id}: {e}"
+                        )
                         errores_detalles.append(error_msg)
                         errores += 1
                         import traceback
+
                         traceback.print_exc()
-                
+
                 # Generar ficha técnica PDF con la nueva plantilla
                 if png_filepath:
                     try:
                         # Configurar un log específico para este polígono
                         log_buffer = io.StringIO()
-                        log_buffer.write(f"=== Log de generación de PDF para polígono {row_id} ===\n")
+                        log_buffer.write(
+                            f"=== Log de generación de PDF para polígono {row_id} ===\n"
+                        )
                         log_buffer.write(f"ID_POLIGONO: {poligono.id_poligono}\n")
-                        log_buffer.write(f"Fecha: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
-                        
+                        log_buffer.write(
+                            f"Fecha: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+                        )
+
                         # Verificar que la imagen existe
                         if os.path.exists(png_filepath):
-                            log_buffer.write(f"Imagen encontrada en: {os.path.abspath(png_filepath)}\n")
+                            log_buffer.write(
+                                f"Imagen encontrada en: {os.path.abspath(png_filepath)}\n"
+                            )
                         else:
-                            log_buffer.write(f"ADVERTENCIA: No se encontró la imagen en: {os.path.abspath(png_filepath)}\n")
-                        
+                            log_buffer.write(
+                                f"ADVERTENCIA: No se encontró la imagen en: {os.path.abspath(png_filepath)}\n"
+                            )
+
                         # Intentar generar el PDF con la plantilla
                         log_buffer.write("Intentando generar PDF con la plantilla...\n")
-                        pdf_buffer = generar_ficha_tecnica_desde_plantilla(poligono, png_filepath, fecha_referencia, fecha_final)
-                        
+                        pdf_buffer = generar_ficha_tecnica_desde_plantilla(
+                            poligono, png_filepath, fecha_referencia, fecha_final
+                        )
+
                         # Guardar una copia del PDF (si se generó) para depuración
                         if pdf_buffer:
-                            log_buffer.write(f"PDF generado correctamente con plantilla ({len(pdf_buffer.getvalue())} bytes)\n")
+                            log_buffer.write(
+                                f"PDF generado correctamente con plantilla ({len(pdf_buffer.getvalue())} bytes)\n"
+                            )
                             # Guardar una copia del PDF generado con plantilla para diagnóstico
                             try:
-                                debug_pdf_path = os.path.join('debug', f'template_pdf_{poligono.id_poligono or row_id}.pdf')
-                                os.makedirs('debug', exist_ok=True)
-                                with open(debug_pdf_path, 'wb') as f:
+                                debug_pdf_path = os.path.join(
+                                    "debug",
+                                    f"template_pdf_{poligono.id_poligono or row_id}.pdf",
+                                )
+                                os.makedirs("debug", exist_ok=True)
+                                with open(debug_pdf_path, "wb") as f:
                                     f.write(pdf_buffer.getvalue())
-                                log_buffer.write(f"Copia de diagnóstico guardada en: {debug_pdf_path}\n")
+                                log_buffer.write(
+                                    f"Copia de diagnóstico guardada en: {debug_pdf_path}\n"
+                                )
                                 pdf_buffer.seek(0)  # Resetear el buffer
                             except Exception as debug_error:
-                                log_buffer.write(f"No se pudo guardar copia de diagnóstico: {debug_error}\n")
-                        
+                                log_buffer.write(
+                                    f"No se pudo guardar copia de diagnóstico: {debug_error}\n"
+                                )
+
                         # Si falla la generación con plantilla, usar el método simple como respaldo
                         if pdf_buffer is None:
-                            log_buffer.write("Error al generar PDF con plantilla, intentando método simple como respaldo...\n")
-                            pdf_buffer = generar_ficha_tecnica_simple(poligono, png_filepath)
-                            
+                            log_buffer.write(
+                                "Error al generar PDF con plantilla, intentando método simple como respaldo...\n"
+                            )
+                            pdf_buffer = generar_ficha_tecnica_simple(
+                                poligono, png_filepath
+                            )
+
                             # Guardar una copia del PDF simple para comparación
                             if pdf_buffer:
                                 try:
-                                    debug_simple_path = os.path.join('debug', f'simple_pdf_{poligono.id_poligono or row_id}.pdf')
-                                    os.makedirs('debug', exist_ok=True)
-                                    with open(debug_simple_path, 'wb') as f:
+                                    debug_simple_path = os.path.join(
+                                        "debug",
+                                        f"simple_pdf_{poligono.id_poligono or row_id}.pdf",
+                                    )
+                                    os.makedirs("debug", exist_ok=True)
+                                    with open(debug_simple_path, "wb") as f:
                                         f.write(pdf_buffer.getvalue())
-                                    log_buffer.write(f"Copia de PDF simple guardada en: {debug_simple_path}\n")
+                                    log_buffer.write(
+                                        f"Copia de PDF simple guardada en: {debug_simple_path}\n"
+                                    )
                                     pdf_buffer.seek(0)  # Resetear el buffer
                                 except Exception as debug_error:
-                                    log_buffer.write(f"No se pudo guardar copia de PDF simple: {debug_error}\n")
-                        
+                                    log_buffer.write(
+                                        f"No se pudo guardar copia de PDF simple: {debug_error}\n"
+                                    )
+
                         if pdf_buffer:
-                            log_buffer.write(f"PDF generado correctamente ({len(pdf_buffer.getvalue())} bytes)\n")
-                            nombre_archivo = f"{poligono.id_poligono or f'polygon-{row_id}'}.pdf"
-                            zf.writestr(f'fichas_tecnicas/{nombre_archivo}', pdf_buffer.getvalue())
+                            log_buffer.write(
+                                f"PDF generado correctamente ({len(pdf_buffer.getvalue())} bytes)\n"
+                            )
+                            nombre_archivo = (
+                                f"{poligono.id_poligono or f'polygon-{row_id}'}.pdf"
+                            )
+                            zf.writestr(
+                                f"fichas_tecnicas/{nombre_archivo}",
+                                pdf_buffer.getvalue(),
+                            )
                             poligonos_procesados += 1
                         else:
-                            log_buffer.write("ERROR: No se pudo generar el PDF (buffer vacío)\n")
+                            log_buffer.write(
+                                "ERROR: No se pudo generar el PDF (buffer vacío)\n"
+                            )
                             errores += 1
                             error_msg = f"No se pudo generar el PDF para el polígono {row_id} - ID_POLIGONO={poligono.id_poligono}"
                             errores_detalles.append(error_msg)
                     except Exception as e:
-                        app.logger.error(f"Error al generar PDF para polígono {row_id}: {e}")
+                        app.logger.error(
+                            f"Error al generar PDF para polígono {row_id}: {e}"
+                        )
                         log_buffer.write(f"EXCEPCIÓN: {str(e)}\n")
                         import traceback
+
                         error_traceback = traceback.format_exc()
                         log_buffer.write(f"Traceback:\n{error_traceback}\n")
-                        
+
                         error_msg = f"Error al generar PDF para polígono {row_id}: {e}"
                         errores_detalles.append(error_msg)
                         errores += 1
                     finally:
                         # Guardar el log en el archivo ZIP
-                        archivo_nombre = poligono.id_poligono if poligono.id_poligono else f'polygon-{row_id}'
-                        zf.writestr(f'logs/log_{archivo_nombre}.txt', log_buffer.getvalue())
+                        archivo_nombre = (
+                            poligono.id_poligono
+                            if poligono.id_poligono
+                            else f"polygon-{row_id}"
+                        )
+                        zf.writestr(
+                            f"logs/log_{archivo_nombre}.txt", log_buffer.getvalue()
+                        )
                 else:
                     error_msg = f"No se pudo generar mapa para polígono {row_id}"
                     errores_detalles.append(error_msg)
                     errores += 1
-                    app.logger.error(f"Error: No se pudo generar mapa para polígono {row_id}")
-            
+                    app.logger.error(
+                        f"Error: No se pudo generar mapa para polígono {row_id}"
+                    )
+
             # Añadir un resumen en el ZIP
             resumen = f"""
             Resumen de generación de fichas técnicas:
@@ -3514,103 +4307,129 @@ def generar_paquete_completo_con_plantilla():
             Detalles de errores:
             {chr(10).join(errores_detalles)}
             
-            Generado el: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}
+            Generado el: {datetime.now().strftime("%d/%m/%Y %H:%M:%S")}
             """
-            zf.writestr('resumen.txt', resumen)
-        
+            zf.writestr("resumen.txt", resumen)
+
         # Regresar al inicio del archivo en memoria
         memory_file.seek(0)
-        
+
         # Enviar el archivo ZIP como respuesta
         return send_file(
             memory_file,
-            mimetype='application/zip',
+            mimetype="application/zip",
             as_attachment=True,
-            download_name='paquete_completo_con_plantilla.zip'
+            download_name="paquete_completo_con_plantilla.zip",
         )
-    
+
     except Exception as e:
         app.logger.error(f"Error al generar paquete completo con plantilla: {e}")
         import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
 
-@app.route('/generar_excel', methods=['GET'])
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/generar_excel", methods=["GET"])
 @login_required
 def generar_excel():
     """Ruta para generar un archivo Excel con todos los registros de la base de datos - réplica completa"""
     try:
         # Obtener todos los polígonos de la base de datos
         poligonos = Poligono.query.all()
-        
+
         if not poligonos:
-            flash('No hay datos disponibles para generar el archivo Excel', 'warning')
-            return redirect(url_for('validacion_poligonos', tab='generar'))
-        
+            flash("No hay datos disponibles para generar el archivo Excel", "warning")
+            return redirect(url_for("validacion_poligonos", tab="generar"))
+
         # Crear un DataFrame con TODAS las columnas de la base de datos
         data = []
         for p in poligonos:
             datos = {
-                'ID_POLIGONO': p.id_poligono,
-                'IF': p.if_val,
-                'ID_CREDITO': p.id_credito,
-                'ID_PERSONA': p.id_persona,
-                'SUPERFICIE': p.superficie,  # Superficie original
-                'ESTADO': corregir_codificacion(p.estado) if p.estado else '',
-                'MUNICIPIO': corregir_codificacion(p.municipio) if p.municipio else '',
-                'COORDENADAS': p.coordenadas if p.coordenadas else '',
-                'COORDENADAS_DECIMALES_CORREGIDAS': p.coordenadas_corregidas if p.coordenadas_corregidas else '',
-                'AREA_DIGITALIZADA': p.area_digitalizada if p.area_digitalizada else 0.0,
-                'ESTATUS': p.estatus if p.estatus else '',
-                'COMENTARIOS': p.comentarios if p.comentarios else '',
-                'DESCRIPCION': p.descripcion if p.descripcion else '',
-                'ORDEN': p.orden if p.orden else '',
-                'SE_MODIFICO': p.se_modifico if p.se_modifico else 'No',
-                'FECHA_CREACION': p.fecha_creacion.strftime('%Y-%m-%d %H:%M:%S') if p.fecha_creacion else '',
-                'FECHA_MODIFICACION': p.fecha_modificacion.strftime('%Y-%m-%d %H:%M:%S') if p.fecha_modificacion else '',
-                'DB_ID': p.id  # ID interno de la base de datos
+                "ID_POLIGONO": p.id_poligono,
+                "IF": p.if_val,
+                "ID_CREDITO": p.id_credito,
+                "ID_PERSONA": p.id_persona,
+                "SUPERFICIE": p.superficie,  # Superficie original
+                "ESTADO": corregir_codificacion(p.estado) if p.estado else "",
+                "MUNICIPIO": corregir_codificacion(p.municipio) if p.municipio else "",
+                "COORDENADAS": p.coordenadas if p.coordenadas else "",
+                "COORDENADAS_DECIMALES_CORREGIDAS": p.coordenadas_corregidas
+                if p.coordenadas_corregidas
+                else "",
+                "AREA_DIGITALIZADA": p.area_digitalizada
+                if p.area_digitalizada
+                else 0.0,
+                "ESTATUS": p.estatus if p.estatus else "",
+                "COMENTARIOS": p.comentarios if p.comentarios else "",
+                "DESCRIPCION": p.descripcion if p.descripcion else "",
+                "ORDEN": p.orden if p.orden else "",
+                "SE_MODIFICO": p.se_modifico if p.se_modifico else "No",
+                "FECHA_CREACION": p.fecha_creacion.strftime("%Y-%m-%d %H:%M:%S")
+                if p.fecha_creacion
+                else "",
+                "FECHA_MODIFICACION": p.fecha_modificacion.strftime("%Y-%m-%d %H:%M:%S")
+                if p.fecha_modificacion
+                else "",
+                "DB_ID": p.id,  # ID interno de la base de datos
             }
             data.append(datos)
-        
+
         # Crear un DataFrame de pandas con los datos
         df = pd.DataFrame(data)
-        
+
         # Reordenar las columnas para que las más importantes estén primero
         columnas_ordenadas = [
-            'ID_POLIGONO', 'IF', 'ID_CREDITO', 'ID_PERSONA', 'SUPERFICIE', 
-            'ESTADO', 'MUNICIPIO', 'COORDENADAS', 'COORDENADAS_DECIMALES_CORREGIDAS',
-            'AREA_DIGITALIZADA', 'ESTATUS', 'COMENTARIOS', 'DESCRIPCION', 'ORDEN',
-            'SE_MODIFICO', 'FECHA_CREACION', 'FECHA_MODIFICACION', 'DB_ID'
+            "ID_POLIGONO",
+            "IF",
+            "ID_CREDITO",
+            "ID_PERSONA",
+            "SUPERFICIE",
+            "ESTADO",
+            "MUNICIPIO",
+            "COORDENADAS",
+            "COORDENADAS_DECIMALES_CORREGIDAS",
+            "AREA_DIGITALIZADA",
+            "ESTATUS",
+            "COMENTARIOS",
+            "DESCRIPCION",
+            "ORDEN",
+            "SE_MODIFICO",
+            "FECHA_CREACION",
+            "FECHA_MODIFICACION",
+            "DB_ID",
         ]
-        
+
         # Verificar que todas las columnas existen antes de reordenar
         columnas_existentes = [col for col in columnas_ordenadas if col in df.columns]
         df = df[columnas_existentes]
-        
+
         # Crear un objeto BytesIO para guardar el Excel en memoria
         excel_file = io.BytesIO()
-        
+
         # Guardar el DataFrame como un archivo Excel
-        with pd.ExcelWriter(excel_file, engine='openpyxl') as writer:
-            df.to_excel(writer, index=False, sheet_name='Polígonos_BD')
-            
+        with pd.ExcelWriter(excel_file, engine="openpyxl") as writer:
+            df.to_excel(writer, index=False, sheet_name="Polígonos_BD")
+
             # Obtener el workbook y worksheet para aplicar formato
             workbook = writer.book
-            worksheet = writer.sheets['Polígonos_BD']
-            
+            worksheet = writer.sheets["Polígonos_BD"]
+
             # Aplicar formato a las cabeceras
             from openpyxl.styles import Font, PatternFill, Alignment
-            
+
             header_font = Font(bold=True, color="FFFFFF")
-            header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+            header_fill = PatternFill(
+                start_color="366092", end_color="366092", fill_type="solid"
+            )
             header_alignment = Alignment(horizontal="center", vertical="center")
-            
+
             # Aplicar estilo a la primera fila (cabeceras)
             for cell in worksheet[1]:
                 cell.font = header_font
                 cell.fill = header_fill
                 cell.alignment = header_alignment
-            
+
             # Ajustar el ancho de las columnas
             for column in worksheet.columns:
                 max_length = 0
@@ -3623,24 +4442,26 @@ def generar_excel():
                         pass
                 adjusted_width = min(max_length + 2, 50)  # Máximo 50 caracteres
                 worksheet.column_dimensions[column_letter].width = adjusted_width
-        
+
         # Preparar el archivo para la descarga
         excel_file.seek(0)
-        
+
         # Crear una respuesta con el archivo Excel
         return send_file(
             excel_file,
             as_attachment=True,
-            download_name=f'base_datos_poligonos_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx',
-            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            download_name=f"base_datos_poligonos_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
-        
+
     except Exception as e:
         app.logger.error(f"ERROR AL GENERAR EXCEL: {str(e)}")
         import traceback
+
         traceback.print_exc()
-        flash(f'Error al generar archivo Excel: {str(e)}', 'error')
-        return redirect(url_for('validacion_poligonos', tab='generar'))
+        flash(f"Error al generar archivo Excel: {str(e)}", "error")
+        return redirect(url_for("validacion_poligonos", tab="generar"))
+
 
 # Import necessary modules for SHP handling
 import zipfile
@@ -3654,50 +4475,53 @@ from werkzeug.utils import secure_filename
 
 # ------- Validación Rápida SHP Routes -------
 
+
 def safe_process_coordinates(geometry):
     """Safely process geometry coordinates for display in the map."""
     try:
         # For standard shapefile polygons
-        if hasattr(geometry, 'exterior') and hasattr(geometry.exterior, 'coords'):
+        if hasattr(geometry, "exterior") and hasattr(geometry.exterior, "coords"):
             # Handle polygon geometry
             exterior_coords = list(geometry.exterior.coords)
             # Only take the first two coordinates (x,y) and ignore z or other dimensions if present
             coords = [[y, x] for x, y in [(p[0], p[1]) for p in exterior_coords]]
             return coords
-        
+
         # For MultiPolygon geometries
-        elif hasattr(geometry, 'geoms'):
+        elif hasattr(geometry, "geoms"):
             # Use the first polygon in the multipolygon
             first_geom = geometry.geoms[0]
-            if hasattr(first_geom, 'exterior'):
+            if hasattr(first_geom, "exterior"):
                 exterior_coords = list(first_geom.exterior.coords)
                 # Only take the first two coordinates (x,y) and ignore z or other dimensions
                 coords = [[y, x] for x, y in [(p[0], p[1]) for p in exterior_coords]]
                 return coords
-        
+
         # For Point geometries
-        elif geometry.geom_type == 'Point':
+        elif geometry.geom_type == "Point":
             return [[geometry.y, geometry.x]]  # [lat, lng] for Leaflet
-        
+
         # For LineString geometries
-        elif geometry.geom_type == 'LineString':
+        elif geometry.geom_type == "LineString":
             line_coords = list(geometry.coords)
             # Only take the first two coordinates (x,y) and ignore z or other dimensions
             coords = [[y, x] for x, y in [(p[0], p[1]) for p in line_coords]]
             return coords
-        
+
         # Return empty list if geometry type is not handled
         app.logger.debug(f"Geometry type not handled: {geometry.geom_type}")
         return []
-        
+
     except Exception as e:
         app.logger.error(f"Error safely processing coordinates: {e}")
         import traceback
+
         traceback.print_exc()
         return []
 
-@app.route('/validacion_rapida_shp')
-@app.route('/validacion_rapida_shp/<tab>')
+
+@app.route("/validacion_rapida_shp")
+@app.route("/validacion_rapida_shp/<tab>")
 @login_required
 def validacion_rapida_shp(tab=None):
     """
@@ -3705,563 +4529,618 @@ def validacion_rapida_shp(tab=None):
     Handles different tabs based on the parameter.
     """
     if not tab:
-        tab = 'cargar'
-    
+        tab = "cargar"
+
     # Get available SHP files and data
     shp_data = []
     shp_columns = []
     shp_archivos = []
-    
+
     # Query the database for SHP records
-    if tab in ['lista', 'generar']:
+    if tab in ["lista", "generar"]:
         # Get filter parameter if available
-        shp_filter = request.args.get('shp_filter')
-        
+        shp_filter = request.args.get("shp_filter")
+
         # Connect to database
         conn = get_db_connection()
-        
+
         if shp_filter:
             # Filter by SHP file name
-            shp_data = conn.execute('SELECT * FROM shp_records WHERE shp_origen = ?', 
-                                   (shp_filter,)).fetchall()
+            shp_data = conn.execute(
+                "SELECT * FROM shp_records WHERE shp_origen = ?", (shp_filter,)
+            ).fetchall()
         else:
             # Get all records
-            shp_data = conn.execute('SELECT * FROM shp_records').fetchall()
-        
+            shp_data = conn.execute("SELECT * FROM shp_records").fetchall()
+
         # Get list of unique SHP files
         shp_archivos = conn.execute(
-            'SELECT DISTINCT shp_origen FROM shp_records ORDER BY shp_origen'
+            "SELECT DISTINCT shp_origen FROM shp_records ORDER BY shp_origen"
         ).fetchall()
-        shp_archivos = [row['shp_origen'] for row in shp_archivos]
-        
+        shp_archivos = [row["shp_origen"] for row in shp_archivos]
+
         # Get columns for display (excluding geometry data)
         if shp_data:
-            shp_columns = [column for column in shp_data[0].keys() 
-                          if column not in ['shp_id', 'geometry_wkt', 'atributos']]
-        
+            shp_columns = [
+                column
+                for column in shp_data[0].keys()
+                if column not in ["shp_id", "geometry_wkt", "atributos"]
+            ]
+
         conn.close()
-    
+
     # Handle Edit tab
-    elif tab == 'editar':
-        db_id = request.args.get('db_id')
+    elif tab == "editar":
+        db_id = request.args.get("db_id")
         if db_id:
             try:
                 # Buscar el polígono en la base de datos por su ID
                 poligono = Poligono.query.get(int(db_id))
-                
+
                 if poligono is None:
-                    flash('Polígono no encontrado', 'error')
-                    return redirect(url_for('validacion_poligonos', tab='lista'))
-                
+                    flash("Polígono no encontrado", "error")
+                    return redirect(url_for("validacion_poligonos", tab="lista"))
+
                 # Preparar coordenadas para el mapa
                 try:
-                    coords_para_mapa = parsear_coordenadas(
-                        ordenar_coordenadas(poligono.coordenadas_corregidas)
-                    ) if poligono.coordenadas_corregidas else []
+                    coords_para_mapa = (
+                        parsear_coordenadas(
+                            ordenar_coordenadas(poligono.coordenadas_corregidas)
+                        )
+                        if poligono.coordenadas_corregidas
+                        else []
+                    )
                 except Exception as e:
                     app.logger.error(f"Error al procesar coordenadas para el mapa: {e}")
                     coords_para_mapa = []
-                
+
                 # Detectar ubicación automáticamente si el estado y municipio están vacíos
                 ubicacion_auto = False
                 estado_detectado = poligono.estado
                 municipio_detectado = poligono.municipio
-                
-                if (not estado_detectado or not municipio_detectado) and poligono.coordenadas_corregidas:
+
+                if (
+                    not estado_detectado or not municipio_detectado
+                ) and poligono.coordenadas_corregidas:
                     app.logger.debug("Detectando ubicación automáticamente...")
-                    ubicacion = obtener_ubicacion_desde_poligono(poligono.coordenadas_corregidas)
+                    ubicacion = obtener_ubicacion_desde_poligono(
+                        poligono.coordenadas_corregidas
+                    )
                     if ubicacion:
                         if not estado_detectado:
-                            estado_detectado = ubicacion['estado']
+                            estado_detectado = ubicacion["estado"]
                             ubicacion_auto = True
                         if not municipio_detectado:
-                            municipio_detectado = ubicacion['municipio']
+                            municipio_detectado = ubicacion["municipio"]
                             ubicacion_auto = True
-                        app.logger.debug(f"Ubicación detectada: {municipio_detectado}, {estado_detectado}")
-                
+                        app.logger.debug(
+                            f"Ubicación detectada: {municipio_detectado}, {estado_detectado}"
+                        )
+
                 # Crear diccionario con datos del polígono para la plantilla
                 poligono_data = {
-                    'ID_POLIGONO': poligono.id_poligono,
-                    'IF': poligono.if_val,
-                    'ID_CREDITO': poligono.id_credito,
-                    'ID_PERSONA': poligono.id_persona,
-                    'SUPERFICIE': poligono.superficie,
-                    'ESTADO': corregir_codificacion(estado_detectado) or '',
-                    'MUNICIPIO': corregir_codificacion(municipio_detectado) or '',
-                    'COORDENADAS': poligono.coordenadas,
-                    'COORDENADAS_DECIMALES_CORREGIDAS': poligono.coordenadas_corregidas,  # Cambiado para coincidir con el template
-                    'AREA_DIGITALIZADA': poligono.area_digitalizada,
-                    'ESTATUS': poligono.estatus,
-                    'COMENTARIOS': poligono.comentarios,
-                    'DESCRIPCION': poligono.descripcion,
-                    'db_id': poligono.id,
-                    'UBICACION_AUTO': ubicacion_auto  # Bandera para mostrar que se detectó automáticamente
+                    "ID_POLIGONO": poligono.id_poligono,
+                    "IF": poligono.if_val,
+                    "ID_CREDITO": poligono.id_credito,
+                    "ID_PERSONA": poligono.id_persona,
+                    "SUPERFICIE": poligono.superficie,
+                    "ESTADO": corregir_codificacion(estado_detectado) or "",
+                    "MUNICIPIO": corregir_codificacion(municipio_detectado) or "",
+                    "COORDENADAS": poligono.coordenadas,
+                    "COORDENADAS_DECIMALES_CORREGIDAS": poligono.coordenadas_corregidas,  # Cambiado para coincidir con el template
+                    "AREA_DIGITALIZADA": poligono.area_digitalizada,
+                    "ESTATUS": poligono.estatus,
+                    "COMENTARIOS": poligono.comentarios,
+                    "DESCRIPCION": poligono.descripcion,
+                    "db_id": poligono.id,
+                    "UBICACION_AUTO": ubicacion_auto,  # Bandera para mostrar que se detectó automáticamente
                 }
-                
-                return render_template('validacion_poligonos.html', 
-                                      tab=tab, 
-                                      db_id=db_id,
-                                      poligono_data=poligono_data, 
-                                      coords_para_mapa=coords_para_mapa)
+
+                return render_template(
+                    "validacion_poligonos.html",
+                    tab=tab,
+                    db_id=db_id,
+                    poligono_data=poligono_data,
+                    coords_para_mapa=coords_para_mapa,
+                    filtro_estatus=request.args.get("filtro_estatus", "pendiente"),
+                )
             except ValueError:
-                flash('ID de polígono inválido', 'error')
-                return redirect(url_for('validacion_poligonos', tab='lista'))
+                flash("ID de polígono inválido", "error")
+                return redirect(url_for("validacion_poligonos", tab="lista"))
             except Exception as e:
                 app.logger.error(f"Error al cargar polígono para edición: {e}")
-                flash('Error al cargar el polígono para edición', 'error')
-                return redirect(url_for('validacion_poligonos', tab='lista'))
+                flash("Error al cargar el polígono para edición", "error")
+                return redirect(url_for("validacion_poligonos", tab="lista"))
         else:
             # Si no hay db_id, redirigir a la lista
-            flash('No se especificó qué polígono editar', 'warning')
-            return redirect(url_for('validacion_poligonos', tab='lista'))
-    
-    return render_template('validacion_rapida_shp.html', 
-                          tab=tab, 
-                          shp_data=shp_data,
-                          shp_columns=shp_columns,
-                          shp_archivos=shp_archivos)
+            flash("No se especificó qué polígono editar", "warning")
+            return redirect(url_for("validacion_poligonos", tab="lista"))
 
-@app.route('/cargar_shp_zip', methods=['POST'])
+    return render_template(
+        "validacion_rapida_shp.html",
+        tab=tab,
+        shp_data=shp_data,
+        shp_columns=shp_columns,
+        shp_archivos=shp_archivos,
+    )
+
+
+@app.route("/cargar_shp_zip", methods=["POST"])
 @login_required
 def cargar_shp_zip():
     """
     Handle the upload of a ZIP file containing SHP files.
     Extract the ZIP, process each SHP, and store in database.
     """
-    if 'archivo' not in request.files:
-        flash('No se seleccionó ningún archivo')
-        return redirect(url_for('validacion_rapida_shp', tab='cargar'))
-    
-    archivo = request.files['archivo']
-    
-    if archivo.filename == '':
-        flash('No se seleccionó ningún archivo')
-        return redirect(url_for('validacion_rapida_shp', tab='cargar'))
-    
-    if not archivo.filename.endswith('.zip'):
-        flash('El archivo debe ser un archivo ZIP')
-        return redirect(url_for('validacion_rapida_shp', tab='cargar'))
-    
+    if "archivo" not in request.files:
+        flash("No se seleccionó ningún archivo")
+        return redirect(url_for("validacion_rapida_shp", tab="cargar"))
+
+    archivo = request.files["archivo"]
+
+    if archivo.filename == "":
+        flash("No se seleccionó ningún archivo")
+        return redirect(url_for("validacion_rapida_shp", tab="cargar"))
+
+    if not archivo.filename.endswith(".zip"):
+        flash("El archivo debe ser un archivo ZIP")
+        return redirect(url_for("validacion_rapida_shp", tab="cargar"))
+
     # Create a temporary directory to extract the ZIP
     with tempfile.TemporaryDirectory() as temp_dir:
         zip_path = os.path.join(temp_dir, secure_filename(archivo.filename))
         archivo.save(zip_path)
-        
+
         # Extract the ZIP file
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+        with zipfile.ZipFile(zip_path, "r") as zip_ref:
             zip_ref.extractall(temp_dir)
-        
+
         # Función recursiva para extraer ZIPs anidados
         def extract_nested_zips(directory):
             # Buscar todos los archivos ZIP en el directorio actual
             zip_files = []
             for root, dirs, files in os.walk(directory):
                 for file in files:
-                    if file.endswith('.zip'):
+                    if file.endswith(".zip"):
                         zip_files.append(os.path.join(root, file))
-            
+
             # Si no hay archivos ZIP, terminar la recursión
             if not zip_files:
                 return
-            
+
             # Mantener un registro de los ZIPs ya procesados para evitar duplicados
             processed_zips = set()
-            
+
             # Extraer cada archivo ZIP encontrado
             for zip_file in zip_files:
                 try:
                     # Evitar procesar el mismo archivo ZIP más de una vez
                     if zip_file in processed_zips:
                         continue
-                    
+
                     processed_zips.add(zip_file)
-                    
+
                     # Crear un subdirectorio para la extracción basado en el nombre del ZIP
-                    extract_dir = os.path.join(os.path.dirname(zip_file), 
-                                              os.path.basename(zip_file).replace('.zip', ''))
+                    extract_dir = os.path.join(
+                        os.path.dirname(zip_file),
+                        os.path.basename(zip_file).replace(".zip", ""),
+                    )
                     os.makedirs(extract_dir, exist_ok=True)
-                    
+
                     # Extraer el ZIP
-                    with zipfile.ZipFile(zip_file, 'r') as zip_ref:
+                    with zipfile.ZipFile(zip_file, "r") as zip_ref:
                         zip_ref.extractall(extract_dir)
-                    
+
                     # Eliminar el ZIP original después de extraerlo para evitar duplicados
                     try:
                         os.remove(zip_file)
                     except Exception as remove_error:
-                        app.logger.error(f"Error removing zip after extraction: {remove_error}")
+                        app.logger.error(
+                            f"Error removing zip after extraction: {remove_error}"
+                        )
                 except Exception as e:
                     app.logger.error(f"Error extracting nested ZIP {zip_file}: {e}")
-            
+
             # Buscar nuevos archivos ZIP después de la extracción
             new_zip_files = []
             for root, dirs, files in os.walk(directory):
                 for file in files:
-                    if file.endswith('.zip'):
+                    if file.endswith(".zip"):
                         new_zip_files.append(os.path.join(root, file))
-            
+
             # Si hay nuevos archivos ZIP, extraerlos recursivamente
             if new_zip_files:
                 extract_nested_zips(directory)
-        
+
         # Extraer recursivamente todos los ZIPs anidados
         extract_nested_zips(temp_dir)
-        
+
         # Find all SHP files in the extracted directory
         shp_files = []
         for root, dirs, files in os.walk(temp_dir):
             for file in files:
-                if file.endswith('.shp'):
+                if file.endswith(".shp"):
                     shp_files.append(os.path.join(root, file))
-        
+
         if not shp_files:
-            flash('No se encontraron archivos SHP en el ZIP')
-            return redirect(url_for('validacion_rapida_shp', tab='cargar'))
-        
+            flash("No se encontraron archivos SHP en el ZIP")
+            return redirect(url_for("validacion_rapida_shp", tab="cargar"))
+
         # Conjunto para rastrear geometrías ya procesadas y evitar duplicados
         processed_geometries = set()
-        
+
         # Process each SHP file
         registros_procesados = 0
-        
+
         conn = get_db_connection()
-        
+
         for shp_file in shp_files:
             try:
                 # Read the shapefile using GeoPandas
                 gdf = gpd.read_file(shp_file)
-                
+
                 # Get the shapefile name without path and extension
-                shp_origen = os.path.basename(shp_file).replace('.shp', '')
-                
+                shp_origen = os.path.basename(shp_file).replace(".shp", "")
+
                 # Process each record in the shapefile
                 for idx, row in gdf.iterrows():
                     # Convert geometry to WKT (Well-Known Text) for storage
                     geometry_wkt = row.geometry.wkt
-                    
+
                     # Calculate area in hectares for polygons
                     area = None
-                    if row.geometry.geom_type in ['Polygon', 'MultiPolygon']:
+                    if row.geometry.geom_type in ["Polygon", "MultiPolygon"]:
                         # Convert to GeoSeries with correct CRS for area calculation
                         gs = gpd.GeoSeries([row.geometry], crs=gdf.crs)
                         # Convert to UTM for accurate area calculation
-                        gs_utm = gs.to_crs('+proj=utm +zone=14 +datum=WGS84 +units=m +no_defs')
+                        gs_utm = gs.to_crs(
+                            "+proj=utm +zone=14 +datum=WGS84 +units=m +no_defs"
+                        )
                         # Calculate area in hectares
                         area = gs_utm.area.values[0] / 10000  # m² to hectares
-                    
+
                     # Store all other attributes as JSON
                     atributos = {}
                     for col in gdf.columns:
-                        if col != 'geometry':
+                        if col != "geometry":
                             # Convert non-JSON serializable types
-                            if isinstance(row[col], (int, float, str, bool)) or row[col] is None:
+                            if (
+                                isinstance(row[col], (int, float, str, bool))
+                                or row[col] is None
+                            ):
                                 atributos[col] = row[col]
                             else:
                                 atributos[col] = str(row[col])
-                    
+
                     # Find ID field if available
                     id_campo = None
-                    for key in ['ID', 'FID', 'OBJECTID', 'id', 'fid', 'objectid']:
+                    for key in ["ID", "FID", "OBJECTID", "id", "fid", "objectid"]:
                         if key in atributos:
                             id_campo = atributos[key]
                             break
-                    
+
                     # Find municipality and state if available
                     municipio = None
                     estado = None
-                    for key in ['MUNICIPIO', 'municipio', 'MUN', 'mun']:
+                    for key in ["MUNICIPIO", "municipio", "MUN", "mun"]:
                         if key in atributos:
                             municipio = atributos[key]
                             break
-                    
-                    for key in ['ESTADO', 'estado', 'EDO', 'edo']:
+
+                    for key in ["ESTADO", "estado", "EDO", "edo"]:
                         if key in atributos:
                             estado = atributos[key]
                             break
-                    
+
                     # Crear una firma única para detectar duplicados (WKT + área + estado)
                     geometry_signature = f"{geometry_wkt}|{area}|{estado}"
-                    
+
                     # Verificar si esta geometría ya fue procesada
                     if geometry_signature in processed_geometries:
-                        app.logger.debug(f"Geometría duplicada detectada, saltando: {geometry_signature[:50]}...")
+                        app.logger.debug(
+                            f"Geometría duplicada detectada, saltando: {geometry_signature[:50]}..."
+                        )
                         continue
-                    
+
                     # Marcar esta geometría como procesada
                     processed_geometries.add(geometry_signature)
-                    
+
                     # Insert into database
-                    conn.execute('''
+                    conn.execute(
+                        """
                         INSERT INTO shp_records 
                         (shp_origen, geometry_wkt, area, id_campo, atributos, municipio, estado, comentario, estatus)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (
-                        shp_origen,
-                        geometry_wkt,
-                        area,
-                        id_campo,
-                        json.dumps(atributos),
-                        municipio,
-                        estado,
-                        '',  # Default empty comment
-                        'no_aprobado'  # Default status is no_aprobado (previously 6)
-                    ))
-                    
+                    """,
+                        (
+                            shp_origen,
+                            geometry_wkt,
+                            area,
+                            id_campo,
+                            json.dumps(atributos),
+                            municipio,
+                            estado,
+                            "",  # Default empty comment
+                            "no_aprobado",  # Default status is no_aprobado (previously 6)
+                        ),
+                    )
+
                     registros_procesados += 1
-            
+
             except Exception as e:
-                flash(f'Error al procesar el archivo {os.path.basename(shp_file)}: {str(e)}')
+                flash(
+                    f"Error al procesar el archivo {os.path.basename(shp_file)}: {str(e)}"
+                )
                 app.logger.error(f"Error processing SHP: {e}")
                 conn.rollback()
                 continue
-        
+
         conn.commit()
         conn.close()
-        
-        if registros_procesados > 0:
-            flash(f'Archivo procesado correctamente. {registros_procesados} registros importados.')
-            return redirect(url_for('validacion_rapida_shp', tab='lista'))
-        else:
-            flash('No se pudo procesar ningún registro desde los archivos SHP.')
-            return redirect(url_for('validacion_rapida_shp', tab='cargar'))
 
-@app.route('/actualizar_shp_record', methods=['POST'])
+        if registros_procesados > 0:
+            flash(
+                f"Archivo procesado correctamente. {registros_procesados} registros importados."
+            )
+            return redirect(url_for("validacion_rapida_shp", tab="lista"))
+        else:
+            flash("No se pudo procesar ningún registro desde los archivos SHP.")
+            return redirect(url_for("validacion_rapida_shp", tab="cargar"))
+
+
+@app.route("/actualizar_shp_record", methods=["POST"])
 @login_required
 def actualizar_shp_record():
     """
     Update an SHP record with new information (comments, status, and geometry if provided).
     """
-    shp_id = request.form.get('shp_id')
-    comentario = request.form.get('comentario', '')
-    estatus = request.form.get('estatus', '6')
-    
+    shp_id = request.form.get("shp_id")
+    comentario = request.form.get("comentario", "")
+    estatus = request.form.get("estatus", "6")
+
     # Optional fields that might be editable
-    municipio = request.form.get('municipio')
-    estado = request.form.get('estado')
-    
+    municipio = request.form.get("municipio")
+    estado = request.form.get("estado")
+
     # Get the area and wkt_geometry from the form
-    area = request.form.get('area')
-    wkt_geometry = request.form.get('wkt_geometry')
-    
+    area = request.form.get("area")
+    wkt_geometry = request.form.get("wkt_geometry")
+
     # Get new coordinates if provided
-    nuevas_coordenadas = request.form.get('nuevas_coordenadas')
-    
+    nuevas_coordenadas = request.form.get("nuevas_coordenadas")
+
     if not shp_id:
-        flash('ID de registro no válido')
-        return redirect(url_for('validacion_rapida_shp', tab='lista'))
-    
+        flash("ID de registro no válido")
+        return redirect(url_for("validacion_rapida_shp", tab="lista"))
+
     conn = get_db_connection()
-    
+
     # First, get the current record to retain any values we're not updating
-    current_record = conn.execute('SELECT * FROM shp_records WHERE shp_id = ?', (shp_id,)).fetchone()
-    
+    current_record = conn.execute(
+        "SELECT * FROM shp_records WHERE shp_id = ?", (shp_id,)
+    ).fetchone()
+
     if not current_record:
         conn.close()
-        flash('Registro no encontrado')
-        return redirect(url_for('validacion_rapida_shp', tab='lista'))
-    
+        flash("Registro no encontrado")
+        return redirect(url_for("validacion_rapida_shp", tab="lista"))
+
     # Keep original values if not provided
     if municipio is None:
-        municipio = current_record['municipio']
+        municipio = current_record["municipio"]
     if estado is None:
-        estado = current_record['estado']
-    
+        estado = current_record["estado"]
+
     # Update geometry and area if provided
     if wkt_geometry:
         try:
             # If we have a new geometry, update the record with it and the new area
-            conn.execute('''
+            conn.execute(
+                """
                 UPDATE shp_records
                 SET comentario = ?, estatus = ?, municipio = ?, estado = ?, 
                     geometry_wkt = ?, area = ?, nuevas_coordenadas = ?
                 WHERE shp_id = ?
-            ''', (comentario, estatus, municipio, estado, wkt_geometry, area, nuevas_coordenadas, shp_id))
+            """,
+                (
+                    comentario,
+                    estatus,
+                    municipio,
+                    estado,
+                    wkt_geometry,
+                    area,
+                    nuevas_coordenadas,
+                    shp_id,
+                ),
+            )
         except Exception as e:
             conn.close()
-            flash(f'Error al actualizar la geometría: {str(e)}')
-            return redirect(url_for('validacion_rapida_shp', tab='editar', shp_id=shp_id))
+            flash(f"Error al actualizar la geometría: {str(e)}")
+            return redirect(
+                url_for("validacion_rapida_shp", tab="editar", shp_id=shp_id)
+            )
     else:
         # Update just the attributes without changing geometry
-        conn.execute('''
+        conn.execute(
+            """
             UPDATE shp_records
             SET comentario = ?, estatus = ?, municipio = ?, estado = ?, nuevas_coordenadas = ?
             WHERE shp_id = ?
-        ''', (comentario, estatus, municipio, estado, nuevas_coordenadas, shp_id))
-    
+        """,
+            (comentario, estatus, municipio, estado, nuevas_coordenadas, shp_id),
+        )
+
     conn.commit()
     conn.close()
-    
-    flash('Registro actualizado correctamente')
-    return redirect(url_for('validacion_rapida_shp', tab='lista'))
 
-@app.route('/eliminar_shp_record', methods=['POST'])
+    flash("Registro actualizado correctamente")
+    return redirect(url_for("validacion_rapida_shp", tab="lista"))
+
+
+@app.route("/eliminar_shp_record", methods=["POST"])
 @login_required
 def eliminar_shp_record():
     """
     Delete an SHP record from the database.
     """
-    shp_id = request.form.get('shp_id')
-    
+    shp_id = request.form.get("shp_id")
+
     if not shp_id:
-        flash('ID de registro no válido')
-        return redirect(url_for('validacion_rapida_shp', tab='lista'))
-    
+        flash("ID de registro no válido")
+        return redirect(url_for("validacion_rapida_shp", tab="lista"))
+
     conn = get_db_connection()
-    conn.execute('DELETE FROM shp_records WHERE shp_id = ?', (shp_id,))
+    conn.execute("DELETE FROM shp_records WHERE shp_id = ?", (shp_id,))
     conn.commit()
     conn.close()
-    
-    flash('Registro eliminado correctamente')
-    return redirect(url_for('validacion_rapida_shp', tab='lista'))
 
-@app.route('/exportar_shp_lista')
+    flash("Registro eliminado correctamente")
+    return redirect(url_for("validacion_rapida_shp", tab="lista"))
+
+
+@app.route("/exportar_shp_lista")
 @login_required
 def exportar_shp_lista():
     """
     Export the SHP records list to Excel.
     """
     # Get filter parameter if available
-    shp_filter = request.args.get('shp_filter')
-    
+    shp_filter = request.args.get("shp_filter")
+
     conn = get_db_connection()
-    
+
     if shp_filter:
         # Filter by SHP file name
-        records = conn.execute('SELECT * FROM shp_records WHERE shp_origen = ?', 
-                              (shp_filter,)).fetchall()
+        records = conn.execute(
+            "SELECT * FROM shp_records WHERE shp_origen = ?", (shp_filter,)
+        ).fetchall()
     else:
         # Get all records
-        records = conn.execute('SELECT * FROM shp_records').fetchall()
-    
+        records = conn.execute("SELECT * FROM shp_records").fetchall()
+
     conn.close()
-    
+
     if not records:
-        flash('No hay registros para exportar')
-        return redirect(url_for('validacion_rapida_shp', tab='lista'))
-    
+        flash("No hay registros para exportar")
+        return redirect(url_for("validacion_rapida_shp", tab="lista"))
+
     # Create a DataFrame with the records
     data = []
     for record in records:
         # Skip geometry WKT to keep the excel clean
-        row_data = {k: v for k, v in dict(record).items() if k != 'geometry_wkt'}
-        
+        row_data = {k: v for k, v in dict(record).items() if k != "geometry_wkt"}
+
         # Parse the JSON attributes
-        if 'atributos' in row_data and row_data['atributos']:
+        if "atributos" in row_data and row_data["atributos"]:
             try:
-                atributos = json.loads(row_data['atributos'])
+                atributos = json.loads(row_data["atributos"])
                 for key, value in atributos.items():
-                    row_data[f'attr_{key}'] = value
+                    row_data[f"attr_{key}"] = value
             except:
                 pass
-        
+
         data.append(row_data)
-    
+
     df = pd.DataFrame(data)
-    
+
     # Create a temporary file for the Excel
-    with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as temp_file:
+    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as temp_file:
         excel_path = temp_file.name
         df.to_excel(excel_path, index=False)
-    
-    # Return the file as attachment
-    return send_file(
-        excel_path,
-        as_attachment=True,
-        download_name='registros_shp.xlsx'
-    )
 
-@app.route('/generar_shp_archivos')
+    # Return the file as attachment
+    return send_file(excel_path, as_attachment=True, download_name="registros_shp.xlsx")
+
+
+@app.route("/generar_shp_archivos")
 @login_required
 def generar_shp_archivos():
     """
     Generate Excel file with all SHP records data
     """
-    incluir_comentarios = request.args.get('incluir_comentarios', 'true') == 'true'
-    filtro_estatus = request.args.get('filtro_estatus', 'todos')
-    ids = request.args.get('ids', '')
-    
+    incluir_comentarios = request.args.get("incluir_comentarios", "true") == "true"
+    filtro_estatus = request.args.get("filtro_estatus", "todos")
+    ids = request.args.get("ids", "")
+
     if ids:
-        id_list = ids.split(',')
+        id_list = ids.split(",")
     else:
-        flash('No se seleccionaron registros')
-        return redirect(url_for('validacion_rapida_shp', tab='generar'))
-    
+        flash("No se seleccionaron registros")
+        return redirect(url_for("validacion_rapida_shp", tab="generar"))
+
     # Query the database for selected records
     conn = get_db_connection()
-    
-    placeholders = ','.join(['?'] * len(id_list))
-    
-    if filtro_estatus != 'todos':
+
+    placeholders = ",".join(["?"] * len(id_list))
+
+    if filtro_estatus != "todos":
         # Handle both old numeric and new string status values
         status_values = []
-        if filtro_estatus == 'aprobado':
-            status_values = ['7', 7, 'aprobado']  # Include both old and new values
-        elif filtro_estatus == 'no_aprobado':
-            status_values = ['6', 6, 'no_aprobado']  # Include both old and new values
+        if filtro_estatus == "aprobado":
+            status_values = ["7", 7, "aprobado"]  # Include both old and new values
+        elif filtro_estatus == "no_aprobado":
+            status_values = ["6", 6, "no_aprobado"]  # Include both old and new values
         else:
             status_values = [filtro_estatus]  # Use the value as is
-            
+
         # Create placeholders for status values
-        status_placeholders = ','.join(['?'] * len(status_values))
-        
-        query = f'''
+        status_placeholders = ",".join(["?"] * len(status_values))
+
+        query = f"""
             SELECT * FROM shp_records 
             WHERE shp_id IN ({placeholders}) AND estatus IN ({status_placeholders})
-        '''
+        """
         # Combine ID list and status values for the query parameters
         params = id_list + status_values
         records = conn.execute(query, params).fetchall()
     else:
-        query = f'''
+        query = f"""
             SELECT * FROM shp_records 
             WHERE shp_id IN ({placeholders})
-        '''
+        """
         records = conn.execute(query, id_list).fetchall()
-    
+
     conn.close()
-    
+
     if not records:
-        flash('No se encontraron registros con los criterios seleccionados')
-        return redirect(url_for('validacion_rapida_shp', tab='generar'))
-    
+        flash("No se encontraron registros con los criterios seleccionados")
+        return redirect(url_for("validacion_rapida_shp", tab="generar"))
+
     # Create Excel with all records
     data = []
-    
+
     for record in records:
         # Skip geometry_wkt field to keep the Excel clean
-        row_data = {k: v for k, v in dict(record).items() if k != 'geometry_wkt'}
-        
+        row_data = {k: v for k, v in dict(record).items() if k != "geometry_wkt"}
+
         # Parse the JSON attributes and add them as individual columns
-        if 'atributos' in row_data and row_data['atributos']:
+        if "atributos" in row_data and row_data["atributos"]:
             try:
-                atributos = json.loads(row_data['atributos'])
+                atributos = json.loads(row_data["atributos"])
                 for key, value in atributos.items():
                     # Add attributes without prefix
                     row_data[key] = value
-                
+
                 # Remove the original JSON string to avoid duplication
-                del row_data['atributos']
+                del row_data["atributos"]
             except Exception as e:
                 app.logger.error(f"Error parsing JSON attributes: {e}")
                 # Keep the original column if parsing fails
-        
+
         data.append(row_data)
-    
+
     df = pd.DataFrame(data)
-    
+
     # Create a temporary file for the Excel
-    with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as temp_file:
+    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as temp_file:
         excel_path = temp_file.name
         df.to_excel(excel_path, index=False)
-    
-    # Return the file as attachment
-    return send_file(
-        excel_path,
-        as_attachment=True,
-        download_name='registros_shp.xlsx'
-    )
 
-@app.route('/generar_shp_zip_completo')
+    # Return the file as attachment
+    return send_file(excel_path, as_attachment=True, download_name="registros_shp.xlsx")
+
+
+@app.route("/generar_shp_zip_completo")
 @login_required
 def generar_shp_zip_completo():
     """
@@ -4269,86 +5148,89 @@ def generar_shp_zip_completo():
     """
     # Query all records from database
     conn = get_db_connection()
-    records = conn.execute('SELECT * FROM shp_records').fetchall()
+    records = conn.execute("SELECT * FROM shp_records").fetchall()
     conn.close()
-    
+
     if not records:
-        flash('No hay registros para procesar')
-        return redirect(url_for('validacion_rapida_shp', tab='generar'))
-    
+        flash("No hay registros para procesar")
+        return redirect(url_for("validacion_rapida_shp", tab="generar"))
+
     # Create Excel with all records
     data = []
-    
+
     # Track all possible JSON attributes to ensure all records have all columns
     all_attributes = set()
-    
+
     # First pass - extract all possible attribute names from all records
     for record in records:
-        if record['atributos']:
+        if record["atributos"]:
             try:
-                atributos = json.loads(record['atributos'])
+                atributos = json.loads(record["atributos"])
                 for key in atributos.keys():
                     all_attributes.add(key)
             except Exception as e:
                 app.logger.error(f"Error parsing JSON attributes: {e}")
-    
+
     # Second pass - create complete data rows with all attributes
     for record in records:
         # Skip geometry_wkt field to keep the Excel clean
-        row_data = {k: v for k, v in dict(record).items() if k != 'geometry_wkt'}
-        
+        row_data = {k: v for k, v in dict(record).items() if k != "geometry_wkt"}
+
         # Parse the JSON attributes and add them as individual columns
         attr_values = {}
-        if 'atributos' in row_data and row_data['atributos']:
+        if "atributos" in row_data and row_data["atributos"]:
             try:
-                atributos = json.loads(row_data['atributos'])
+                atributos = json.loads(row_data["atributos"])
                 # Initialize all possible attributes as None
                 for attr in all_attributes:
                     attr_values[attr] = None
-                
+
                 # Set values for attributes present in this record
                 for key, value in atributos.items():
                     attr_values[key] = value
-                
+
                 # Remove the original JSON string to avoid duplication
-                del row_data['atributos']
+                del row_data["atributos"]
             except Exception as e:
-                app.logger.error(f"Error parsing JSON attributes for record {record['shp_id']}: {e}")
-        
+                app.logger.error(
+                    f"Error parsing JSON attributes for record {record['shp_id']}: {e}"
+                )
+
         # Combine base record data with attribute data
         row_data.update(attr_values)
         data.append(row_data)
-    
+
     df = pd.DataFrame(data)
-    
+
     # Create a temporary file for the Excel
-    with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as temp_file:
+    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as temp_file:
         excel_path = temp_file.name
         df.to_excel(excel_path, index=False)
-    
+
     # Return the file as attachment
     return send_file(
-        excel_path,
-        as_attachment=True,
-        download_name='todos_registros_shp.xlsx'
+        excel_path, as_attachment=True, download_name="todos_registros_shp.xlsx"
     )
+
 
 # Add a database initialization function to create the SHP records table if it doesn't exist
 def get_db_connection():
     """Create a connection to the SQLite database for SHP records."""
     import sqlite3
-    conn = sqlite3.connect('shp_records.db')
+
+    conn = sqlite3.connect("shp_records.db")
     conn.row_factory = sqlite3.Row
     return conn
+
 
 def init_shp_db():
     """
     Initialize the database table for SHP records if it doesn't exist.
     """
     conn = get_db_connection()
-    
+
     # Create the table if it doesn't exist
-    conn.execute('''
+    conn.execute("""
     CREATE TABLE IF NOT EXISTS shp_records (
         shp_id INTEGER PRIMARY KEY AUTOINCREMENT,
         shp_origen TEXT NOT NULL,
@@ -4362,13 +5244,15 @@ def init_shp_db():
         estatus TEXT,
         nuevas_coordenadas TEXT
     )
-    ''')
-    
+    """)
+
     conn.commit()
     conn.close()
 
+
 # Call the initialization function when the app starts
 init_shp_db()
+
 
 def init_validacion_15k_db():
     """
@@ -4377,7 +5261,7 @@ def init_validacion_15k_db():
     """
     conn = get_db_connection()
 
-    conn.execute('''
+    conn.execute("""
     CREATE TABLE IF NOT EXISTS validacion_15k (
         val_id INTEGER PRIMARY KEY AUTOINCREMENT,
         idx INTEGER NOT NULL UNIQUE,
@@ -4396,33 +5280,35 @@ def init_validacion_15k_db():
         validado_por TEXT DEFAULT 'usuario',
         superficie_calculada REAL
     )
-    ''')
+    """)
 
     existing_columns = {
-        row['name']
+        row["name"]
         for row in conn.execute("PRAGMA table_info(validacion_15k)").fetchall()
     }
     required_columns = {
-        'estatus_chapingo': 'TEXT',
-        'id_poligono_unico': 'TEXT',
-        'superficie_chapingo': 'REAL',
-        'comentario_chapingo': 'TEXT',
-        'superficie_calculada': 'REAL',
+        "estatus_chapingo": "TEXT",
+        "id_poligono_unico": "TEXT",
+        "superficie_chapingo": "REAL",
+        "comentario_chapingo": "TEXT",
+        "superficie_calculada": "REAL",
     }
     for column_name, column_type in required_columns.items():
         if column_name not in existing_columns:
             conn.execute(
-                f'ALTER TABLE validacion_15k ADD COLUMN {column_name} {column_type}'
+                f"ALTER TABLE validacion_15k ADD COLUMN {column_name} {column_type}"
             )
 
     conn.commit()
     conn.close()
 
+
 # Call the initialization function when the app starts
 init_validacion_15k_db()
 
+
 # Filtro personalizado para convertir strings JSON a diccionarios
-@app.template_filter('ensure_dict')
+@app.template_filter("ensure_dict")
 def ensure_dict(value):
     """
     Asegura que el valor es un diccionario. Si es una cadena JSON, la parsea.
@@ -4439,16 +5325,18 @@ def ensure_dict(value):
     else:
         return {}
 
-@app.template_filter('clean_none')
+
+@app.template_filter("clean_none")
 def clean_none(value):
     """
     Limpiar valores None y convertirlos a strings vacíos
     """
-    if value is None or str(value).lower() == 'none':
-        return ''
+    if value is None or str(value).lower() == "none":
+        return ""
     return str(value)
 
-@app.route('/get-poligonos-actuales-traslapes/<int:polygon_id>')
+
+@app.route("/get-poligonos-actuales-traslapes/<int:polygon_id>")
 @login_required
 @limiter.exempt
 def get_poligonos_actuales_traslapes(polygon_id):
@@ -4456,28 +5344,30 @@ def get_poligonos_actuales_traslapes(polygon_id):
     try:
         from shapely.geometry import Polygon
         import json
-        
+
         # Buscar el polígono actual en la base de datos
         poligono_actual = Poligono.query.get(polygon_id)
         if poligono_actual is None:
-            return jsonify({'error': 'Polígono no encontrado'}), 404
-            
+            return jsonify({"error": "Polígono no encontrado"}), 404
+
         # Obtener coordenadas del polígono actual
         coordenadas_corregidas = poligono_actual.coordenadas_corregidas
         if not coordenadas_corregidas:
-            return jsonify({'error': 'El polígono no tiene coordenadas válidas'}), 400
-        
+            return jsonify({"error": "El polígono no tiene coordenadas válidas"}), 400
+
         # Convertir coordenadas del polígono actual a geometría
         def coordenadas_a_geometria(coord_str):
             """Convierte string de coordenadas a geometría Shapely"""
             try:
-                coords_list = coord_str.split(' | ')
+                coords_list = coord_str.split(" | ")
                 puntos = []
                 for coord in coords_list:
-                    if ',' in coord:
-                        lat, lon = coord.strip().split(',')
-                        puntos.append((float(lon.strip()), float(lat.strip())))  # Shapely usa (lon, lat)
-                
+                    if "," in coord:
+                        lat, lon = coord.strip().split(",")
+                        puntos.append(
+                            (float(lon.strip()), float(lat.strip()))
+                        )  # Shapely usa (lon, lat)
+
                 if len(puntos) >= 3:
                     return Polygon(puntos)
                 else:
@@ -4485,17 +5375,19 @@ def get_poligonos_actuales_traslapes(polygon_id):
             except Exception as e:
                 app.logger.error(f"Error al convertir coordenadas a geometría: {e}")
                 return None
-        
+
         def coordenadas_a_geojson_coords(coord_str):
             """Convierte string de coordenadas a coordenadas de GeoJSON"""
             try:
-                coords_list = coord_str.split(' | ')
+                coords_list = coord_str.split(" | ")
                 puntos = []
                 for coord in coords_list:
-                    if ',' in coord:
-                        lat, lon = coord.strip().split(',')
-                        puntos.append([float(lon.strip()), float(lat.strip())])  # GeoJSON usa [lon, lat]
-                
+                    if "," in coord:
+                        lat, lon = coord.strip().split(",")
+                        puntos.append(
+                            [float(lon.strip()), float(lat.strip())]
+                        )  # GeoJSON usa [lon, lat]
+
                 if len(puntos) >= 3:
                     # Cerrar el polígono si no está cerrado
                     if puntos[0] != puntos[-1]:
@@ -4506,27 +5398,35 @@ def get_poligonos_actuales_traslapes(polygon_id):
             except Exception as e:
                 app.logger.error(f"Error al convertir coordenadas a GeoJSON: {e}")
                 return None
-        
+
         geometria_actual = coordenadas_a_geometria(coordenadas_corregidas)
         if geometria_actual is None:
-            return jsonify({'error': 'No se pudo procesar la geometría del polígono actual'}), 400
-        
+            return jsonify(
+                {"error": "No se pudo procesar la geometría del polígono actual"}
+            ), 400
+
         # Obtener todos los demás polígonos de la base de datos
         otros_poligonos = Poligono.query.filter(
             Poligono.id != polygon_id,
-            db.or_(Poligono.estatus.is_(None), Poligono.estatus == '', Poligono.estatus == '7'),
+            db.or_(
+                Poligono.estatus.is_(None),
+                Poligono.estatus == "",
+                Poligono.estatus == "7",
+            ),
         ).all()
-        
+
         # Lista para almacenar polígonos que traslapan
         poligonos_traslapados = []
         features_geojson = []
-        
+
         # Verificar traslapes con cada polígono
         for otro_poligono in otros_poligonos:
             if not otro_poligono.coordenadas_corregidas:
                 continue
-                
-            otra_geometria = coordenadas_a_geometria(otro_poligono.coordenadas_corregidas)
+
+            otra_geometria = coordenadas_a_geometria(
+                otro_poligono.coordenadas_corregidas
+            )
             if otra_geometria is None:
                 continue
             # Skip invalid geometries (too small, too large, or degenerate)
@@ -4536,72 +5436,82 @@ def get_poligonos_actuales_traslapes(polygon_id):
                     continue
             # Skip geometries with excessive area (> ~1000 ha in degree units)
             # Approximate: 1 degree ≈ 111km, so 1000 ha ≈ 0.01 sq degrees at equator
-            if otra_geometria.area > 0.1:  # Very generous threshold to catch obvious errors
+            if (
+                otra_geometria.area > 0.1
+            ):  # Very generous threshold to catch obvious errors
                 continue
-            
+
             # Verificar si hay traslape
             try:
-                if geometria_actual.intersects(otra_geometria) and not geometria_actual.touches(otra_geometria):
+                if geometria_actual.intersects(
+                    otra_geometria
+                ) and not geometria_actual.touches(otra_geometria):
                     # Hay traslape (intersección pero no solo tocándose)
                     poligono_info = {
-                        'id': otro_poligono.id,
-                        'id_poligono': otro_poligono.id_poligono or f"DB_{otro_poligono.id}",
-                        'area': otro_poligono.area_digitalizada or 0,
-                        'estado': otro_poligono.estado or '',
-                        'municipio': otro_poligono.municipio or ''
+                        "id": otro_poligono.id,
+                        "id_poligono": otro_poligono.id_poligono
+                        or f"DB_{otro_poligono.id}",
+                        "area": otro_poligono.area_digitalizada or 0,
+                        "estado": otro_poligono.estado or "",
+                        "municipio": otro_poligono.municipio or "",
                     }
                     poligonos_traslapados.append(poligono_info)
-                    
+
                     # Crear feature GeoJSON para este polígono
-                    geojson_coords = coordenadas_a_geojson_coords(otro_poligono.coordenadas_corregidas)
+                    geojson_coords = coordenadas_a_geojson_coords(
+                        otro_poligono.coordenadas_corregidas
+                    )
                     if geojson_coords:
                         feature = {
                             "type": "Feature",
                             "properties": {
                                 "id": otro_poligono.id,
-                                "id_poligono": otro_poligono.id_poligono or f"DB_{otro_poligono.id}",
+                                "id_poligono": otro_poligono.id_poligono
+                                or f"DB_{otro_poligono.id}",
                                 "area": otro_poligono.area_digitalizada or 0,
-                                "estado": otro_poligono.estado or '',
-                                "municipio": otro_poligono.municipio or '',
-                                "tipo": "actual_traslapado"  # Identificador para aplicar estilo diferente
+                                "estado": otro_poligono.estado or "",
+                                "municipio": otro_poligono.municipio or "",
+                                "tipo": "actual_traslapado",  # Identificador para aplicar estilo diferente
                             },
                             "geometry": {
                                 "type": "Polygon",
-                                "coordinates": geojson_coords
-                            }
+                                "coordinates": geojson_coords,
+                            },
                         }
                         features_geojson.append(feature)
-                        
+
             except Exception as e:
-                app.logger.error(f"Error al verificar traslape con polígono {otro_poligono.id}: {e}")
+                app.logger.error(
+                    f"Error al verificar traslape con polígono {otro_poligono.id}: {e}"
+                )
                 continue
-        
+
         # Crear GeoJSON completo
-        geojson_data = {
-            "type": "FeatureCollection",
-            "features": features_geojson
-        }
-        
+        geojson_data = {"type": "FeatureCollection", "features": features_geojson}
+
         # Preparar respuesta
         respuesta = {
-            'poligonos_traslapados': poligonos_traslapados,
-            'total': len(poligonos_traslapados),
-            'geojson': geojson_data
+            "poligonos_traslapados": poligonos_traslapados,
+            "total": len(poligonos_traslapados),
+            "geojson": geojson_data,
         }
-        
-        app.logger.debug(f"Polígonos actuales traslapados encontrados: {len(poligonos_traslapados)}")
+
+        app.logger.debug(
+            f"Polígonos actuales traslapados encontrados: {len(poligonos_traslapados)}"
+        )
         return jsonify(respuesta)
-        
+
     except Exception as e:
         app.logger.error(f"Error al detectar traslapes entre polígonos actuales: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"error": str(e)}), 500
+
 
 def fix_encoding(val):
     """Fix latin-1 artifacts in strings (e.g. 'MichoacÃ¡n' -> 'Michoacán')."""
     if not isinstance(val, str):
         return val
     try:
-        return val.encode('latin-1').decode('utf-8')
+        return val.encode("latin-1").decode("utf-8")
     except (UnicodeDecodeError, UnicodeEncodeError):
         return val
 
@@ -4609,168 +5519,193 @@ def fix_encoding(val):
 def enrich_with_location(gdf):
     """Agrega columnas ESTADO y MUNICIPIO al GeoDataFrame usando spatial join con municipios de México."""
     if shp_cache.municipios is None:
-        gdf['ESTADO'] = None
-        gdf['MUNICIPIO'] = None
+        gdf["ESTADO"] = None
+        gdf["MUNICIPIO"] = None
         return gdf
     # Calcular centroide de cada polígono para el join
     gdf_copy = gdf.copy()
-    gdf_copy['_centroid'] = gdf_copy.geometry.centroid
+    gdf_copy["_centroid"] = gdf_copy.geometry.centroid
     # Crear GeoDataFrame temporal con centroides como geometría
-    centroids_gdf = gpd.GeoDataFrame(gdf_copy, geometry='_centroid', crs=gdf.crs)
+    centroids_gdf = gpd.GeoDataFrame(gdf_copy, geometry="_centroid", crs=gdf.crs)
     # Spatial join con municipios
-    joined = gpd.sjoin(centroids_gdf, shp_cache.municipios[['NOM_ENT', 'NOMGEO', 'geometry']], how='left', predicate='within')
+    joined = gpd.sjoin(
+        centroids_gdf,
+        shp_cache.municipios[["NOM_ENT", "NOMGEO", "geometry"]],
+        how="left",
+        predicate="within",
+    )
     # Drop duplicates in case a centroid falls on a boundary between two municipalities
-    joined = joined[~joined.index.duplicated(keep='first')]
+    joined = joined[~joined.index.duplicated(keep="first")]
     # Copiar resultados al gdf original
-    gdf['ESTADO'] = joined['NOM_ENT'].values
-    gdf['MUNICIPIO'] = joined['NOMGEO'].values
+    gdf["ESTADO"] = joined["NOM_ENT"].values
+    gdf["MUNICIPIO"] = joined["NOMGEO"].values
     # Limpiar encoding issues (latin-1 artifacts)
-    for col in ['ESTADO', 'MUNICIPIO']:
+    for col in ["ESTADO", "MUNICIPIO"]:
         gdf[col] = gdf[col].apply(fix_encoding)
     return gdf
 
 
-@app.route('/mapa-15k')
+@app.route("/mapa-15k")
 @login_required
 def mapa_15k():
-    return render_template('mapa_15k.html')
+    return render_template("mapa_15k.html")
 
 
-@app.route('/validacion-15k')
+@app.route("/validacion-15k")
 @login_required
 def validacion_15k():
-    return render_template('validacion_15k.html')
+    return render_template("validacion_15k.html")
 
 
-@app.route('/api/mapa-15k/validacion')
+@app.route("/api/mapa-15k/validacion")
 @login_required
 @limiter.exempt
 def api_mapa_15k_validacion():
     try:
-        gdf = gpd.read_file('data/VALIDACION_UNIFICADO.shp')
+        gdf = gpd.read_file("data/VALIDACION_UNIFICADO.shp")
         if gdf.crs is not None and gdf.crs.to_epsg() != 4326:
             gdf = gdf.to_crs(epsg=4326)
-        gdf['geometry'] = gdf['geometry'].simplify(tolerance=0.0001, preserve_topology=True)
+        gdf["geometry"] = gdf["geometry"].simplify(
+            tolerance=0.0001, preserve_topology=True
+        )
         gdf = enrich_with_location(gdf)
         # Calcular estados_disponibles ANTES de filtrar
-        estados_df = gdf.groupby('ESTADO').size().reset_index(name='count')
+        estados_df = gdf.groupby("ESTADO").size().reset_index(name="count")
         estados_disponibles = [
-            {'name': row['ESTADO'], 'count': int(row['count'])}
+            {"name": row["ESTADO"], "count": int(row["count"])}
             for _, row in estados_df.iterrows()
-            if row['ESTADO'] is not None
+            if row["ESTADO"] is not None
         ]
-        estados_disponibles.sort(key=lambda x: x['name'] if x['name'] else '')
+        estados_disponibles.sort(key=lambda x: x["name"] if x["name"] else "")
         # Leer query params opcionales
-        estado = request.args.get('estado')
-        municipio = request.args.get('municipio')
-        id_credito = request.args.get('id_credito')
-        id_poligono = request.args.get('id_poligono')
+        estado = request.args.get("estado")
+        municipio = request.args.get("municipio")
+        id_credito = request.args.get("id_credito")
+        id_poligono = request.args.get("id_poligono")
         # Calcular municipios_disponibles (del estado seleccionado, o todos)
         if estado:
-            muns_gdf = gdf[gdf['ESTADO'] == estado]
+            muns_gdf = gdf[gdf["ESTADO"] == estado]
         else:
             muns_gdf = gdf
-        municipios_disponibles = sorted(muns_gdf['MUNICIPIO'].dropna().unique().tolist())
+        municipios_disponibles = sorted(
+            muns_gdf["MUNICIPIO"].dropna().unique().tolist()
+        )
         # Aplicar filtros
         if estado:
-            gdf = gdf[gdf['ESTADO'] == estado]
+            gdf = gdf[gdf["ESTADO"] == estado]
         if municipio:
-            gdf = gdf[gdf['MUNICIPIO'] == municipio]
+            gdf = gdf[gdf["MUNICIPIO"] == municipio]
         if id_credito:
-            gdf = gdf[gdf['ID_CREDITO'].astype(str).str.contains(id_credito, case=False, na=False)]
+            gdf = gdf[
+                gdf["ID_CREDITO"]
+                .astype(str)
+                .str.contains(id_credito, case=False, na=False)
+            ]
         if id_poligono:
-            gdf = gdf[gdf['ID_POLIGON'].str.contains(id_poligono, case=False, na=False)]
+            gdf = gdf[gdf["ID_POLIGON"].str.contains(id_poligono, case=False, na=False)]
         geojson_data = json.loads(gdf.to_json())
-        return jsonify({
-            'geojson': geojson_data,
-            'total': len(gdf),
-            'fields': ['ID_POLIGON', 'ID_CREDITO', 'NOMBRE_ZIP'],
-            'estados_disponibles': estados_disponibles,
-            'municipios_disponibles': municipios_disponibles
-        })
+        return jsonify(
+            {
+                "geojson": geojson_data,
+                "total": len(gdf),
+                "fields": ["ID_POLIGON", "ID_CREDITO", "NOMBRE_ZIP"],
+                "estados_disponibles": estados_disponibles,
+                "municipios_disponibles": municipios_disponibles,
+            }
+        )
     except Exception as e:
         app.logger.error(f"Error al cargar VALIDACION_UNIFICADO: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"error": str(e)}), 500
 
 
-@app.route('/api/mapa-15k/historico')
+@app.route("/api/mapa-15k/historico")
 @login_required
 @limiter.exempt
 def api_mapa_15k_historico():
     try:
-        gdf = gpd.read_file('data/MEGA_CAPA_V1_OL.shp')
+        gdf = gpd.read_file("data/MEGA_CAPA_V1_OL.shp")
         if gdf.crs is not None and gdf.crs.to_epsg() != 4326:
             gdf = gdf.to_crs(epsg=4326)
-        gdf['geometry'] = gdf['geometry'].simplify(tolerance=0.0001, preserve_topology=True)
+        gdf["geometry"] = gdf["geometry"].simplify(
+            tolerance=0.0001, preserve_topology=True
+        )
         gdf = enrich_with_location(gdf)
         # Calcular estados_disponibles ANTES de filtrar
-        estados_df = gdf.groupby('ESTADO').size().reset_index(name='count')
+        estados_df = gdf.groupby("ESTADO").size().reset_index(name="count")
         estados_disponibles = [
-            {'name': row['ESTADO'], 'count': int(row['count'])}
+            {"name": row["ESTADO"], "count": int(row["count"])}
             for _, row in estados_df.iterrows()
-            if row['ESTADO'] is not None
+            if row["ESTADO"] is not None
         ]
-        estados_disponibles.sort(key=lambda x: x['name'] if x['name'] else '')
+        estados_disponibles.sort(key=lambda x: x["name"] if x["name"] else "")
         # Leer query params opcionales
-        estado = request.args.get('estado')
-        municipio = request.args.get('municipio')
-        id_credito = request.args.get('id_credito')
-        id_poligono = request.args.get('id_poligono')
+        estado = request.args.get("estado")
+        municipio = request.args.get("municipio")
+        id_credito = request.args.get("id_credito")
+        id_poligono = request.args.get("id_poligono")
         # Calcular municipios_disponibles (del estado seleccionado, o todos)
         if estado:
-            muns_gdf = gdf[gdf['ESTADO'] == estado]
+            muns_gdf = gdf[gdf["ESTADO"] == estado]
         else:
             muns_gdf = gdf
-        municipios_disponibles = sorted(muns_gdf['MUNICIPIO'].dropna().unique().tolist())
+        municipios_disponibles = sorted(
+            muns_gdf["MUNICIPIO"].dropna().unique().tolist()
+        )
         # Aplicar filtros
         if estado:
-            gdf = gdf[gdf['ESTADO'] == estado]
+            gdf = gdf[gdf["ESTADO"] == estado]
         if municipio:
-            gdf = gdf[gdf['MUNICIPIO'] == municipio]
+            gdf = gdf[gdf["MUNICIPIO"] == municipio]
         if id_credito:
-            gdf = gdf[gdf['ID_CREDITO'].astype(str).str.contains(id_credito, case=False, na=False)]
+            gdf = gdf[
+                gdf["ID_CREDITO"]
+                .astype(str)
+                .str.contains(id_credito, case=False, na=False)
+            ]
         if id_poligono:
-            gdf = gdf[gdf['ID_POLIGON'].str.contains(id_poligono, case=False, na=False)]
+            gdf = gdf[gdf["ID_POLIGON"].str.contains(id_poligono, case=False, na=False)]
         geojson_data = json.loads(gdf.to_json())
-        return jsonify({
-            'geojson': geojson_data,
-            'total': len(gdf),
-            'fields': ['ID_POLIGON', 'ID_CREDITO'],
-            'estados_disponibles': estados_disponibles,
-            'municipios_disponibles': municipios_disponibles
-        })
+        return jsonify(
+            {
+                "geojson": geojson_data,
+                "total": len(gdf),
+                "fields": ["ID_POLIGON", "ID_CREDITO"],
+                "estados_disponibles": estados_disponibles,
+                "municipios_disponibles": municipios_disponibles,
+            }
+        )
     except Exception as e:
         app.logger.error(f"Error al cargar MEGA_CAPA_V1_OL: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"error": str(e)}), 500
 
 
-@app.route('/api/mapa-15k/estados')
+@app.route("/api/mapa-15k/estados")
 @login_required
 @limiter.exempt
 def api_mapa_15k_estados():
     """Retorna lista de estados y municipios disponibles en los shapefiles."""
     try:
-        gdf = gpd.read_file('data/VALIDACION_UNIFICADO.shp')
+        gdf = gpd.read_file("data/VALIDACION_UNIFICADO.shp")
         if gdf.crs is not None and gdf.crs.to_epsg() != 4326:
             gdf = gdf.to_crs(epsg=4326)
         gdf = enrich_with_location(gdf)
         # Estados
-        estados = gdf.groupby('ESTADO').size().reset_index(name='count')
+        estados = gdf.groupby("ESTADO").size().reset_index(name="count")
         estados_list = [
-            {'name': row['ESTADO'], 'count': int(row['count'])}
+            {"name": row["ESTADO"], "count": int(row["count"])}
             for _, row in estados.iterrows()
-            if row['ESTADO'] is not None
+            if row["ESTADO"] is not None
         ]
-        estados_list.sort(key=lambda x: x['name'] if x['name'] else '')
+        estados_list.sort(key=lambda x: x["name"] if x["name"] else "")
         # Municipios agrupados por estado
         municipios = {}
-        for estado in gdf['ESTADO'].dropna().unique():
-            muns = gdf[gdf['ESTADO'] == estado]['MUNICIPIO'].dropna().unique().tolist()
+        for estado in gdf["ESTADO"].dropna().unique():
+            muns = gdf[gdf["ESTADO"] == estado]["MUNICIPIO"].dropna().unique().tolist()
             municipios[estado] = sorted(muns)
-        return jsonify({'estados': estados_list, 'municipios_por_estado': municipios})
+        return jsonify({"estados": estados_list, "municipios_por_estado": municipios})
     except Exception as e:
-        app.logger.error(f'Error en /api/mapa-15k/estados: {e}')
-        return jsonify({'error': str(e)}), 500
+        app.logger.error(f"Error en /api/mapa-15k/estados: {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 def clasificar_traslape(overlap_pct, area_ratio, same_credit):
@@ -4780,18 +5715,18 @@ def clasificar_traslape(overlap_pct, area_ratio, same_credit):
     """
     if same_credit:
         if area_ratio >= 85 and overlap_pct >= 85:
-            return 'duplicado', '#dc3545', 'Duplicado (mismo crédito)'
+            return "duplicado", "#dc3545", "Duplicado (mismo crédito)"
         elif overlap_pct >= 10:
-            return 'traslape_interno', '#ffc107', 'Traslape interno - rechazar'
+            return "traslape_interno", "#ffc107", "Traslape interno - rechazar"
         else:
-            return 'sin_conflicto', '#28a745', 'Sin conflicto'
+            return "sin_conflicto", "#28a745", "Sin conflicto"
     else:
         if area_ratio >= 85 and overlap_pct >= 85:
-            return 'duplicado', '#dc3545', 'Duplicado (diferente crédito)'
+            return "duplicado", "#dc3545", "Duplicado (diferente crédito)"
         elif 30 <= overlap_pct <= 80:
-            return 'traslape_relevante', '#fd7e14', 'Traslape relevante - revisar'
+            return "traslape_relevante", "#fd7e14", "Traslape relevante - revisar"
         else:
-            return 'sin_conflicto', '#28a745', 'Sin conflicto'
+            return "sin_conflicto", "#28a745", "Sin conflicto"
 
 
 def _build_nuevos_relacionados_cache():
@@ -4799,20 +5734,22 @@ def _build_nuevos_relacionados_cache():
     global _nuevos_relacionados_cache, _indices_filtrados_cache
 
     if shp_cache.validacion is None or shp_cache.mega is None:
-        raise RuntimeError('Shapefiles no cargados')
+        raise RuntimeError("Shapefiles no cargados")
 
     if _nuevos_relacionados_cache is not None:
         return _nuevos_relacionados_cache
 
-    if _indices_filtrados_cache is not None and 'nuevos' in _indices_filtrados_cache:
-        nuevos_indices = [int(i) for i in _indices_filtrados_cache['nuevos']]
+    if _indices_filtrados_cache is not None and "nuevos" in _indices_filtrados_cache:
+        nuevos_indices = [int(i) for i in _indices_filtrados_cache["nuevos"]]
     else:
-        mega_ids = set(shp_cache.mega['ID_POLIGON'].astype(str).str.strip())
-        mask_nuevos = ~shp_cache.validacion['ID_POLIGON'].astype(str).str.strip().isin(mega_ids)
+        mega_ids = set(shp_cache.mega["ID_POLIGON"].astype(str).str.strip())
+        mask_nuevos = ~shp_cache.validacion["ID_POLIGON"].astype(str).str.strip().isin(
+            mega_ids
+        )
         nuevos_indices = [int(i) for i in shp_cache.validacion.index[mask_nuevos]]
 
     nuevos_gdf = shp_cache.validacion.iloc[nuevos_indices].copy()
-    nuevos_gdf['__src_idx__'] = nuevos_indices
+    nuevos_gdf["__src_idx__"] = nuevos_indices
 
     try:
         nuevos_sindex = nuevos_gdf.sindex
@@ -4820,9 +5757,9 @@ def _build_nuevos_relacionados_cache():
         nuevos_sindex = None
 
     _nuevos_relacionados_cache = {
-        'nuevos_indices_set': set(nuevos_indices),
-        'nuevos_gdf': nuevos_gdf,
-        'nuevos_sindex': nuevos_sindex,
+        "nuevos_indices_set": set(nuevos_indices),
+        "nuevos_gdf": nuevos_gdf,
+        "nuevos_sindex": nuevos_sindex,
     }
     return _nuevos_relacionados_cache
 
@@ -4830,41 +5767,47 @@ def _build_nuevos_relacionados_cache():
 def generar_propuesta_chapingo_nuevo(idx, analisis_mega=None):
     """Genera propuesta automatica Chapingo para un poligono nuevo basada SOLO en megacapa."""
     if shp_cache.validacion is None or shp_cache.mega is None:
-        raise RuntimeError('Shapefiles no cargados')
+        raise RuntimeError("Shapefiles no cargados")
     if idx < 0 or idx >= len(shp_cache.validacion):
-        raise ValueError(f'Indice fuera de rango (0-{len(shp_cache.validacion)-1})')
+        raise ValueError(f"Indice fuera de rango (0-{len(shp_cache.validacion) - 1})")
 
     base_row = shp_cache.validacion.iloc[idx]
-    id_poligono_base = str(base_row.get('ID_POLIGON', '') or '').strip()
+    id_poligono_base = str(base_row.get("ID_POLIGON", "") or "").strip()
 
     if analisis_mega is None:
         analisis_mega = calcular_traslapes(idx)
 
     # Calculate surface of current polygon
-    poligono_props = (analisis_mega.get('poligono') or {}).get('properties') or {}
-    superficie_base = poligono_props.get('area_ha')
-    superficie_base = round(float(superficie_base), 4) if superficie_base is not None else None
+    poligono_props = (analisis_mega.get("poligono") or {}).get("properties") or {}
+    superficie_base = poligono_props.get("area_ha")
+    superficie_base = (
+        round(float(superficie_base), 4) if superficie_base is not None else None
+    )
 
     propuesta = {
-        'estatus_chapingo_propuesto': None,
-        'id_poligono_unico_propuesto': None,
-        'superficie_chapingo_propuesta': superficie_base,
-        'comentario_chapingo_propuesto': None,
+        "estatus_chapingo_propuesto": None,
+        "id_poligono_unico_propuesto": None,
+        "superficie_chapingo_propuesta": superficie_base,
+        "comentario_chapingo_propuesto": None,
     }
 
     # Check if idx belongs to nuevos
     cache = _build_nuevos_relacionados_cache()
-    if idx not in cache['nuevos_indices_set']:
-        propuesta['comentario_chapingo_propuesto'] = 'El indice no pertenece al subconjunto nuevos.'
+    if idx not in cache["nuevos_indices_set"]:
+        propuesta["comentario_chapingo_propuesto"] = (
+            "El indice no pertenece al subconjunto nuevos."
+        )
         return propuesta
 
-    matches_mega = analisis_mega.get('matches') or []
+    matches_mega = analisis_mega.get("matches") or []
 
     # No matches in megacapa → NUEVO
     if not matches_mega:
-        propuesta['estatus_chapingo_propuesto'] = 'NUEVO'
-        propuesta['id_poligono_unico_propuesto'] = id_poligono_base
-        propuesta['comentario_chapingo_propuesto'] = 'Sin traslape con Mega Capa. Poligono nuevo.'
+        propuesta["estatus_chapingo_propuesto"] = "NUEVO"
+        propuesta["id_poligono_unico_propuesto"] = id_poligono_base
+        propuesta["comentario_chapingo_propuesto"] = (
+            "Sin traslape con Mega Capa. Poligono nuevo."
+        )
         return propuesta
 
     # Find the worst (most severe) match classification
@@ -4873,74 +5816,76 @@ def generar_propuesta_chapingo_nuevo(idx, analisis_mega=None):
     worst_priority = -1
 
     priority_map = {
-        'duplicado': 3,
-        'traslape_interno': 2,
-        'traslape_relevante': 1,
-        'sin_conflicto': 0,
+        "duplicado": 3,
+        "traslape_interno": 2,
+        "traslape_relevante": 1,
+        "sin_conflicto": 0,
     }
 
     for m in matches_mega:
-        p = priority_map.get(m.get('clasificacion', ''), -1)
+        p = priority_map.get(m.get("clasificacion", ""), -1)
         if p > worst_priority:
             worst_priority = p
             worst_match = m
 
     if worst_match is None:
-        propuesta['estatus_chapingo_propuesto'] = 'NUEVO'
-        propuesta['id_poligono_unico_propuesto'] = id_poligono_base
-        propuesta['comentario_chapingo_propuesto'] = 'Sin clasificacion determinante en Mega Capa.'
+        propuesta["estatus_chapingo_propuesto"] = "NUEVO"
+        propuesta["id_poligono_unico_propuesto"] = id_poligono_base
+        propuesta["comentario_chapingo_propuesto"] = (
+            "Sin clasificacion determinante en Mega Capa."
+        )
         return propuesta
 
-    clasificacion = worst_match.get('clasificacion', '')
-    mega_id_poligon = worst_match.get('id_poligon', '')
-    mega_overlap = worst_match.get('overlap_pct', 0)
-    mega_area_ratio = worst_match.get('area_ratio', 0)
-    mega_same_credit = worst_match.get('same_credit', False)
+    clasificacion = worst_match.get("clasificacion", "")
+    mega_id_poligon = worst_match.get("id_poligon", "")
+    mega_overlap = worst_match.get("overlap_pct", 0)
+    mega_area_ratio = worst_match.get("area_ratio", 0)
+    mega_same_credit = worst_match.get("same_credit", False)
 
-    if clasificacion == 'duplicado':
+    if clasificacion == "duplicado":
         if mega_same_credit:
             # Duplicado mismo crédito → ELIMINAR
-            propuesta['estatus_chapingo_propuesto'] = 'ELIMINAR'
-            propuesta['id_poligono_unico_propuesto'] = mega_id_poligon
-            propuesta['comentario_chapingo_propuesto'] = (
-                f'Duplicado en Mega (mismo crédito). '
-                f'Traslape: {mega_overlap:.1f}%, similitud superficie: {mega_area_ratio:.1f}%. '
-                f'Se elimina por duplicado con {mega_id_poligon}.'
+            propuesta["estatus_chapingo_propuesto"] = "ELIMINAR"
+            propuesta["id_poligono_unico_propuesto"] = mega_id_poligon
+            propuesta["comentario_chapingo_propuesto"] = (
+                f"Duplicado en Mega (mismo crédito). "
+                f"Traslape: {mega_overlap:.1f}%, similitud superficie: {mega_area_ratio:.1f}%. "
+                f"Se elimina por duplicado con {mega_id_poligon}."
             )
         else:
             # Duplicado diferente crédito → VINCULAR
-            propuesta['estatus_chapingo_propuesto'] = 'VINCULAR'
-            propuesta['id_poligono_unico_propuesto'] = mega_id_poligon
-            propuesta['comentario_chapingo_propuesto'] = (
-                f'Duplicado en Mega (diferente crédito). '
-                f'Traslape: {mega_overlap:.1f}%, similitud superficie: {mega_area_ratio:.1f}%. '
-                f'Vinculado a {mega_id_poligon}.'
+            propuesta["estatus_chapingo_propuesto"] = "VINCULAR"
+            propuesta["id_poligono_unico_propuesto"] = mega_id_poligon
+            propuesta["comentario_chapingo_propuesto"] = (
+                f"Duplicado en Mega (diferente crédito). "
+                f"Traslape: {mega_overlap:.1f}%, similitud superficie: {mega_area_ratio:.1f}%. "
+                f"Vinculado a {mega_id_poligon}."
             )
 
-    elif clasificacion == 'traslape_interno':
+    elif clasificacion == "traslape_interno":
         # Mismo credito, traslape 10-85% → ELIMINAR
-        propuesta['estatus_chapingo_propuesto'] = 'ELIMINAR'
-        propuesta['id_poligono_unico_propuesto'] = mega_id_poligon
-        propuesta['comentario_chapingo_propuesto'] = (
-            f'Traslape interno con Mega (mismo credito). '
-            f'Traslape: {mega_overlap:.1f}%. Se rechaza.'
+        propuesta["estatus_chapingo_propuesto"] = "ELIMINAR"
+        propuesta["id_poligono_unico_propuesto"] = mega_id_poligon
+        propuesta["comentario_chapingo_propuesto"] = (
+            f"Traslape interno con Mega (mismo credito). "
+            f"Traslape: {mega_overlap:.1f}%. Se rechaza."
         )
 
-    elif clasificacion == 'traslape_relevante':
+    elif clasificacion == "traslape_relevante":
         # Diferente credito, traslape 30-80% → Revisar (no se asigna estatus automatico)
-        propuesta['estatus_chapingo_propuesto'] = None
-        propuesta['id_poligono_unico_propuesto'] = mega_id_poligon
-        propuesta['comentario_chapingo_propuesto'] = (
-            f'Traslape relevante con Mega (diferente credito). '
-            f'Traslape: {mega_overlap:.1f}%. Revisar manualmente.'
+        propuesta["estatus_chapingo_propuesto"] = None
+        propuesta["id_poligono_unico_propuesto"] = mega_id_poligon
+        propuesta["comentario_chapingo_propuesto"] = (
+            f"Traslape relevante con Mega (diferente credito). "
+            f"Traslape: {mega_overlap:.1f}%. Revisar manualmente."
         )
 
     else:
         # sin_conflicto → NUEVO
-        propuesta['estatus_chapingo_propuesto'] = 'NUEVO'
-        propuesta['id_poligono_unico_propuesto'] = id_poligono_base
-        propuesta['comentario_chapingo_propuesto'] = (
-            f'Traslape minimo con Mega ({mega_overlap:.1f}%). Sin conflicto.'
+        propuesta["estatus_chapingo_propuesto"] = "NUEVO"
+        propuesta["id_poligono_unico_propuesto"] = id_poligono_base
+        propuesta["comentario_chapingo_propuesto"] = (
+            f"Traslape minimo con Mega ({mega_overlap:.1f}%). Sin conflicto."
         )
 
     return propuesta
@@ -4949,34 +5894,57 @@ def generar_propuesta_chapingo_nuevo(idx, analisis_mega=None):
 def construir_evidencia_flujo_chapingo():
     """Build reproducible evidence for key Chapingo flow scenarios."""
     if shp_cache.validacion is None or shp_cache.mega is None:
-        raise RuntimeError('Shapefiles no cargados')
+        raise RuntimeError("Shapefiles no cargados")
 
     cache = _build_nuevos_relacionados_cache()
-    nuevos_indices = list(cache['nuevos_indices_set'])
+    nuevos_indices = list(cache["nuevos_indices_set"])
 
     escenarios = {
-        'nuevo_sin_match': None,
-        'vincular_mismo_credito': None,
-        'vincular_diferente_credito': None,
-        'eliminar_traslape_interno': None,
+        "nuevo_sin_match": None,
+        "vincular_mismo_credito": None,
+        "vincular_diferente_credito": None,
+        "eliminar_traslape_interno": None,
     }
 
     for idx in nuevos_indices[:200]:
         try:
             data = calcular_traslapes(idx)
-            matches = data.get('matches', [])
+            matches = data.get("matches", [])
 
-            if not matches and escenarios['nuevo_sin_match'] is None:
-                escenarios['nuevo_sin_match'] = {'idx': idx, 'cumple': True}
+            if not matches and escenarios["nuevo_sin_match"] is None:
+                escenarios["nuevo_sin_match"] = {"idx": idx, "cumple": True}
 
             for m in matches:
-                clasif = m.get('clasificacion', '')
-                if clasif == 'duplicado' and m.get('same_credit') and escenarios['vincular_mismo_credito'] is None:
-                    escenarios['vincular_mismo_credito'] = {'idx': idx, 'cumple': True, 'mega_id': m.get('id_poligon')}
-                elif clasif == 'duplicado' and not m.get('same_credit') and escenarios['vincular_diferente_credito'] is None:
-                    escenarios['vincular_diferente_credito'] = {'idx': idx, 'cumple': True, 'mega_id': m.get('id_poligon')}
-                elif clasif == 'traslape_interno' and escenarios['eliminar_traslape_interno'] is None:
-                    escenarios['eliminar_traslape_interno'] = {'idx': idx, 'cumple': True, 'mega_id': m.get('id_poligon')}
+                clasif = m.get("clasificacion", "")
+                if (
+                    clasif == "duplicado"
+                    and m.get("same_credit")
+                    and escenarios["vincular_mismo_credito"] is None
+                ):
+                    escenarios["vincular_mismo_credito"] = {
+                        "idx": idx,
+                        "cumple": True,
+                        "mega_id": m.get("id_poligon"),
+                    }
+                elif (
+                    clasif == "duplicado"
+                    and not m.get("same_credit")
+                    and escenarios["vincular_diferente_credito"] is None
+                ):
+                    escenarios["vincular_diferente_credito"] = {
+                        "idx": idx,
+                        "cumple": True,
+                        "mega_id": m.get("id_poligon"),
+                    }
+                elif (
+                    clasif == "traslape_interno"
+                    and escenarios["eliminar_traslape_interno"] is None
+                ):
+                    escenarios["eliminar_traslape_interno"] = {
+                        "idx": idx,
+                        "cumple": True,
+                        "mega_id": m.get("id_poligon"),
+                    }
 
             if all(v is not None for v in escenarios.values()):
                 break
@@ -4995,26 +5963,35 @@ def _get_user_allowed_indices():
     """
     if current_user.is_admin:
         # Admin sees all
-        rows = Analizador15K.query.with_entities(Analizador15K.idx_shp).order_by(Analizador15K.idx_shp).all()
+        rows = (
+            Analizador15K.query.with_entities(Analizador15K.idx_shp)
+            .order_by(Analizador15K.idx_shp)
+            .all()
+        )
     else:
         # Regular user sees: assigned to them OR unassigned (NULL)
-        rows = Analizador15K.query.with_entities(Analizador15K.idx_shp).filter(
-            db.or_(
-                Analizador15K.usuario_asignado_id == current_user.id,
-                Analizador15K.usuario_asignado_id.is_(None)
+        rows = (
+            Analizador15K.query.with_entities(Analizador15K.idx_shp)
+            .filter(
+                db.or_(
+                    Analizador15K.usuario_asignado_id == current_user.id,
+                    Analizador15K.usuario_asignado_id.is_(None),
+                )
             )
-        ).order_by(Analizador15K.idx_shp).all()
+            .order_by(Analizador15K.idx_shp)
+            .all()
+        )
 
     return [r[0] for r in rows]
 
 
 def _filter_clasif_counts_for_user():
     """Recompute classification counts filtered by current user's allowed indices."""
-    if _clasif_nuevos_state['indices_por_clasif'] is None:
-        return {'counts': {}, 'total_processed': 0}
+    if _clasif_nuevos_state["indices_por_clasif"] is None:
+        return {"counts": {}, "total_processed": 0}
 
     allowed = set(_get_user_allowed_indices())
-    indices_por_clasif = _clasif_nuevos_state['indices_por_clasif']
+    indices_por_clasif = _clasif_nuevos_state["indices_por_clasif"]
 
     counts = {}
     total = 0
@@ -5022,27 +5999,43 @@ def _filter_clasif_counts_for_user():
         filtered = [i for i in idx_list if i in allowed]
         counts[key] = len(filtered)
         # Only count main categories for total (not sub-categories)
-        if key in ('duplicado', 'traslape_interno', 'traslape_relevante', 'sin_conflicto', 'sin_matches'):
+        if key in (
+            "duplicado",
+            "traslape_interno",
+            "traslape_relevante",
+            "sin_conflicto",
+            "sin_matches",
+        ):
             total += len(filtered)
 
     # Map to the expected key names (the frontend expects these specific keys)
     result = {
-        'duplicado': counts.get('duplicado', 0),
-        'duplicados_mismo_credito': counts.get('duplicado_mismo_credito', 0),
-        'duplicados_diferente_credito': counts.get('duplicado_diferente_credito', 0),
-        'traslape_interno': counts.get('traslape_interno', 0),
-        'traslape_interno_mismo_credito': counts.get('traslape_interno_mismo_credito', 0),
-        'traslape_interno_diferente_credito': counts.get('traslape_interno_diferente_credito', 0),
-        'traslape_relevante': counts.get('traslape_relevante', 0),
-        'traslape_relevante_mismo_credito': counts.get('traslape_relevante_mismo_credito', 0),
-        'traslape_relevante_diferente_credito': counts.get('traslape_relevante_diferente_credito', 0),
-        'sin_conflicto': counts.get('sin_conflicto', 0),
-        'sin_conflicto_mismo_credito': counts.get('sin_conflicto_mismo_credito', 0),
-        'sin_conflicto_diferente_credito': counts.get('sin_conflicto_diferente_credito', 0),
-        'sin_matches': counts.get('sin_matches', 0),
+        "duplicado": counts.get("duplicado", 0),
+        "duplicados_mismo_credito": counts.get("duplicado_mismo_credito", 0),
+        "duplicados_diferente_credito": counts.get("duplicado_diferente_credito", 0),
+        "traslape_interno": counts.get("traslape_interno", 0),
+        "traslape_interno_mismo_credito": counts.get(
+            "traslape_interno_mismo_credito", 0
+        ),
+        "traslape_interno_diferente_credito": counts.get(
+            "traslape_interno_diferente_credito", 0
+        ),
+        "traslape_relevante": counts.get("traslape_relevante", 0),
+        "traslape_relevante_mismo_credito": counts.get(
+            "traslape_relevante_mismo_credito", 0
+        ),
+        "traslape_relevante_diferente_credito": counts.get(
+            "traslape_relevante_diferente_credito", 0
+        ),
+        "sin_conflicto": counts.get("sin_conflicto", 0),
+        "sin_conflicto_mismo_credito": counts.get("sin_conflicto_mismo_credito", 0),
+        "sin_conflicto_diferente_credito": counts.get(
+            "sin_conflicto_diferente_credito", 0
+        ),
+        "sin_matches": counts.get("sin_matches", 0),
     }
 
-    return {'counts': result, 'total_processed': total}
+    return {"counts": result, "total_processed": total}
 
 
 def _user_can_access_idx(idx):
@@ -5054,10 +6047,13 @@ def _user_can_access_idx(idx):
     if record is None:
         return True  # Not in table, allow access (backward compat)
 
-    return record.usuario_asignado_id is None or record.usuario_asignado_id == current_user.id
+    return (
+        record.usuario_asignado_id is None
+        or record.usuario_asignado_id == current_user.id
+    )
 
 
-@app.route('/api/analizador/total')
+@app.route("/api/analizador/total")
 @login_required
 @limiter.exempt
 def api_analizador_total():
@@ -5069,7 +6065,7 @@ def api_analizador_total():
         base_query = Analizador15K.query.filter(
             db.or_(
                 Analizador15K.usuario_asignado_id == current_user.id,
-                Analizador15K.usuario_asignado_id.is_(None)
+                Analizador15K.usuario_asignado_id.is_(None),
             )
         )
 
@@ -5077,11 +6073,9 @@ def api_analizador_total():
     clasificados = base_query.filter(Analizador15K.tiene_decision == True).count()  # noqa: E712
     por_clasificar = total - clasificados
 
-    return jsonify({
-        'total': total,
-        'clasificados': clasificados,
-        'por_clasificar': por_clasificar
-    })
+    return jsonify(
+        {"total": total, "clasificados": clasificados, "por_clasificar": por_clasificar}
+    )
 
 
 def calcular_traslapes(idx):
@@ -5092,9 +6086,9 @@ def calcular_traslapes(idx):
     Raises RuntimeError if shapefiles are not loaded.
     """
     if shp_cache.validacion is None or shp_cache.mega is None:
-        raise RuntimeError('Shapefiles no cargados')
+        raise RuntimeError("Shapefiles no cargados")
     if idx < 0 or idx >= len(shp_cache.validacion):
-        raise ValueError(f'Índice fuera de rango (0-{len(shp_cache.validacion)-1})')
+        raise ValueError(f"Índice fuera de rango (0-{len(shp_cache.validacion) - 1})")
 
     import pyproj
     import shapely
@@ -5110,7 +6104,9 @@ def calcular_traslapes(idx):
     # Calcular área en hectáreas (proyectar a UTM zona basada en el centroide)
     centroid = vgeom.centroid
     utm_zone = int((centroid.x + 180) / 6) + 1
-    transformer = pyproj.Transformer.from_crs('EPSG:4326', f'EPSG:326{utm_zone:02d}', always_xy=True)
+    transformer = pyproj.Transformer.from_crs(
+        "EPSG:4326", f"EPSG:326{utm_zone:02d}", always_xy=True
+    )
     vgeom_utm = transform(transformer.transform, vgeom)
     area_ha = vgeom_utm.area / 10000
 
@@ -5131,7 +6127,9 @@ def calcular_traslapes(idx):
         try:
             intersection = vgeom.intersection(mgeom)
         except Exception as e:
-            app.logger.warning(f"Skipping intersection for idx={idx}, mega_idx={ci}: {e}")
+            app.logger.warning(
+                f"Skipping intersection for idx={idx}, mega_idx={ci}: {e}"
+            )
             continue
 
         # Calcular áreas en UTM
@@ -5143,83 +6141,104 @@ def calcular_traslapes(idx):
         area_inter = intersection_utm.area
 
         overlap_pct = (area_inter / area_v * 100) if area_v > 0 else 0
-        area_ratio = (min(area_v, area_m) / max(area_v, area_m) * 100) if max(area_v, area_m) > 0 else 0
+        area_ratio = (
+            (min(area_v, area_m) / max(area_v, area_m) * 100)
+            if max(area_v, area_m) > 0
+            else 0
+        )
 
-        same_credit = str(vrow.get('ID_CREDITO', '')) == str(mrow.get('ID_CREDITO', ''))
-        clasificacion, color, descripcion = clasificar_traslape(overlap_pct, area_ratio, same_credit)
+        same_credit = str(vrow.get("ID_CREDITO", "")) == str(mrow.get("ID_CREDITO", ""))
+        clasificacion, color, descripcion = clasificar_traslape(
+            overlap_pct, area_ratio, same_credit
+        )
 
         # Solo incluir matches con overlap > 0.1%
         if overlap_pct < 0.1:
             continue
 
         match_info = {
-            'mega_index': int(ci),
-            'id_poligon': str(mrow.get('ID_POLIGON', '')),
-            'id_credito': str(mrow.get('ID_CREDITO', '')),
-            'area_ha': round(area_m / 10000, 4),
-            'overlap_pct': round(overlap_pct, 1),
-            'area_ratio': round(area_ratio, 1),
-            'same_credit': same_credit,
-            'clasificacion': clasificacion,
-            'color': color,
-            'descripcion': descripcion
+            "mega_index": int(ci),
+            "id_poligon": str(mrow.get("ID_POLIGON", "")),
+            "id_credito": str(mrow.get("ID_CREDITO", "")),
+            "area_ha": round(area_m / 10000, 4),
+            "overlap_pct": round(overlap_pct, 1),
+            "area_ratio": round(area_ratio, 1),
+            "same_credit": same_credit,
+            "clasificacion": clasificacion,
+            "color": color,
+            "descripcion": descripcion,
         }
         matches.append(match_info)
 
         match_feature = {
-            'type': 'Feature',
-            'properties': match_info,
-            'geometry': json.loads(shapely.to_geojson(mgeom))
+            "type": "Feature",
+            "properties": match_info,
+            "geometry": json.loads(shapely.to_geojson(mgeom)),
         }
         match_features.append(match_feature)
 
     # Ordenar matches por overlap descendente
-    matches.sort(key=lambda x: x['overlap_pct'], reverse=True)
-    match_features.sort(key=lambda x: x['properties']['overlap_pct'], reverse=True)
+    matches.sort(key=lambda x: x["overlap_pct"], reverse=True)
+    match_features.sort(key=lambda x: x["properties"]["overlap_pct"], reverse=True)
 
     # GeoJSON del polígono actual
     poligono_geojson = {
-        'type': 'Feature',
-        'properties': {
-            'ID_POLIGON': str(vrow.get('ID_POLIGON', '')),
-            'ID_CREDITO': str(vrow.get('ID_CREDITO', '')),
-            'NOMBRE_ZIP': str(vrow.get('NOMBRE_ZIP', '')),
-            'ESTATUS': obtener_estatus_validacion(vrow),
-            'area_ha': round(area_ha, 4)
+        "type": "Feature",
+        "properties": {
+            "ID_POLIGON": str(vrow.get("ID_POLIGON", "")),
+            "ID_CREDITO": str(vrow.get("ID_CREDITO", "")),
+            "NOMBRE_ZIP": str(vrow.get("NOMBRE_ZIP", "")),
+            "ESTATUS": obtener_estatus_validacion(vrow),
+            "area_ha": round(area_ha, 4),
         },
-        'geometry': json.loads(shapely.to_geojson(vgeom))
+        "geometry": json.loads(shapely.to_geojson(vgeom)),
     }
 
     # Resumen de clasificaciones con desglose mismo/diferente crédito
-    duplicados = [m for m in matches if m['clasificacion'] == 'duplicado']
-    traslape_interno_list = [m for m in matches if m['clasificacion'] == 'traslape_interno']
-    traslape_relevante_list = [m for m in matches if m['clasificacion'] == 'traslape_relevante']
-    sin_conflicto_list = [m for m in matches if m['clasificacion'] == 'sin_conflicto']
+    duplicados = [m for m in matches if m["clasificacion"] == "duplicado"]
+    traslape_interno_list = [
+        m for m in matches if m["clasificacion"] == "traslape_interno"
+    ]
+    traslape_relevante_list = [
+        m for m in matches if m["clasificacion"] == "traslape_relevante"
+    ]
+    sin_conflicto_list = [m for m in matches if m["clasificacion"] == "sin_conflicto"]
 
     resumen = {
-        'duplicados': len(duplicados),
-        'duplicados_mismo_credito': sum(1 for m in duplicados if m.get('same_credit')),
-        'duplicados_diferente_credito': sum(1 for m in duplicados if not m.get('same_credit')),
-        'traslape_interno': len(traslape_interno_list),
-        'traslape_interno_mismo_credito': sum(1 for m in traslape_interno_list if m.get('same_credit')),
-        'traslape_interno_diferente_credito': sum(1 for m in traslape_interno_list if not m.get('same_credit')),
-        'traslape_relevante': len(traslape_relevante_list),
-        'traslape_relevante_mismo_credito': sum(1 for m in traslape_relevante_list if m.get('same_credit')),
-        'traslape_relevante_diferente_credito': sum(1 for m in traslape_relevante_list if not m.get('same_credit')),
-        'sin_conflicto': len(sin_conflicto_list),
-        'sin_conflicto_mismo_credito': sum(1 for m in sin_conflicto_list if m.get('same_credit')),
-        'sin_conflicto_diferente_credito': sum(1 for m in sin_conflicto_list if not m.get('same_credit')),
-        'total_matches': len(matches)
+        "duplicados": len(duplicados),
+        "duplicados_mismo_credito": sum(1 for m in duplicados if m.get("same_credit")),
+        "duplicados_diferente_credito": sum(
+            1 for m in duplicados if not m.get("same_credit")
+        ),
+        "traslape_interno": len(traslape_interno_list),
+        "traslape_interno_mismo_credito": sum(
+            1 for m in traslape_interno_list if m.get("same_credit")
+        ),
+        "traslape_interno_diferente_credito": sum(
+            1 for m in traslape_interno_list if not m.get("same_credit")
+        ),
+        "traslape_relevante": len(traslape_relevante_list),
+        "traslape_relevante_mismo_credito": sum(
+            1 for m in traslape_relevante_list if m.get("same_credit")
+        ),
+        "traslape_relevante_diferente_credito": sum(
+            1 for m in traslape_relevante_list if not m.get("same_credit")
+        ),
+        "sin_conflicto": len(sin_conflicto_list),
+        "sin_conflicto_mismo_credito": sum(
+            1 for m in sin_conflicto_list if m.get("same_credit")
+        ),
+        "sin_conflicto_diferente_credito": sum(
+            1 for m in sin_conflicto_list if not m.get("same_credit")
+        ),
+        "total_matches": len(matches),
     }
 
     return {
-        'poligono': poligono_geojson,
-        'matches': matches,
-        'match_features': {
-            'type': 'FeatureCollection',
-            'features': match_features
-        },
-        'resumen': resumen
+        "poligono": poligono_geojson,
+        "matches": matches,
+        "match_features": {"type": "FeatureCollection", "features": match_features},
+        "resumen": resumen,
     }
 
 
@@ -5255,43 +6274,43 @@ def obtener_guardado_validacion_15k(idx):
     conn = get_db_connection()
     try:
         row = conn.execute(
-            'SELECT * FROM validacion_15k WHERE idx = ?', (idx,)
+            "SELECT * FROM validacion_15k WHERE idx = ?", (idx,)
         ).fetchone()
     finally:
         conn.close()
 
     if row is None:
         return {
-            'estatus': 'pendiente',
-            'estatus_chapingo': None,
-            'id_poligono_unico': None,
-            'superficie_chapingo': None,
-            'comentario_chapingo': None,
-            'id_poligon_historico': None,
-            'mega_idx': None,
-            'overlap_pct': None,
-            'fecha_validacion': None,
-            'superficie_calculada': None
+            "estatus": "pendiente",
+            "estatus_chapingo": None,
+            "id_poligono_unico": None,
+            "superficie_chapingo": None,
+            "comentario_chapingo": None,
+            "id_poligon_historico": None,
+            "mega_idx": None,
+            "overlap_pct": None,
+            "fecha_validacion": None,
+            "superficie_calculada": None,
         }
 
     return {
-        'estatus': row['estatus'],
-        'estatus_chapingo': row['estatus_chapingo'],
-        'id_poligono_unico': row['id_poligono_unico'],
-        'superficie_chapingo': row['superficie_chapingo'],
-        'comentario_chapingo': row['comentario_chapingo'],
-        'id_poligon_historico': row['id_poligon_historico'],
-        'mega_idx': row['mega_idx'],
-        'overlap_pct': row['overlap_pct'],
-        'fecha_validacion': row['fecha_validacion'],
-        'superficie_calculada': row['superficie_calculada']
+        "estatus": row["estatus"],
+        "estatus_chapingo": row["estatus_chapingo"],
+        "id_poligono_unico": row["id_poligono_unico"],
+        "superficie_chapingo": row["superficie_chapingo"],
+        "comentario_chapingo": row["comentario_chapingo"],
+        "id_poligon_historico": row["id_poligon_historico"],
+        "mega_idx": row["mega_idx"],
+        "overlap_pct": row["overlap_pct"],
+        "fecha_validacion": row["fecha_validacion"],
+        "superficie_calculada": row["superficie_calculada"],
     }
 
 
 def indice_pertenece_a_nuevos(idx):
     """Return True when idx belongs to the computed subset 'nuevos'."""
     cache = _build_nuevos_relacionados_cache()
-    return int(idx) in cache['nuevos_indices_set']
+    return int(idx) in cache["nuevos_indices_set"]
 
 
 def _normalizar_texto_chapingo(value, field_name):
@@ -5299,30 +6318,30 @@ def _normalizar_texto_chapingo(value, field_name):
     if value is None:
         return None
     if isinstance(value, (dict, list, tuple, set)):
-        raise ValueError(f'{field_name} debe ser texto')
+        raise ValueError(f"{field_name} debe ser texto")
     text = str(value).strip()
     return text or None
 
 
 def _normalizar_superficie_chapingo(value):
     """Validate and normalize optional Chapingo area value."""
-    if value in (None, ''):
+    if value in (None, ""):
         return None
 
     try:
         superficie = float(value)
     except (TypeError, ValueError):
-        raise ValueError('superficie_chapingo debe ser numerica positiva')
+        raise ValueError("superficie_chapingo debe ser numerica positiva")
 
     if math.isnan(superficie) or math.isinf(superficie) or superficie <= 0:
-        raise ValueError('superficie_chapingo debe ser numerica positiva')
+        raise ValueError("superficie_chapingo debe ser numerica positiva")
 
     return round(superficie, 4)
 
 
 def _requiere_vinculacion_chapingo(idx, estatus_chapingo):
     """Determine if an index requires linked polygon id for Chapingo decision."""
-    if estatus_chapingo == 'VINCULAR':
+    if estatus_chapingo == "VINCULAR":
         return True
 
     try:
@@ -5330,104 +6349,110 @@ def _requiere_vinculacion_chapingo(idx, estatus_chapingo):
     except Exception:
         return False
 
-    return propuesta.get('estatus_chapingo_propuesto') == 'VINCULAR'
+    return propuesta.get("estatus_chapingo_propuesto") == "VINCULAR"
 
 
-@app.route('/api/analizador/poligono/<int:idx>')
+@app.route("/api/analizador/poligono/<int:idx>")
 @login_required
 @limiter.exempt
 def api_analizador_poligono(idx):
     if not _user_can_access_idx(idx):
-        return jsonify({'error': 'No tienes acceso a este polígono'}), 403
+        return jsonify({"error": "No tienes acceso a este polígono"}), 403
     try:
         data = calcular_traslapes_cached(idx)
     except RuntimeError as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"error": str(e)}), 500
     except ValueError as e:
-        return jsonify({'error': str(e)}), 400
+        return jsonify({"error": str(e)}), 400
 
-    return jsonify({
-        'index': idx,
-        'total': len(shp_cache.validacion),
-        'poligono': data['poligono'],
-        'matches': data['matches'],
-        'match_features': data['match_features'],
-        'resumen': data['resumen']
-    })
+    return jsonify(
+        {
+            "index": idx,
+            "total": len(shp_cache.validacion),
+            "poligono": data["poligono"],
+            "matches": data["matches"],
+            "match_features": data["match_features"],
+            "resumen": data["resumen"],
+        }
+    )
 
 
-@app.route('/api/analizador/propuesta-editable/<int:idx>')
+@app.route("/api/analizador/propuesta-editable/<int:idx>")
 @login_required
 @limiter.exempt
 def api_analizador_propuesta_editable(idx):
     """Return complete editable payload for Analizador proposal panel."""
     if not _user_can_access_idx(idx):
-        return jsonify({'error': 'No tienes acceso a este polígono'}), 403
+        return jsonify({"error": "No tienes acceso a este polígono"}), 403
     try:
         analisis_mega = calcular_traslapes_cached(idx)
         es_nuevo = indice_pertenece_a_nuevos(idx)
     except RuntimeError as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"error": str(e)}), 500
     except ValueError as e:
-        return jsonify({'error': str(e)}), 400
+        return jsonify({"error": str(e)}), 400
 
     # Read saved state from PostgreSQL
     pg_record = Analizador15K.query.filter_by(idx_shp=idx).first()
     if pg_record and pg_record.tiene_decision:
         guardado = {
-            'estatus': pg_record.estatus_chapingo or 'pendiente',
-            'estatus_chapingo': pg_record.estatus_chapingo,
-            'id_poligono_unico': pg_record.id_poligono_unico,
-            'superficie_chapingo': pg_record.superficie_chapingo,
-            'comentario_chapingo': pg_record.comentario_chapingo,
-            'superficie_calculada': pg_record.superficie_calculada,
-            'id_poligon_historico': None,
-            'mega_idx': None,
-            'overlap_pct': None,
-            'fecha_validacion': pg_record.fecha_decision.isoformat() if pg_record.fecha_decision else None,
+            "estatus": pg_record.estatus_chapingo or "pendiente",
+            "estatus_chapingo": pg_record.estatus_chapingo,
+            "id_poligono_unico": pg_record.id_poligono_unico,
+            "superficie_chapingo": pg_record.superficie_chapingo,
+            "comentario_chapingo": pg_record.comentario_chapingo,
+            "superficie_calculada": pg_record.superficie_calculada,
+            "id_poligon_historico": None,
+            "mega_idx": None,
+            "overlap_pct": None,
+            "fecha_validacion": pg_record.fecha_decision.isoformat()
+            if pg_record.fecha_decision
+            else None,
         }
     else:
         guardado = {
-            'estatus': 'pendiente',
-            'estatus_chapingo': None,
-            'id_poligono_unico': None,
-            'superficie_chapingo': None,
-            'comentario_chapingo': None,
-            'superficie_calculada': None,
-            'id_poligon_historico': None,
-            'mega_idx': None,
-            'overlap_pct': None,
-            'fecha_validacion': None,
+            "estatus": "pendiente",
+            "estatus_chapingo": None,
+            "id_poligono_unico": None,
+            "superficie_chapingo": None,
+            "comentario_chapingo": None,
+            "superficie_calculada": None,
+            "id_poligon_historico": None,
+            "mega_idx": None,
+            "overlap_pct": None,
+            "fecha_validacion": None,
         }
 
     if es_nuevo:
         propuesta = generar_propuesta_chapingo_nuevo(idx, analisis_mega=analisis_mega)
-        propuesta['aplica'] = True
+        propuesta["aplica"] = True
     else:
         propuesta = {
-            'aplica': False,
-            'estatus_chapingo_propuesto': None,
-            'id_poligono_unico_propuesto': None,
-            'superficie_chapingo_propuesta': None,
-            'comentario_chapingo_propuesto': 'El indice no pertenece al subconjunto nuevos; propuesta automatica no aplica.',
+            "aplica": False,
+            "estatus_chapingo_propuesto": None,
+            "id_poligono_unico_propuesto": None,
+            "superficie_chapingo_propuesta": None,
+            "comentario_chapingo_propuesto": "El indice no pertenece al subconjunto nuevos; propuesta automatica no aplica.",
         }
 
-    return jsonify({
-        'index': idx,
-        'total': len(shp_cache.validacion),
-        'es_nuevo': es_nuevo,
-        'poligono': analisis_mega['poligono'],
-        'analisis_mega': {
-            'matches': analisis_mega['matches'],
-            'match_features': analisis_mega['match_features'],
-            'resumen': analisis_mega['resumen'],
-        },
-        'propuesta': propuesta,
-        'guardado': guardado,
-    })
+    return jsonify(
+        {
+            "index": idx,
+            "total": len(shp_cache.validacion),
+            "es_nuevo": es_nuevo,
+            "poligono": analisis_mega["poligono"],
+            "analisis_mega": {
+                "matches": analisis_mega["matches"],
+                "match_features": analisis_mega["match_features"],
+                "resumen": analisis_mega["resumen"],
+            },
+            "propuesta": propuesta,
+            "guardado": guardado,
+        }
+    )
 
 
-@app.route('/api/analizador/chapingo-evidencia')
+@app.route("/api/analizador/chapingo-evidencia")
 @login_required
 @limiter.exempt
 def api_analizador_chapingo_evidencia():
@@ -5435,56 +6460,65 @@ def api_analizador_chapingo_evidencia():
     try:
         escenarios = construir_evidencia_flujo_chapingo()
     except RuntimeError as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"error": str(e)}), 500
     except Exception as e:
-        return jsonify({'error': f'No fue posible generar evidencia Chapingo: {str(e)}'}), 500
+        return jsonify(
+            {"error": f"No fue posible generar evidencia Chapingo: {str(e)}"}
+        ), 500
 
     faltantes = [k for k, v in escenarios.items() if v is None]
     escenarios_fallidos = [
-        k for k, v in escenarios.items()
-        if isinstance(v, dict) and v.get('cumple') is False
+        k
+        for k, v in escenarios.items()
+        if isinstance(v, dict) and v.get("cumple") is False
     ]
 
-    return jsonify({
-        'ok': not faltantes and not escenarios_fallidos,
-        'escenarios': escenarios,
-        'faltantes': faltantes,
-        'fallidos': escenarios_fallidos,
-    })
+    return jsonify(
+        {
+            "ok": not faltantes and not escenarios_fallidos,
+            "escenarios": escenarios,
+            "faltantes": faltantes,
+            "fallidos": escenarios_fallidos,
+        }
+    )
 
 
-@app.route('/api/analizador/propuesta-editable/<int:idx>/guardar', methods=['POST'])
+@app.route("/api/analizador/propuesta-editable/<int:idx>/guardar", methods=["POST"])
 @login_required
 @limiter.exempt
 def api_analizador_guardar_propuesta_editable(idx):
     """Save editable Chapingo decision values for a single index."""
     if not _user_can_access_idx(idx):
-        return jsonify({'error': 'No tienes acceso a este polígono'}), 403
+        return jsonify({"error": "No tienes acceso a este polígono"}), 403
 
     data = request.get_json(force=True, silent=True) or {}
 
     guardado, error_msg, error_status = _guardar_decision_chapingo(idx, data)
     if error_msg is not None:
-        return jsonify({'error': error_msg}), error_status
+        return jsonify({"error": error_msg}), error_status
 
-    return jsonify({
-        'success': True,
-        'idx': idx,
-        'guardado': guardado,
-    })
+    return jsonify(
+        {
+            "success": True,
+            "idx": idx,
+            "guardado": guardado,
+        }
+    )
 
 
-@app.route('/api/analizador/poligonos-cercanos/<int:idx>')
+@app.route("/api/analizador/poligonos-cercanos/<int:idx>")
 @login_required
 @limiter.exempt
 def api_analizador_poligonos_cercanos(idx):
     """Return MEGA polygon IDs spatially near the current validation polygon."""
     if shp_cache.validacion is None or shp_cache.mega is None:
-        return jsonify({'error': 'Shapefiles no cargados'}), 500
+        return jsonify({"error": "Shapefiles no cargados"}), 500
     if idx < 0 or idx >= len(shp_cache.validacion):
-        return jsonify({'error': f'idx fuera de rango (0-{len(shp_cache.validacion)-1})'}), 400
+        return jsonify(
+            {"error": f"idx fuera de rango (0-{len(shp_cache.validacion) - 1})"}
+        ), 400
     if not _user_can_access_idx(idx):
-        return jsonify({'error': 'No tienes acceso a este polígono'}), 403
+        return jsonify({"error": "No tienes acceso a este polígono"}), 403
 
     import pyproj
     from shapely.ops import transform
@@ -5504,7 +6538,9 @@ def api_analizador_poligonos_cercanos(idx):
 
     # Set up UTM transformer for area calculation (based on centroid longitude)
     utm_zone = int((v_centroid.x + 180) / 6) + 1
-    transformer = pyproj.Transformer.from_crs('EPSG:4326', f'EPSG:326{utm_zone:02d}', always_xy=True)
+    transformer = pyproj.Transformer.from_crs(
+        "EPSG:4326", f"EPSG:326{utm_zone:02d}", always_xy=True
+    )
 
     cercanos = []
     for ci in candidate_indices:
@@ -5514,7 +6550,7 @@ def api_analizador_poligonos_cercanos(idx):
         # Centroid-to-centroid distance in km
         m_centroid = mgeom.centroid
         # Use pyproj to compute geodesic distance
-        geod = pyproj.Geod(ellps='WGS84')
+        geod = pyproj.Geod(ellps="WGS84")
         _, _, dist_m = geod.inv(v_centroid.x, v_centroid.y, m_centroid.x, m_centroid.y)
         distance_km = round(dist_m / 1000, 3)
 
@@ -5522,18 +6558,20 @@ def api_analizador_poligonos_cercanos(idx):
         mgeom_utm = transform(transformer.transform, mgeom)
         area_ha = round(mgeom_utm.area / 10000, 4)
 
-        cercanos.append({
-            'id_poligon': str(mrow.get('ID_POLIGON', '')),
-            'id_credito': str(mrow.get('ID_CREDITO', '')),
-            'distance_km': distance_km,
-            'area_ha': area_ha,
-        })
+        cercanos.append(
+            {
+                "id_poligon": str(mrow.get("ID_POLIGON", "")),
+                "id_credito": str(mrow.get("ID_CREDITO", "")),
+                "distance_km": distance_km,
+                "area_ha": area_ha,
+            }
+        )
 
     # Sort by distance ascending and limit to 50
-    cercanos.sort(key=lambda x: x['distance_km'])
+    cercanos.sort(key=lambda x: x["distance_km"])
     cercanos = cercanos[:50]
 
-    return jsonify({'idx': idx, 'cercanos': cercanos})
+    return jsonify({"idx": idx, "cercanos": cercanos})
 
 
 def _guardar_decision_chapingo(idx, data):
@@ -5543,49 +6581,55 @@ def _guardar_decision_chapingo(idx, data):
     saved state on success, or None on failure.
     """
     if shp_cache.validacion is None:
-        return None, 'Shapefiles no cargados', 500
+        return None, "Shapefiles no cargados", 500
     if idx < 0 or idx >= len(shp_cache.validacion):
-        return None, f'idx fuera de rango (0-{len(shp_cache.validacion)-1})', 400
+        return None, f"idx fuera de rango (0-{len(shp_cache.validacion) - 1})", 400
 
-    estatus_raw = data.get('estatus_chapingo')
+    estatus_raw = data.get("estatus_chapingo")
     if estatus_raw is None:
-        return None, 'estatus_chapingo es requerido', 400
+        return None, "estatus_chapingo es requerido", 400
 
     estatus_chapingo = str(estatus_raw).strip().upper()
     if not estatus_chapingo:
-        return None, 'estatus_chapingo no puede estar vacio', 400
+        return None, "estatus_chapingo no puede estar vacio", 400
 
     try:
         id_poligono_unico = _normalizar_texto_chapingo(
-            data.get('id_poligono_unico'),
-            'id_poligono_unico'
+            data.get("id_poligono_unico"), "id_poligono_unico"
         )
         comentario_chapingo = _normalizar_texto_chapingo(
-            data.get('comentario_chapingo'),
-            'comentario_chapingo'
+            data.get("comentario_chapingo"), "comentario_chapingo"
         )
         superficie_chapingo = _normalizar_superficie_chapingo(
-            data.get('superficie_chapingo')
+            data.get("superficie_chapingo")
         )
     except ValueError as e:
         return None, str(e), 400
 
     if _requiere_vinculacion_chapingo(idx, estatus_chapingo) and not id_poligono_unico:
-        return None, 'id_poligono_unico es requerido cuando la propuesta requiere vinculacion', 400
+        return (
+            None,
+            "id_poligono_unico es requerido cuando la propuesta requiere vinculacion",
+            400,
+        )
 
     # Auto-calculate surface area in hectares using UTM projection
     import pyproj
     from shapely.ops import transform
+
     vrow = shp_cache.validacion.iloc[idx]
     vgeom = vrow.geometry
     centroid = vgeom.centroid
     utm_zone = int((centroid.x + 180) / 6) + 1
-    transformer = pyproj.Transformer.from_crs('EPSG:4326', f'EPSG:326{utm_zone:02d}', always_xy=True)
+    transformer = pyproj.Transformer.from_crs(
+        "EPSG:4326", f"EPSG:326{utm_zone:02d}", always_xy=True
+    )
     vgeom_utm = transform(transformer.transform, vgeom)
     superficie_calculada = round(vgeom_utm.area / 10000, 4)
 
     # Save to PostgreSQL (analizador_15k)
     from flask_login import current_user
+
     pg_record = Analizador15K.query.filter_by(idx_shp=idx).first()
     if pg_record:
         pg_record.estatus_chapingo = estatus_chapingo
@@ -5599,33 +6643,45 @@ def _guardar_decision_chapingo(idx, data):
         db.session.commit()
 
     guardado = {
-        'estatus_chapingo': pg_record.estatus_chapingo if pg_record else estatus_chapingo,
-        'id_poligono_unico': pg_record.id_poligono_unico if pg_record else id_poligono_unico,
-        'superficie_chapingo': pg_record.superficie_chapingo if pg_record else superficie_chapingo,
-        'comentario_chapingo': pg_record.comentario_chapingo if pg_record else comentario_chapingo,
-        'superficie_calculada': pg_record.superficie_calculada if pg_record else superficie_calculada,
+        "estatus_chapingo": pg_record.estatus_chapingo
+        if pg_record
+        else estatus_chapingo,
+        "id_poligono_unico": pg_record.id_poligono_unico
+        if pg_record
+        else id_poligono_unico,
+        "superficie_chapingo": pg_record.superficie_chapingo
+        if pg_record
+        else superficie_chapingo,
+        "comentario_chapingo": pg_record.comentario_chapingo
+        if pg_record
+        else comentario_chapingo,
+        "superficie_calculada": pg_record.superficie_calculada
+        if pg_record
+        else superficie_calculada,
     }
     return guardado, None, 200
 
 
-@app.route('/api/analizador/confirmar-y-avanzar/<int:idx>', methods=['POST'])
+@app.route("/api/analizador/confirmar-y-avanzar/<int:idx>", methods=["POST"])
 @login_required
 @limiter.exempt
 def api_analizador_confirmar_y_avanzar(idx):
     """Save current polygon decision and return next polygon data in one request."""
     if not _user_can_access_idx(idx):
-        return jsonify({'error': 'No tienes acceso a este polígono'}), 403
+        return jsonify({"error": "No tienes acceso a este polígono"}), 403
 
     data = request.get_json(force=True, silent=True) or {}
 
     # Save the decision using the shared helper
     guardado, error_msg, error_status = _guardar_decision_chapingo(idx, data)
     if error_msg is not None:
-        return jsonify({'error': error_msg}), error_status
+        return jsonify({"error": error_msg}), error_status
 
     # Determine next index based on optional filter params
-    filtro = request.args.get('filtro')  # e.g. 'nuevos', 'existentes', 'por_clasificar', 'clasificacion:duplicado'
-    pos_str = request.args.get('pos')    # current position in filtered list (0-based)
+    filtro = request.args.get(
+        "filtro"
+    )  # e.g. 'nuevos', 'existentes', 'por_clasificar', 'clasificacion:duplicado'
+    pos_str = request.args.get("pos")  # current position in filtered list (0-based)
 
     next_idx = None
 
@@ -5652,15 +6708,19 @@ def api_analizador_confirmar_y_avanzar(idx):
                 next_idx = candidate
 
     # If solo_pendientes, skip forward past already-decided polygons
-    solo_pendientes = request.args.get('solo_pendientes')
-    _fi = locals().get('filtered_indices')   # may be undefined if filtro/pos branch not taken
-    _np = locals().get('next_pos')
-    if solo_pendientes == '1' and next_idx is not None:
+    solo_pendientes = request.args.get("solo_pendientes")
+    _fi = locals().get(
+        "filtered_indices"
+    )  # may be undefined if filtro/pos branch not taken
+    _np = locals().get("next_pos")
+    if solo_pendientes == "1" and next_idx is not None:
         if filtro and pos_str is not None and _fi:
             # Filtered mode: walk through remaining filtered indices
             _cur_pos = _np if _np is not None else 0
             while next_idx is not None:
-                existing = Analizador15K.query.filter_by(idx_shp=next_idx, tiene_decision=True).first()
+                existing = Analizador15K.query.filter_by(
+                    idx_shp=next_idx, tiene_decision=True
+                ).first()
                 if not existing:
                     break  # Found an undecided one
                 _cur_pos += 1
@@ -5670,9 +6730,13 @@ def api_analizador_confirmar_y_avanzar(idx):
                     next_idx = None  # No more undecided polygons
         else:
             # Unfiltered mode: skip forward sequentially
-            max_idx = len(shp_cache.validacion) if shp_cache.validacion is not None else 0
+            max_idx = (
+                len(shp_cache.validacion) if shp_cache.validacion is not None else 0
+            )
             while next_idx is not None and next_idx < max_idx:
-                existing = Analizador15K.query.filter_by(idx_shp=next_idx, tiene_decision=True).first()
+                existing = Analizador15K.query.filter_by(
+                    idx_shp=next_idx, tiene_decision=True
+                ).first()
                 if not existing:
                     break
                 next_idx += 1
@@ -5688,48 +6752,52 @@ def api_analizador_confirmar_y_avanzar(idx):
             analisis = calcular_traslapes(next_idx)
             es_nuevo = indice_pertenece_a_nuevos(next_idx)
             if es_nuevo:
-                propuesta = generar_propuesta_chapingo_nuevo(next_idx, analisis_mega=analisis)
-                propuesta['aplica'] = True
+                propuesta = generar_propuesta_chapingo_nuevo(
+                    next_idx, analisis_mega=analisis
+                )
+                propuesta["aplica"] = True
             else:
                 propuesta = {
-                    'aplica': False,
-                    'estatus_chapingo_propuesto': None,
-                    'id_poligono_unico_propuesto': None,
-                    'superficie_chapingo_propuesta': None,
-                    'comentario_chapingo_propuesto': 'El indice no pertenece al subconjunto nuevos; propuesta automatica no aplica.',
+                    "aplica": False,
+                    "estatus_chapingo_propuesto": None,
+                    "id_poligono_unico_propuesto": None,
+                    "superficie_chapingo_propuesta": None,
+                    "comentario_chapingo_propuesto": "El indice no pertenece al subconjunto nuevos; propuesta automatica no aplica.",
                 }
 
             # Read saved state for next polygon
             pg_next = Analizador15K.query.filter_by(idx_shp=next_idx).first()
             if pg_next and pg_next.tiene_decision:
                 guardado_siguiente = {
-                    'tiene_decision': True,
-                    'estatus_chapingo': pg_next.estatus_chapingo,
-                    'id_poligono_unico': pg_next.id_poligono_unico,
-                    'superficie_chapingo': pg_next.superficie_chapingo,
-                    'comentario_chapingo': pg_next.comentario_chapingo,
-                    'superficie_calculada': pg_next.superficie_calculada,
-                    'fecha_validacion': pg_next.fecha_decision.isoformat() if pg_next.fecha_decision else None,
+                    "tiene_decision": True,
+                    "estatus_chapingo": pg_next.estatus_chapingo,
+                    "id_poligono_unico": pg_next.id_poligono_unico,
+                    "superficie_chapingo": pg_next.superficie_chapingo,
+                    "comentario_chapingo": pg_next.comentario_chapingo,
+                    "superficie_calculada": pg_next.superficie_calculada,
+                    "fecha_validacion": pg_next.fecha_decision.isoformat()
+                    if pg_next.fecha_decision
+                    else None,
                 }
             else:
                 guardado_siguiente = {
-                    'tiene_decision': False,
-                    'estatus_chapingo': None,
-                    'id_poligono_unico': None,
-                    'superficie_chapingo': None,
-                    'comentario_chapingo': None,
-                    'superficie_calculada': None,
-                    'fecha_validacion': None,
+                    "tiene_decision": False,
+                    "estatus_chapingo": None,
+                    "id_poligono_unico": None,
+                    "superficie_chapingo": None,
+                    "comentario_chapingo": None,
+                    "superficie_calculada": None,
+                    "fecha_validacion": None,
                 }
 
             siguiente = {
-                'idx': next_idx,
-                'poligono': analisis['poligono'],
-                'matches': analisis['matches'],
-                'match_features': analisis['match_features'],
-                'propuesta': propuesta,
-                'guardado': guardado_siguiente,
-                'es_nuevo': es_nuevo,
+                "idx": next_idx,
+                "poligono": analisis["poligono"],
+                "matches": analisis["matches"],
+                "match_features": analisis["match_features"],
+                "propuesta": propuesta,
+                "guardado": guardado_siguiente,
+                "es_nuevo": es_nuevo,
             }
             hay_siguiente = True
         except (ValueError, RuntimeError):
@@ -5737,12 +6805,14 @@ def api_analizador_confirmar_y_avanzar(idx):
             siguiente = None
             hay_siguiente = False
 
-    return jsonify({
-        'success': True,
-        'guardado': guardado,
-        'siguiente': siguiente,
-        'hay_siguiente': hay_siguiente,
-    })
+    return jsonify(
+        {
+            "success": True,
+            "guardado": guardado,
+            "siguiente": siguiente,
+            "hay_siguiente": hay_siguiente,
+        }
+    )
 
 
 def _get_filtered_indices_for_advance(filtro):
@@ -5757,39 +6827,46 @@ def _get_filtered_indices_for_advance(filtro):
 
     allowed = set(_get_user_allowed_indices())
 
-    if filtro in ('nuevos', 'existentes'):
+    if filtro in ("nuevos", "existentes"):
         global _indices_filtrados_cache
         if _indices_filtrados_cache is None:
-            mega_ids = set(shp_cache.mega['ID_POLIGON'].astype(str).str.strip())
-            mask_nuevos = ~shp_cache.validacion['ID_POLIGON'].astype(str).str.strip().isin(mega_ids)
+            mega_ids = set(shp_cache.mega["ID_POLIGON"].astype(str).str.strip())
+            mask_nuevos = ~shp_cache.validacion["ID_POLIGON"].astype(
+                str
+            ).str.strip().isin(mega_ids)
             indices_nuevos = [int(i) for i in shp_cache.validacion.index[mask_nuevos]]
-            indices_existentes = [int(i) for i in shp_cache.validacion.index[~mask_nuevos]]
+            indices_existentes = [
+                int(i) for i in shp_cache.validacion.index[~mask_nuevos]
+            ]
             _indices_filtrados_cache = {
-                'nuevos': indices_nuevos,
-                'existentes': indices_existentes,
+                "nuevos": indices_nuevos,
+                "existentes": indices_existentes,
             }
         indices = _indices_filtrados_cache[filtro]
         return [i for i in indices if i in allowed]
 
-    if filtro in ('por_clasificar', 'clasificados'):
-        tiene_decision = (filtro == 'clasificados')
-        records = Analizador15K.query.with_entities(Analizador15K.idx_shp).filter(
-            Analizador15K.tiene_decision == tiene_decision
-        ).order_by(Analizador15K.idx_shp).all()
+    if filtro in ("por_clasificar", "clasificados"):
+        tiene_decision = filtro == "clasificados"
+        records = (
+            Analizador15K.query.with_entities(Analizador15K.idx_shp)
+            .filter(Analizador15K.tiene_decision == tiene_decision)
+            .order_by(Analizador15K.idx_shp)
+            .all()
+        )
         indices = [r[0] for r in records]
         return [i for i in indices if i in allowed]
 
-    if filtro.startswith('clasificacion:'):
-        key = filtro[len('clasificacion:'):]
-        if _clasif_nuevos_state.get('indices_por_clasif') is None:
+    if filtro.startswith("clasificacion:"):
+        key = filtro[len("clasificacion:") :]
+        if _clasif_nuevos_state.get("indices_por_clasif") is None:
             return []
-        indices = _clasif_nuevos_state['indices_por_clasif'].get(key, [])
+        indices = _clasif_nuevos_state["indices_por_clasif"].get(key, [])
         return [i for i in indices if i in allowed]
 
     return []
 
 
-@app.route('/api/analizador/decisiones')
+@app.route("/api/analizador/decisiones")
 @login_required
 @limiter.exempt
 def api_analizador_decisiones():
@@ -5797,31 +6874,36 @@ def api_analizador_decisiones():
     from flask_login import current_user
 
     if current_user.is_admin:
-        records = Analizador15K.query.filter(
-            Analizador15K.tiene_decision == True  # noqa: E712
-        ).order_by(Analizador15K.idx_shp).all()
-    else:
-        records = Analizador15K.query.filter(
-            Analizador15K.tiene_decision == True,  # noqa: E712
-            db.or_(
-                Analizador15K.usuario_asignado_id == current_user.id,
-                Analizador15K.usuario_asignado_id.is_(None)
+        records = (
+            Analizador15K.query.filter(
+                Analizador15K.tiene_decision == True  # noqa: E712
             )
-        ).order_by(Analizador15K.idx_shp).all()
+            .order_by(Analizador15K.idx_shp)
+            .all()
+        )
+    else:
+        records = (
+            Analizador15K.query.filter(
+                Analizador15K.tiene_decision == True,  # noqa: E712
+                db.or_(
+                    Analizador15K.usuario_asignado_id == current_user.id,
+                    Analizador15K.usuario_asignado_id.is_(None),
+                ),
+            )
+            .order_by(Analizador15K.idx_shp)
+            .all()
+        )
 
     resultados = []
     for r in records:
         d = r.to_dict()
-        d['decidido_por'] = r.decidido_por.username if r.decidido_por else None
+        d["decidido_por"] = r.decidido_por.username if r.decidido_por else None
         resultados.append(d)
 
-    return jsonify({
-        'total': len(resultados),
-        'decisiones': resultados
-    })
+    return jsonify({"total": len(resultados), "decisiones": resultados})
 
 
-@app.route('/api/analizador/indices-por-estado')
+@app.route("/api/analizador/indices-por-estado")
 @login_required
 @limiter.exempt
 def api_analizador_indices_por_estado():
@@ -5834,74 +6916,86 @@ def api_analizador_indices_por_estado():
         base_query = Analizador15K.query.filter(
             db.or_(
                 Analizador15K.usuario_asignado_id == current_user.id,
-                Analizador15K.usuario_asignado_id.is_(None)
+                Analizador15K.usuario_asignado_id.is_(None),
             )
         )
 
-    filtro = request.args.get('filtro', 'todos')
+    filtro = request.args.get("filtro", "todos")
 
-    if filtro == 'por_clasificar':
-        records = base_query.filter(
-            Analizador15K.tiene_decision == False  # noqa: E712
-        ).order_by(Analizador15K.idx_shp).all()
-    elif filtro == 'clasificados':
-        records = base_query.filter(
-            Analizador15K.tiene_decision == True  # noqa: E712
-        ).order_by(Analizador15K.idx_shp).all()
+    if filtro == "por_clasificar":
+        records = (
+            base_query.filter(
+                Analizador15K.tiene_decision == False  # noqa: E712
+            )
+            .order_by(Analizador15K.idx_shp)
+            .all()
+        )
+    elif filtro == "clasificados":
+        records = (
+            base_query.filter(
+                Analizador15K.tiene_decision == True  # noqa: E712
+            )
+            .order_by(Analizador15K.idx_shp)
+            .all()
+        )
     else:
         records = base_query.order_by(Analizador15K.idx_shp).all()
 
     indices = [r.idx_shp for r in records]
 
     # Optional: intersect with classification filter
-    clasif = request.args.get('clasif')
-    subfiltro = request.args.get('subfiltro')
-    if clasif and _clasif_nuevos_state.get('status') == 'done' and _clasif_nuevos_state.get('indices_por_clasif'):
-        ipc = _clasif_nuevos_state['indices_por_clasif']
+    clasif = request.args.get("clasif")
+    subfiltro = request.args.get("subfiltro")
+    if (
+        clasif
+        and _clasif_nuevos_state.get("status") == "done"
+        and _clasif_nuevos_state.get("indices_por_clasif")
+    ):
+        ipc = _clasif_nuevos_state["indices_por_clasif"]
         clasif_indices_set = set()
         if subfiltro:
-            sub_key = clasif + '_' + subfiltro
+            sub_key = clasif + "_" + subfiltro
             clasif_indices_set = set(ipc.get(sub_key, []))
         else:
             for key, vals in ipc.items():
-                if key == clasif or key.startswith(clasif + '_'):
+                if key == clasif or key.startswith(clasif + "_"):
                     clasif_indices_set.update(vals)
         indices = sorted(set(indices) & clasif_indices_set)
 
-    return jsonify({
-        'total': len(indices),
-        'indices': indices,
-        'filtro': filtro
-    })
+    return jsonify({"total": len(indices), "indices": indices, "filtro": filtro})
 
 
-@app.route('/api/analizador/buscar')
+@app.route("/api/analizador/buscar")
 @login_required
 @limiter.exempt
 def api_analizador_buscar():
     if shp_cache.validacion is None:
-        return jsonify({'error': 'Shapefiles no cargados'}), 500
-    q = request.args.get('q', '').strip()
+        return jsonify({"error": "Shapefiles no cargados"}), 500
+    q = request.args.get("q", "").strip()
     if not q:
-        return jsonify({'resultados': []})
+        return jsonify({"resultados": []})
     allowed = set(_get_user_allowed_indices())
     resultados = []
     for idx, row in shp_cache.validacion.iterrows():
         if int(idx) not in allowed:
             continue
-        if (q.lower() in str(row.get('ID_CREDITO', '')).lower() or
-                q.lower() in str(row.get('ID_POLIGON', '')).lower()):
-            resultados.append({
-                'index': int(idx),
-                'id_poligon': str(row.get('ID_POLIGON', '')),
-                'id_credito': str(row.get('ID_CREDITO', ''))
-            })
+        if (
+            q.lower() in str(row.get("ID_CREDITO", "")).lower()
+            or q.lower() in str(row.get("ID_POLIGON", "")).lower()
+        ):
+            resultados.append(
+                {
+                    "index": int(idx),
+                    "id_poligon": str(row.get("ID_POLIGON", "")),
+                    "id_credito": str(row.get("ID_CREDITO", "")),
+                }
+            )
         if len(resultados) >= 50:
             break
-    return jsonify({'resultados': resultados, 'total': len(resultados)})
+    return jsonify({"resultados": resultados, "total": len(resultados)})
 
 
-@app.route('/api/analizador/dashboard-estatus')
+@app.route("/api/analizador/dashboard-estatus")
 @login_required
 @limiter.exempt
 def api_analizador_dashboard_estatus():
@@ -5913,7 +7007,7 @@ def api_analizador_dashboard_estatus():
         base_query = Analizador15K.query.filter(
             db.or_(
                 Analizador15K.usuario_asignado_id == current_user.id,
-                Analizador15K.usuario_asignado_id.is_(None)
+                Analizador15K.usuario_asignado_id.is_(None),
             )
         )
 
@@ -5923,14 +7017,18 @@ def api_analizador_dashboard_estatus():
 
     # For nuevos/existentes, still need to check against mega
     if shp_cache.validacion is not None and shp_cache.mega is not None:
-        allowed = [r.idx_shp for r in base_query.with_entities(Analizador15K.idx_shp).all()]
-        mega_ids = set(shp_cache.mega['ID_POLIGON'].astype(str).str.strip())
+        allowed = [
+            r.idx_shp for r in base_query.with_entities(Analizador15K.idx_shp).all()
+        ]
+        mega_ids = set(shp_cache.mega["ID_POLIGON"].astype(str).str.strip())
 
         nuevos = 0
         existentes = 0
         for idx in allowed:
             if idx < len(shp_cache.validacion):
-                id_pol = str(shp_cache.validacion.iloc[idx].get('ID_POLIGON', '')).strip()
+                id_pol = str(
+                    shp_cache.validacion.iloc[idx].get("ID_POLIGON", "")
+                ).strip()
                 if id_pol in mega_ids:
                     existentes += 1
                 else:
@@ -5939,33 +7037,39 @@ def api_analizador_dashboard_estatus():
         nuevos = 0
         existentes = 0
 
-    return jsonify({
-        'total_15k': total_15k,
-        'nuevos': nuevos,
-        'existentes': existentes,
-        'con_decision': con_decision,
-        'sin_decision': sin_decision,
-    })
+    return jsonify(
+        {
+            "total_15k": total_15k,
+            "nuevos": nuevos,
+            "existentes": existentes,
+            "con_decision": con_decision,
+            "sin_decision": sin_decision,
+        }
+    )
 
 
-@app.route('/api/analizador/indices-filtrados')
+@app.route("/api/analizador/indices-filtrados")
 @login_required
 @limiter.exempt
 def api_analizador_indices_filtrados():
     global _indices_filtrados_cache
     if shp_cache.validacion is None or shp_cache.mega is None:
-        return jsonify({'error': 'Shapefiles no cargados'}), 500
-    filtro = request.args.get('filtro')
-    if filtro not in ('nuevos', 'existentes'):
-        return jsonify({'error': 'Parámetro filtro inválido. Use nuevos o existentes'}), 400
+        return jsonify({"error": "Shapefiles no cargados"}), 500
+    filtro = request.args.get("filtro")
+    if filtro not in ("nuevos", "existentes"):
+        return jsonify(
+            {"error": "Parámetro filtro inválido. Use nuevos o existentes"}
+        ), 400
     if _indices_filtrados_cache is None:
-        mega_ids = set(shp_cache.mega['ID_POLIGON'].astype(str).str.strip())
-        mask_nuevos = ~shp_cache.validacion['ID_POLIGON'].astype(str).str.strip().isin(mega_ids)
+        mega_ids = set(shp_cache.mega["ID_POLIGON"].astype(str).str.strip())
+        mask_nuevos = ~shp_cache.validacion["ID_POLIGON"].astype(str).str.strip().isin(
+            mega_ids
+        )
         indices_nuevos = [int(i) for i in shp_cache.validacion.index[mask_nuevos]]
         indices_existentes = [int(i) for i in shp_cache.validacion.index[~mask_nuevos]]
         _indices_filtrados_cache = {
-            'nuevos': indices_nuevos,
-            'existentes': indices_existentes,
+            "nuevos": indices_nuevos,
+            "existentes": indices_existentes,
         }
     indices = _indices_filtrados_cache[filtro]
     # Filter to only indices the current user is allowed to see
@@ -5973,12 +7077,17 @@ def api_analizador_indices_filtrados():
     indices = [i for i in indices if i in allowed]
 
     # Optional: exclude already-decided polygons
-    solo_pendientes = request.args.get('solo_pendientes')
-    if solo_pendientes == '1':
-        decided_indices = {r.idx_shp for r in Analizador15K.query.filter_by(tiene_decision=True).with_entities(Analizador15K.idx_shp).all()}
+    solo_pendientes = request.args.get("solo_pendientes")
+    if solo_pendientes == "1":
+        decided_indices = {
+            r.idx_shp
+            for r in Analizador15K.query.filter_by(tiene_decision=True)
+            .with_entities(Analizador15K.idx_shp)
+            .all()
+        }
         indices = [i for i in indices if i not in decided_indices]
 
-    return jsonify({'filtro': filtro, 'indices': indices, 'total': len(indices)})
+    return jsonify({"filtro": filtro, "indices": indices, "total": len(indices)})
 
 
 def _run_clasificacion_nuevos():
@@ -5987,214 +7096,259 @@ def _run_clasificacion_nuevos():
     try:
         # Get or compute the list of 'nuevo' indices
         if _indices_filtrados_cache is None:
-            mega_ids = set(shp_cache.mega['ID_POLIGON'].astype(str).str.strip())
-            mask_nuevos = ~shp_cache.validacion['ID_POLIGON'].astype(str).str.strip().isin(mega_ids)
+            mega_ids = set(shp_cache.mega["ID_POLIGON"].astype(str).str.strip())
+            mask_nuevos = ~shp_cache.validacion["ID_POLIGON"].astype(
+                str
+            ).str.strip().isin(mega_ids)
             indices_nuevos = [int(i) for i in shp_cache.validacion.index[mask_nuevos]]
-            indices_existentes = [int(i) for i in shp_cache.validacion.index[~mask_nuevos]]
+            indices_existentes = [
+                int(i) for i in shp_cache.validacion.index[~mask_nuevos]
+            ]
             _indices_filtrados_cache = {
-                'nuevos': indices_nuevos,
-                'existentes': indices_existentes,
+                "nuevos": indices_nuevos,
+                "existentes": indices_existentes,
             }
-        indices = _indices_filtrados_cache['nuevos']
+        indices = _indices_filtrados_cache["nuevos"]
         total = len(indices)
-        _clasif_nuevos_state['total'] = total
+        _clasif_nuevos_state["total"] = total
 
         counts = {
-            'duplicado': 0,
-            'duplicados_mismo_credito': 0,
-            'duplicados_diferente_credito': 0,
-            'traslape_interno': 0,
-            'traslape_interno_mismo_credito': 0,
-            'traslape_interno_diferente_credito': 0,
-            'traslape_relevante': 0,
-            'traslape_relevante_mismo_credito': 0,
-            'traslape_relevante_diferente_credito': 0,
-            'sin_conflicto': 0,
-            'sin_conflicto_mismo_credito': 0,
-            'sin_conflicto_diferente_credito': 0,
-            'sin_matches': 0,
+            "duplicado": 0,
+            "duplicados_mismo_credito": 0,
+            "duplicados_diferente_credito": 0,
+            "traslape_interno": 0,
+            "traslape_interno_mismo_credito": 0,
+            "traslape_interno_diferente_credito": 0,
+            "traslape_relevante": 0,
+            "traslape_relevante_mismo_credito": 0,
+            "traslape_relevante_diferente_credito": 0,
+            "sin_conflicto": 0,
+            "sin_conflicto_mismo_credito": 0,
+            "sin_conflicto_diferente_credito": 0,
+            "sin_matches": 0,
         }
         indices_por_clasif = {
-            'duplicado': [],
-            'duplicado_mismo_credito': [],
-            'duplicado_diferente_credito': [],
-            'traslape_interno': [],
-            'traslape_interno_mismo_credito': [],
-            'traslape_interno_diferente_credito': [],
-            'traslape_relevante': [],
-            'traslape_relevante_mismo_credito': [],
-            'traslape_relevante_diferente_credito': [],
-            'sin_conflicto': [],
-            'sin_conflicto_mismo_credito': [],
-            'sin_conflicto_diferente_credito': [],
-            'sin_matches': [],
+            "duplicado": [],
+            "duplicado_mismo_credito": [],
+            "duplicado_diferente_credito": [],
+            "traslape_interno": [],
+            "traslape_interno_mismo_credito": [],
+            "traslape_interno_diferente_credito": [],
+            "traslape_relevante": [],
+            "traslape_relevante_mismo_credito": [],
+            "traslape_relevante_diferente_credito": [],
+            "sin_conflicto": [],
+            "sin_conflicto_mismo_credito": [],
+            "sin_conflicto_diferente_credito": [],
+            "sin_matches": [],
         }
 
         for i, idx in enumerate(indices):
             try:
                 data = calcular_traslapes(idx)
-                resumen = data['resumen']
-                if resumen['duplicados'] > 0:
-                    counts['duplicado'] += 1
-                    indices_por_clasif['duplicado'].append(idx)
-                    if resumen.get('duplicados_mismo_credito', 0) > 0:
-                        counts['duplicados_mismo_credito'] += 1
-                        indices_por_clasif['duplicado_mismo_credito'].append(idx)
+                resumen = data["resumen"]
+                if resumen["duplicados"] > 0:
+                    counts["duplicado"] += 1
+                    indices_por_clasif["duplicado"].append(idx)
+                    if resumen.get("duplicados_mismo_credito", 0) > 0:
+                        counts["duplicados_mismo_credito"] += 1
+                        indices_por_clasif["duplicado_mismo_credito"].append(idx)
                     else:
-                        counts['duplicados_diferente_credito'] += 1
-                        indices_por_clasif['duplicado_diferente_credito'].append(idx)
-                elif resumen['traslape_interno'] > 0:
-                    counts['traslape_interno'] += 1
-                    indices_por_clasif['traslape_interno'].append(idx)
-                    if resumen.get('traslape_interno_mismo_credito', 0) > 0:
-                        counts['traslape_interno_mismo_credito'] += 1
-                        indices_por_clasif['traslape_interno_mismo_credito'].append(idx)
+                        counts["duplicados_diferente_credito"] += 1
+                        indices_por_clasif["duplicado_diferente_credito"].append(idx)
+                elif resumen["traslape_interno"] > 0:
+                    counts["traslape_interno"] += 1
+                    indices_por_clasif["traslape_interno"].append(idx)
+                    if resumen.get("traslape_interno_mismo_credito", 0) > 0:
+                        counts["traslape_interno_mismo_credito"] += 1
+                        indices_por_clasif["traslape_interno_mismo_credito"].append(idx)
                     else:
-                        counts['traslape_interno_diferente_credito'] += 1
-                        indices_por_clasif['traslape_interno_diferente_credito'].append(idx)
-                elif resumen['traslape_relevante'] > 0:
-                    counts['traslape_relevante'] += 1
-                    indices_por_clasif['traslape_relevante'].append(idx)
-                    if resumen.get('traslape_relevante_mismo_credito', 0) > 0:
-                        counts['traslape_relevante_mismo_credito'] += 1
-                        indices_por_clasif['traslape_relevante_mismo_credito'].append(idx)
+                        counts["traslape_interno_diferente_credito"] += 1
+                        indices_por_clasif["traslape_interno_diferente_credito"].append(
+                            idx
+                        )
+                elif resumen["traslape_relevante"] > 0:
+                    counts["traslape_relevante"] += 1
+                    indices_por_clasif["traslape_relevante"].append(idx)
+                    if resumen.get("traslape_relevante_mismo_credito", 0) > 0:
+                        counts["traslape_relevante_mismo_credito"] += 1
+                        indices_por_clasif["traslape_relevante_mismo_credito"].append(
+                            idx
+                        )
                     else:
-                        counts['traslape_relevante_diferente_credito'] += 1
-                        indices_por_clasif['traslape_relevante_diferente_credito'].append(idx)
-                elif resumen['sin_conflicto'] > 0:
-                    counts['sin_conflicto'] += 1
-                    indices_por_clasif['sin_conflicto'].append(idx)
-                    if resumen.get('sin_conflicto_mismo_credito', 0) > 0:
-                        counts['sin_conflicto_mismo_credito'] += 1
-                        indices_por_clasif['sin_conflicto_mismo_credito'].append(idx)
+                        counts["traslape_relevante_diferente_credito"] += 1
+                        indices_por_clasif[
+                            "traslape_relevante_diferente_credito"
+                        ].append(idx)
+                elif resumen["sin_conflicto"] > 0:
+                    counts["sin_conflicto"] += 1
+                    indices_por_clasif["sin_conflicto"].append(idx)
+                    if resumen.get("sin_conflicto_mismo_credito", 0) > 0:
+                        counts["sin_conflicto_mismo_credito"] += 1
+                        indices_por_clasif["sin_conflicto_mismo_credito"].append(idx)
                     else:
-                        counts['sin_conflicto_diferente_credito'] += 1
-                        indices_por_clasif['sin_conflicto_diferente_credito'].append(idx)
+                        counts["sin_conflicto_diferente_credito"] += 1
+                        indices_por_clasif["sin_conflicto_diferente_credito"].append(
+                            idx
+                        )
                 else:
-                    counts['sin_matches'] += 1
-                    indices_por_clasif['sin_matches'].append(idx)
+                    counts["sin_matches"] += 1
+                    indices_por_clasif["sin_matches"].append(idx)
             except Exception:
                 # Skip individual polygon errors without crashing the batch
-                counts['sin_matches'] += 1
-                indices_por_clasif['sin_matches'].append(idx)
+                counts["sin_matches"] += 1
+                indices_por_clasif["sin_matches"].append(idx)
 
             processed = i + 1
-            _clasif_nuevos_state['processed'] = processed
-            _clasif_nuevos_state['progress'] = int(processed / total * 100) if total > 0 else 100
+            _clasif_nuevos_state["processed"] = processed
+            _clasif_nuevos_state["progress"] = (
+                int(processed / total * 100) if total > 0 else 100
+            )
 
-        _clasif_nuevos_state['result'] = counts
-        _clasif_nuevos_state['indices_por_clasif'] = indices_por_clasif
-        _clasif_nuevos_state['status'] = 'done'
-        _clasif_nuevos_state['progress'] = 100
+        _clasif_nuevos_state["result"] = counts
+        _clasif_nuevos_state["indices_por_clasif"] = indices_por_clasif
+        _clasif_nuevos_state["status"] = "done"
+        _clasif_nuevos_state["progress"] = 100
     except Exception as e:
-        _clasif_nuevos_state['status'] = 'error'
-        _clasif_nuevos_state['error'] = str(e)
+        _clasif_nuevos_state["status"] = "error"
+        _clasif_nuevos_state["error"] = str(e)
 
 
-@app.route('/api/analizador/clasificacion-nuevos/iniciar', methods=['POST'])
+@app.route("/api/analizador/clasificacion-nuevos/iniciar", methods=["POST"])
 @login_required
 @limiter.exempt
 def api_clasificacion_nuevos_iniciar():
     global _clasif_nuevos_state
     if shp_cache.validacion is None or shp_cache.mega is None:
-        return jsonify({'error': 'Shapefiles no cargados'}), 500
+        return jsonify({"error": "Shapefiles no cargados"}), 500
 
-    if _clasif_nuevos_state['status'] == 'running':
-        return jsonify({'error': 'Cálculo en progreso'}), 409
+    if _clasif_nuevos_state["status"] == "running":
+        return jsonify({"error": "Cálculo en progreso"}), 409
 
-    if _clasif_nuevos_state['status'] == 'done':
+    if _clasif_nuevos_state["status"] == "done":
         # Recompute counts filtered by user's allowed indices
         filtered_result = _filter_clasif_counts_for_user()
-        return jsonify({
-            'status': 'done',
-            'progress': 100,
-            'processed': filtered_result['total_processed'],
-            'total': filtered_result['total_processed'],
-            'result': filtered_result['counts'],
-        }), 200
+        return jsonify(
+            {
+                "status": "done",
+                "progress": 100,
+                "processed": filtered_result["total_processed"],
+                "total": filtered_result["total_processed"],
+                "result": filtered_result["counts"],
+            }
+        ), 200
 
     # Reset state and start background thread
-    _clasif_nuevos_state['status'] = 'running'
-    _clasif_nuevos_state['progress'] = 0
-    _clasif_nuevos_state['processed'] = 0
-    _clasif_nuevos_state['result'] = None
-    _clasif_nuevos_state['indices_por_clasif'] = None
-    _clasif_nuevos_state['error'] = None
+    _clasif_nuevos_state["status"] = "running"
+    _clasif_nuevos_state["progress"] = 0
+    _clasif_nuevos_state["processed"] = 0
+    _clasif_nuevos_state["result"] = None
+    _clasif_nuevos_state["indices_por_clasif"] = None
+    _clasif_nuevos_state["error"] = None
 
     # Determine total upfront for the response (use cache if available)
     if _indices_filtrados_cache is not None:
-        total = len(_indices_filtrados_cache['nuevos'])
+        total = len(_indices_filtrados_cache["nuevos"])
     else:
-        mega_ids = set(shp_cache.mega['ID_POLIGON'].astype(str).str.strip())
-        mask_nuevos = ~shp_cache.validacion['ID_POLIGON'].astype(str).str.strip().isin(mega_ids)
+        mega_ids = set(shp_cache.mega["ID_POLIGON"].astype(str).str.strip())
+        mask_nuevos = ~shp_cache.validacion["ID_POLIGON"].astype(str).str.strip().isin(
+            mega_ids
+        )
         total = int(mask_nuevos.sum())
-    _clasif_nuevos_state['total'] = total
+    _clasif_nuevos_state["total"] = total
 
     threading.Thread(target=_run_clasificacion_nuevos, daemon=True).start()
-    return jsonify({'message': 'Cálculo iniciado', 'total': total}), 202
+    return jsonify({"message": "Cálculo iniciado", "total": total}), 202
 
 
-@app.route('/api/analizador/clasificacion-nuevos/estado')
+@app.route("/api/analizador/clasificacion-nuevos/estado")
 @login_required
 @limiter.exempt
 def api_clasificacion_nuevos_estado():
     state = _clasif_nuevos_state
     response = {
-        'status': state['status'],
-        'progress': state['progress'],
-        'processed': state['processed'],
-        'total': state['total'],
+        "status": state["status"],
+        "progress": state["progress"],
+        "processed": state["processed"],
+        "total": state["total"],
     }
-    if state['status'] == 'done':
+    if state["status"] == "done":
         filtered = _filter_clasif_counts_for_user()
-        response['result'] = filtered['counts']
-        response['processed'] = filtered['total_processed']
-        response['total'] = filtered['total_processed']
-    if state['status'] == 'error':
-        response['error'] = state['error']
+        response["result"] = filtered["counts"]
+        response["processed"] = filtered["total_processed"]
+        response["total"] = filtered["total_processed"]
+    if state["status"] == "error":
+        response["error"] = state["error"]
     return jsonify(response)
 
 
-@app.route('/api/analizador/clasificacion-nuevos/indices')
+@app.route("/api/analizador/clasificacion-nuevos/indices")
 @login_required
 @limiter.exempt
 def api_clasificacion_nuevos_indices():
-    clasif = request.args.get('clasif')
-    subfiltro = request.args.get('subfiltro')
-    valid_clasifs = ['duplicado', 'traslape_interno', 'traslape_relevante', 'sin_conflicto', 'sin_matches']
+    clasif = request.args.get("clasif")
+    subfiltro = request.args.get("subfiltro")
+    valid_clasifs = [
+        "duplicado",
+        "traslape_interno",
+        "traslape_relevante",
+        "sin_conflicto",
+        "sin_matches",
+    ]
     if clasif not in valid_clasifs:
-        return jsonify({'error': 'Clasificación inválida. Use: ' + ', '.join(valid_clasifs)}), 400
-    if _clasif_nuevos_state['status'] != 'done' or _clasif_nuevos_state['indices_por_clasif'] is None:
-        return jsonify({'error': 'Clasificación no completada aún'}), 409
+        return jsonify(
+            {"error": "Clasificación inválida. Use: " + ", ".join(valid_clasifs)}
+        ), 400
+    if (
+        _clasif_nuevos_state["status"] != "done"
+        or _clasif_nuevos_state["indices_por_clasif"] is None
+    ):
+        return jsonify({"error": "Clasificación no completada aún"}), 409
 
     indices_key = clasif
     # subfiltro applies to all categories that have mismo/diferente breakdown
-    categories_with_subfiltro = ['duplicado', 'traslape_interno', 'traslape_relevante', 'sin_conflicto']
+    categories_with_subfiltro = [
+        "duplicado",
+        "traslape_interno",
+        "traslape_relevante",
+        "sin_conflicto",
+    ]
     if clasif in categories_with_subfiltro:
-        valid_subfiltros = [None, '', 'mismo_credito', 'diferente_credito']
+        valid_subfiltros = [None, "", "mismo_credito", "diferente_credito"]
         if subfiltro not in valid_subfiltros:
-            return jsonify({'error': f'Subfiltro inválido para {clasif}. Use: mismo_credito o diferente_credito'}), 400
-        if subfiltro == 'mismo_credito':
-            indices_key = clasif + '_mismo_credito'
-        elif subfiltro == 'diferente_credito':
-            indices_key = clasif + '_diferente_credito'
-    elif subfiltro not in (None, ''):
-        return jsonify({'error': 'El parámetro subfiltro no aplica para esta clasificación'}), 400
+            return jsonify(
+                {
+                    "error": f"Subfiltro inválido para {clasif}. Use: mismo_credito o diferente_credito"
+                }
+            ), 400
+        if subfiltro == "mismo_credito":
+            indices_key = clasif + "_mismo_credito"
+        elif subfiltro == "diferente_credito":
+            indices_key = clasif + "_diferente_credito"
+    elif subfiltro not in (None, ""):
+        return jsonify(
+            {"error": "El parámetro subfiltro no aplica para esta clasificación"}
+        ), 400
 
-    indices = _clasif_nuevos_state['indices_por_clasif'].get(indices_key, [])
+    indices = _clasif_nuevos_state["indices_por_clasif"].get(indices_key, [])
     # Filter to only indices the current user is allowed to see
     allowed = set(_get_user_allowed_indices())
     indices = [i for i in indices if i in allowed]
 
     # Optional: exclude already-decided polygons
-    solo_pendientes = request.args.get('solo_pendientes')
-    if solo_pendientes == '1':
-        decided_indices = {r.idx_shp for r in Analizador15K.query.filter_by(tiene_decision=True).with_entities(Analizador15K.idx_shp).all()}
+    solo_pendientes = request.args.get("solo_pendientes")
+    if solo_pendientes == "1":
+        decided_indices = {
+            r.idx_shp
+            for r in Analizador15K.query.filter_by(tiene_decision=True)
+            .with_entities(Analizador15K.idx_shp)
+            .all()
+        }
         indices = [i for i in indices if i not in decided_indices]
 
-    response = {'clasif': clasif, 'indices': indices, 'total': len(indices)}
-    if subfiltro not in (None, ''):
-        response['subfiltro'] = subfiltro
+    response = {"clasif": clasif, "indices": indices, "total": len(indices)}
+    if subfiltro not in (None, ""):
+        response["subfiltro"] = subfiltro
     return jsonify(response)
 
 
@@ -6202,42 +7356,51 @@ def api_clasificacion_nuevos_indices():
 # Validación 15K — API endpoints
 # ─────────────────────────────────────────────────────────────────────────────
 
-@app.route('/api/validacion-15k/guardar', methods=['POST'])
+
+@app.route("/api/validacion-15k/guardar", methods=["POST"])
 @login_required
 @limiter.exempt
 def api_validacion_15k_guardar():
     """Save or update the validation status for a single 15K polygon (upsert)."""
     if shp_cache.validacion is None:
-        return jsonify({'error': 'Shapefiles no cargados'}), 500
+        return jsonify({"error": "Shapefiles no cargados"}), 500
 
     data = request.get_json(force=True, silent=True) or {}
 
     # Validate idx
-    idx = data.get('idx')
+    idx = data.get("idx")
     if idx is None:
-        return jsonify({'error': 'idx es requerido'}), 400
+        return jsonify({"error": "idx es requerido"}), 400
     try:
         idx = int(idx)
     except (TypeError, ValueError):
-        return jsonify({'error': 'idx debe ser un entero'}), 400
+        return jsonify({"error": "idx debe ser un entero"}), 400
     if idx < 0 or idx >= len(shp_cache.validacion):
-        return jsonify({'error': f'idx fuera de rango (0-{len(shp_cache.validacion)-1})'}), 400
+        return jsonify(
+            {"error": f"idx fuera de rango (0-{len(shp_cache.validacion) - 1})"}
+        ), 400
 
     # Validate estatus
-    estatus = data.get('estatus')
-    if estatus not in ('nuevo', 'encima'):
-        return jsonify({'error': "estatus debe ser 'nuevo' o 'encima'"}), 400
+    estatus = data.get("estatus")
+    if estatus not in ("nuevo", "encima"):
+        return jsonify({"error": "estatus debe ser 'nuevo' o 'encima'"}), 400
 
     # Validate encima requirements
-    id_poligon_historico = data.get('id_poligon_historico')
-    mega_idx = data.get('mega_idx')
-    overlap_pct = data.get('overlap_pct')
+    id_poligon_historico = data.get("id_poligon_historico")
+    mega_idx = data.get("mega_idx")
+    overlap_pct = data.get("overlap_pct")
 
-    if estatus == 'encima':
+    if estatus == "encima":
         if not id_poligon_historico:
-            return jsonify({'error': "id_poligon_historico es requerido cuando estatus es 'encima'"}), 400
+            return jsonify(
+                {
+                    "error": "id_poligon_historico es requerido cuando estatus es 'encima'"
+                }
+            ), 400
         if mega_idx is None:
-            return jsonify({'error': "mega_idx es requerido cuando estatus es 'encima'"}), 400
+            return jsonify(
+                {"error": "mega_idx es requerido cuando estatus es 'encima'"}
+            ), 400
     else:
         # estatus == 'nuevo': nullify linked fields
         id_poligon_historico = None
@@ -6246,40 +7409,49 @@ def api_validacion_15k_guardar():
 
     # Auto-populate from shp_cache.validacion
     vrow = shp_cache.validacion.iloc[idx]
-    id_poligon_validacion = str(vrow.get('ID_POLIGON', '') or '')
-    id_credito_validacion = str(vrow.get('ID_CREDITO', '') or '')
-    nombre_zip = str(vrow.get('NOMBRE_ZIP', '') or '')
+    id_poligon_validacion = str(vrow.get("ID_POLIGON", "") or "")
+    id_credito_validacion = str(vrow.get("ID_CREDITO", "") or "")
+    nombre_zip = str(vrow.get("NOMBRE_ZIP", "") or "")
 
     from datetime import datetime, timezone
-    fecha_validacion = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S')
+
+    fecha_validacion = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
 
     conn = get_db_connection()
     try:
         cursor = conn.execute(
-            '''INSERT OR REPLACE INTO validacion_15k
+            """INSERT OR REPLACE INTO validacion_15k
                (idx, id_poligon_validacion, id_credito_validacion, nombre_zip,
                 estatus, id_poligon_historico, mega_idx, overlap_pct,
                 fecha_validacion, validado_por)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'usuario')''',
-            (idx, id_poligon_validacion, id_credito_validacion, nombre_zip,
-             estatus, id_poligon_historico, mega_idx, overlap_pct,
-             fecha_validacion)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'usuario')""",
+            (
+                idx,
+                id_poligon_validacion,
+                id_credito_validacion,
+                nombre_zip,
+                estatus,
+                id_poligon_historico,
+                mega_idx,
+                overlap_pct,
+                fecha_validacion,
+            ),
         )
         conn.commit()
         val_id = cursor.lastrowid
     finally:
         conn.close()
 
-    return jsonify({'success': True, 'val_id': val_id, 'estatus': estatus})
+    return jsonify({"success": True, "val_id": val_id, "estatus": estatus})
 
 
-@app.route('/api/validacion-15k/progreso')
+@app.route("/api/validacion-15k/progreso")
 @login_required
 @limiter.exempt
 def api_validacion_15k_progreso():
     """Return overall validation progress stats."""
     if shp_cache.validacion is None:
-        return jsonify({'error': 'Shapefiles no cargados'}), 500
+        return jsonify({"error": "Shapefiles no cargados"}), 500
 
     total = len(shp_cache.validacion)
     conn = get_db_connection()
@@ -6290,37 +7462,41 @@ def api_validacion_15k_progreso():
     finally:
         conn.close()
 
-    counts = {row['estatus']: row['cnt'] for row in rows}
-    nuevos = counts.get('nuevo', 0)
-    encima = counts.get('encima', 0)
+    counts = {row["estatus"]: row["cnt"] for row in rows}
+    nuevos = counts.get("nuevo", 0)
+    encima = counts.get("encima", 0)
     validados = nuevos + encima
     pendientes = total - validados
     porcentaje = round((validados / total * 100), 1) if total > 0 else 0.0
 
-    return jsonify({
-        'total': total,
-        'pendientes': pendientes,
-        'nuevos': nuevos,
-        'encima': encima,
-        'porcentaje': porcentaje
-    })
+    return jsonify(
+        {
+            "total": total,
+            "pendientes": pendientes,
+            "nuevos": nuevos,
+            "encima": encima,
+            "porcentaje": porcentaje,
+        }
+    )
 
 
-@app.route('/api/validacion-15k/estado/<int:idx>')
+@app.route("/api/validacion-15k/estado/<int:idx>")
 @login_required
 @limiter.exempt
 def api_validacion_15k_estado(idx):
     """Return the saved validation status for a specific polygon index."""
     if shp_cache.validacion is None:
-        return jsonify({'error': 'Shapefiles no cargados'}), 500
+        return jsonify({"error": "Shapefiles no cargados"}), 500
     if idx < 0 or idx >= len(shp_cache.validacion):
-        return jsonify({'error': f'idx fuera de rango (0-{len(shp_cache.validacion)-1})'}), 400
+        return jsonify(
+            {"error": f"idx fuera de rango (0-{len(shp_cache.validacion) - 1})"}
+        ), 400
 
     guardado = obtener_guardado_validacion_15k(idx)
-    return jsonify({'idx': idx, **guardado})
+    return jsonify({"idx": idx, **guardado})
 
 
-@app.route('/api/validacion-15k/poligono/<int:idx>')
+@app.route("/api/validacion-15k/poligono/<int:idx>")
 @login_required
 @limiter.exempt
 def api_validacion_15k_poligono(idx):
@@ -6328,65 +7504,67 @@ def api_validacion_15k_poligono(idx):
     try:
         data = calcular_traslapes(idx)
     except RuntimeError as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"error": str(e)}), 500
     except ValueError as e:
-        return jsonify({'error': str(e)}), 400
+        return jsonify({"error": str(e)}), 400
 
     validacion = obtener_guardado_validacion_15k(idx)
 
     # Auto-suggestion based on overlap analysis
-    matches = data['matches']
+    matches = data["matches"]
     best = matches[0] if matches else None  # already sorted by overlap_pct desc
-    if best and best['overlap_pct'] >= 50:
+    if best and best["overlap_pct"] >= 50:
         sugerencia = {
-            'estatus': 'encima',
-            'id_poligon_historico': best['id_poligon'],
-            'mega_idx': best['mega_index'],
-            'overlap_pct': best['overlap_pct'],
-            'razon': f"Traslape >= 50% con polígono histórico {best['id_poligon']}"
+            "estatus": "encima",
+            "id_poligon_historico": best["id_poligon"],
+            "mega_idx": best["mega_index"],
+            "overlap_pct": best["overlap_pct"],
+            "razon": f"Traslape >= 50% con polígono histórico {best['id_poligon']}",
         }
     else:
         sugerencia = {
-            'estatus': 'nuevo',
-            'id_poligon_historico': None,
-            'mega_idx': None,
-            'overlap_pct': None,
-            'razon': 'Ningún traslape >= 50% con polígonos históricos'
+            "estatus": "nuevo",
+            "id_poligon_historico": None,
+            "mega_idx": None,
+            "overlap_pct": None,
+            "razon": "Ningún traslape >= 50% con polígonos históricos",
         }
 
     try:
         propuesta_chapingo = generar_propuesta_chapingo_nuevo(idx, analisis_mega=data)
     except Exception as e:
         propuesta_chapingo = {
-            'estatus_chapingo_propuesto': None,
-            'id_poligono_unico_propuesto': None,
-            'superficie_chapingo_propuesta': None,
-            'comentario_chapingo_propuesto': f'No fue posible generar propuesta automatica: {str(e)}',
+            "estatus_chapingo_propuesto": None,
+            "id_poligono_unico_propuesto": None,
+            "superficie_chapingo_propuesta": None,
+            "comentario_chapingo_propuesto": f"No fue posible generar propuesta automatica: {str(e)}",
         }
 
-    return jsonify({
-        'index': idx,
-        'total': len(shp_cache.validacion),
-        'poligono': data['poligono'],
-        'matches': data['matches'],
-        'match_features': data['match_features'],
-        'resumen': data['resumen'],
-        'validacion': validacion,
-        'sugerencia': sugerencia,
-        'propuesta_chapingo': propuesta_chapingo
-    })
+    return jsonify(
+        {
+            "index": idx,
+            "total": len(shp_cache.validacion),
+            "poligono": data["poligono"],
+            "matches": data["matches"],
+            "match_features": data["match_features"],
+            "resumen": data["resumen"],
+            "validacion": validacion,
+            "sugerencia": sugerencia,
+            "propuesta_chapingo": propuesta_chapingo,
+        }
+    )
 
 
-@app.route('/api/validacion-15k/siguiente-pendiente')
+@app.route("/api/validacion-15k/siguiente-pendiente")
 @login_required
 @limiter.exempt
 def api_validacion_15k_siguiente_pendiente():
     """Return the next unvalidated polygon index, optionally starting from ?desde=<idx>."""
     if shp_cache.validacion is None:
-        return jsonify({'error': 'Shapefiles no cargados'}), 500
+        return jsonify({"error": "Shapefiles no cargados"}), 500
 
     try:
-        desde = int(request.args.get('desde', 0))
+        desde = int(request.args.get("desde", 0))
     except (TypeError, ValueError):
         desde = 0
     desde = max(0, desde)
@@ -6402,74 +7580,84 @@ def api_validacion_15k_siguiente_pendiente():
     finally:
         conn.close()
 
-    validados = {row['idx'] for row in rows}
+    validados = {row["idx"] for row in rows}
     total_pendientes = total - len(validados)
 
     # Search from `desde` to end, then wrap around 0 to `desde`
     for i in list(range(desde, total)) + list(range(0, desde)):
         if i not in validados:
-            return jsonify({'idx': i, 'total_pendientes': total_pendientes})
+            return jsonify({"idx": i, "total_pendientes": total_pendientes})
 
-    return jsonify({'idx': None, 'total_pendientes': 0, 'mensaje': 'Todos los polígonos han sido validados'})
+    return jsonify(
+        {
+            "idx": None,
+            "total_pendientes": 0,
+            "mensaje": "Todos los polígonos han sido validados",
+        }
+    )
 
 
-@app.route('/api/validacion-15k/buscar')
+@app.route("/api/validacion-15k/buscar")
 @login_required
 @limiter.exempt
 def api_validacion_15k_buscar():
     """Search shp_cache.validacion by ID_POLIGON or ID_CREDITO, including saved estatus."""
     if shp_cache.validacion is None:
-        return jsonify({'error': 'Shapefiles no cargados'}), 500
+        return jsonify({"error": "Shapefiles no cargados"}), 500
 
-    q = request.args.get('q', '').strip()
+    q = request.args.get("q", "").strip()
     if not q:
-        return jsonify({'resultados': [], 'total': 0})
+        return jsonify({"resultados": [], "total": 0})
 
     # Fetch all saved statuses in one query
     conn = get_db_connection()
     try:
-        rows = conn.execute('SELECT idx, estatus FROM validacion_15k').fetchall()
+        rows = conn.execute("SELECT idx, estatus FROM validacion_15k").fetchall()
     finally:
         conn.close()
-    estatus_map = {row['idx']: row['estatus'] for row in rows}
+    estatus_map = {row["idx"]: row["estatus"] for row in rows}
 
     resultados = []
     q_lower = q.lower()
     for i, row in shp_cache.validacion.iterrows():
-        if (q_lower in str(row.get('ID_CREDITO', '')).lower() or
-                q_lower in str(row.get('ID_POLIGON', '')).lower()):
-            resultados.append({
-                'index': int(i),
-                'id_poligon': str(row.get('ID_POLIGON', '')),
-                'id_credito': str(row.get('ID_CREDITO', '')),
-                'estatus': estatus_map.get(int(i), 'pendiente')
-            })
+        if (
+            q_lower in str(row.get("ID_CREDITO", "")).lower()
+            or q_lower in str(row.get("ID_POLIGON", "")).lower()
+        ):
+            resultados.append(
+                {
+                    "index": int(i),
+                    "id_poligon": str(row.get("ID_POLIGON", "")),
+                    "id_credito": str(row.get("ID_CREDITO", "")),
+                    "estatus": estatus_map.get(int(i), "pendiente"),
+                }
+            )
         if len(resultados) >= 50:
             break
 
-    return jsonify({'resultados': resultados, 'total': len(resultados)})
+    return jsonify({"resultados": resultados, "total": len(resultados)})
 
 
-@app.route('/api/validacion-15k/exportar')
+@app.route("/api/validacion-15k/exportar")
 @login_required
 @limiter.exempt
 def api_validacion_15k_exportar():
     """Generate and download an Excel file with all 15K validation results."""
     if shp_cache.validacion is None or shp_cache.mega is None:
-        return jsonify({'error': 'Shapefiles no cargados'}), 500
+        return jsonify({"error": "Shapefiles no cargados"}), 500
 
     # Fetch all saved validation rows from DB
     conn = get_db_connection()
     try:
-        db_rows = conn.execute('SELECT * FROM validacion_15k').fetchall()
+        db_rows = conn.execute("SELECT * FROM validacion_15k").fetchall()
     finally:
         conn.close()
 
     # Build a lookup dict: idx -> db row
-    db_map = {row['idx']: row for row in db_rows}
+    db_map = {row["idx"]: row for row in db_rows}
 
     # Determine HIST_ columns from shp_cache.mega (all non-geometry columns)
-    mega_data_cols = [c for c in shp_cache.mega.columns if c != 'geometry']
+    mega_data_cols = [c for c in shp_cache.mega.columns if c != "geometry"]
 
     # Build one record per polygon in shp_cache.validacion
     records = []
@@ -6478,21 +7666,21 @@ def api_validacion_15k_exportar():
         db_row = db_map.get(i)
 
         if db_row is not None:
-            estatus = db_row['estatus']
-            id_poligon_validacion = db_row['id_poligon_validacion']
-            id_credito_validacion = db_row['id_credito_validacion']
-            nombre_zip = db_row['nombre_zip']
-            id_poligon_historico = db_row['id_poligon_historico']
-            overlap_pct = db_row['overlap_pct']
-            fecha_validacion = db_row['fecha_validacion']
-            mega_idx = db_row['mega_idx']
-            superficie_calculada = db_row['superficie_calculada']
+            estatus = db_row["estatus"]
+            id_poligon_validacion = db_row["id_poligon_validacion"]
+            id_credito_validacion = db_row["id_credito_validacion"]
+            nombre_zip = db_row["nombre_zip"]
+            id_poligon_historico = db_row["id_poligon_historico"]
+            overlap_pct = db_row["overlap_pct"]
+            fecha_validacion = db_row["fecha_validacion"]
+            mega_idx = db_row["mega_idx"]
+            superficie_calculada = db_row["superficie_calculada"]
         else:
             # pendiente — populate from validacion_gdf
-            estatus = 'pendiente'
-            id_poligon_validacion = str(vrow.get('ID_POLIGON', '') or '')
-            id_credito_validacion = str(vrow.get('ID_CREDITO', '') or '')
-            nombre_zip = str(vrow.get('NOMBRE_ZIP', '') or '')
+            estatus = "pendiente"
+            id_poligon_validacion = str(vrow.get("ID_POLIGON", "") or "")
+            id_credito_validacion = str(vrow.get("ID_CREDITO", "") or "")
+            nombre_zip = str(vrow.get("NOMBRE_ZIP", "") or "")
             id_poligon_historico = None
             overlap_pct = None
             fecha_validacion = None
@@ -6500,49 +7688,52 @@ def api_validacion_15k_exportar():
             superficie_calculada = None
 
         record = {
-            'IDX': i,
-            'ID_POLIGON_VALIDACION': id_poligon_validacion,
-            'ID_CREDITO_VALIDACION': id_credito_validacion,
-            'NOMBRE_ZIP': nombre_zip,
-            'ESTATUS': estatus,
-            'ID_POLIGON_HISTORICO': id_poligon_historico,
-            'OVERLAP_PCT': overlap_pct,
-            'FECHA_VALIDACION': fecha_validacion,
-            'SUPERFICIE_CALCULADA': superficie_calculada,
+            "IDX": i,
+            "ID_POLIGON_VALIDACION": id_poligon_validacion,
+            "ID_CREDITO_VALIDACION": id_credito_validacion,
+            "NOMBRE_ZIP": nombre_zip,
+            "ESTATUS": estatus,
+            "ID_POLIGON_HISTORICO": id_poligon_historico,
+            "OVERLAP_PCT": overlap_pct,
+            "FECHA_VALIDACION": fecha_validacion,
+            "SUPERFICIE_CALCULADA": superficie_calculada,
         }
 
         # Add HIST_ columns from shp_cache.mega when estatus='encima'
-        if estatus == 'encima' and mega_idx is not None:
+        if estatus == "encima" and mega_idx is not None:
             try:
                 mrow = shp_cache.mega.iloc[int(mega_idx)]
                 for col in mega_data_cols:
-                    record[f'HIST_{col}'] = mrow.get(col, None)
+                    record[f"HIST_{col}"] = mrow.get(col, None)
             except (IndexError, TypeError):
                 for col in mega_data_cols:
-                    record[f'HIST_{col}'] = None
+                    record[f"HIST_{col}"] = None
         else:
             for col in mega_data_cols:
-                record[f'HIST_{col}'] = None
+                record[f"HIST_{col}"] = None
 
         records.append(record)
 
     # Sort by IDX ascending (already in order, but be explicit)
-    records.sort(key=lambda r: r['IDX'])
+    records.sort(key=lambda r: r["IDX"])
 
     df = pd.DataFrame(records)
 
     # Generate Excel in memory
     excel_file = io.BytesIO()
-    with pd.ExcelWriter(excel_file, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False, sheet_name='Validacion_15K')
+    with pd.ExcelWriter(excel_file, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Validacion_15K")
 
         workbook = writer.book
-        worksheet = writer.sheets['Validacion_15K']
+        worksheet = writer.sheets["Validacion_15K"]
 
         from openpyxl.styles import Font, PatternFill, Alignment
-        header_font = Font(bold=True, color='FFFFFF')
-        header_fill = PatternFill(start_color='366092', end_color='366092', fill_type='solid')
-        header_alignment = Alignment(horizontal='center', vertical='center')
+
+        header_font = Font(bold=True, color="FFFFFF")
+        header_fill = PatternFill(
+            start_color="366092", end_color="366092", fill_type="solid"
+        )
+        header_alignment = Alignment(horizontal="center", vertical="center")
 
         for cell in worksheet[1]:
             cell.font = header_font
@@ -6561,12 +7752,14 @@ def api_validacion_15k_exportar():
             worksheet.column_dimensions[column_letter].width = min(max_length + 2, 50)
 
     excel_file.seek(0)
-    filename = f'validacion_15k_resultados_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx'
+    filename = (
+        f"validacion_15k_resultados_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    )
     return send_file(
         excel_file,
         as_attachment=True,
         download_name=filename,
-        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
 
@@ -6574,13 +7767,14 @@ def api_validacion_15k_exportar():
 # RESULTADOS 15K — Global progress view
 # ==============================================
 
-@app.route('/resultados-15k')
+
+@app.route("/resultados-15k")
 @login_required
 def resultados_15k():
-    return render_template('resultados_15k.html')
+    return render_template("resultados_15k.html")
 
 
-@app.route('/api/resultados-15k/estadisticas')
+@app.route("/api/resultados-15k/estadisticas")
 @login_required
 def api_resultados_15k_estadisticas():
     """Global statistics for all 15K polygons — visible to all users."""
@@ -6592,81 +7786,100 @@ def api_resultados_15k_estadisticas():
 
     # By status
     por_estatus = {}
-    status_counts = db.session.query(
-        Analizador15K.estatus_chapingo, func.count()
-    ).filter(
-        Analizador15K.tiene_decision == True  # noqa: E712
-    ).group_by(Analizador15K.estatus_chapingo).all()
+    status_counts = (
+        db.session.query(Analizador15K.estatus_chapingo, func.count())
+        .filter(
+            Analizador15K.tiene_decision == True  # noqa: E712
+        )
+        .group_by(Analizador15K.estatus_chapingo)
+        .all()
+    )
     for status, count in status_counts:
         if status:
             por_estatus[status] = count
 
     # By region
     por_region = {}
-    region_stats = db.session.query(
-        Analizador15K.region,
-        func.count(),
-        func.sum(
-            db.case((Analizador15K.tiene_decision == True, 1), else_=0)  # noqa: E712
+    region_stats = (
+        db.session.query(
+            Analizador15K.region,
+            func.count(),
+            func.sum(
+                db.case((Analizador15K.tiene_decision == True, 1), else_=0)  # noqa: E712
+            ),
         )
-    ).group_by(Analizador15K.region).all()
+        .group_by(Analizador15K.region)
+        .all()
+    )
     for region, total_r, decididos_r in region_stats:
         if region:
             por_region[region] = {
-                'total': total_r,
-                'decididos': int(decididos_r or 0),
+                "total": total_r,
+                "decididos": int(decididos_r or 0),
             }
 
     # By user
     por_usuario = []
     from models.user import User
-    user_stats = db.session.query(
-        Analizador15K.usuario_asignado_id,
-        func.count(),
-        func.sum(
-            db.case((Analizador15K.tiene_decision == True, 1), else_=0)  # noqa: E712
+
+    user_stats = (
+        db.session.query(
+            Analizador15K.usuario_asignado_id,
+            func.count(),
+            func.sum(
+                db.case((Analizador15K.tiene_decision == True, 1), else_=0)  # noqa: E712
+            ),
         )
-    ).filter(
-        Analizador15K.usuario_asignado_id.isnot(None)
-    ).group_by(Analizador15K.usuario_asignado_id).all()
+        .filter(Analizador15K.usuario_asignado_id.isnot(None))
+        .group_by(Analizador15K.usuario_asignado_id)
+        .all()
+    )
 
     for user_id, asignados, decididos in user_stats:
         user = User.query.get(user_id)
         if user:
             # Get the most common region for this user
-            region_mode = db.session.query(
-                Analizador15K.region
-            ).filter_by(
-                usuario_asignado_id=user_id
-            ).group_by(
-                Analizador15K.region
-            ).order_by(func.count().desc()).first()
+            region_mode = (
+                db.session.query(Analizador15K.region)
+                .filter_by(usuario_asignado_id=user_id)
+                .group_by(Analizador15K.region)
+                .order_by(func.count().desc())
+                .first()
+            )
 
-            por_usuario.append({
-                'user_id': user_id,
-                'username': user.username,
-                'region': region_mode[0] if region_mode else None,
-                'asignados': asignados,
-                'decididos': int(decididos or 0),
-            })
+            por_usuario.append(
+                {
+                    "user_id": user_id,
+                    "username": user.username,
+                    "region": region_mode[0] if region_mode else None,
+                    "asignados": asignados,
+                    "decididos": int(decididos or 0),
+                }
+            )
 
-    return jsonify({
-        'total': total,
-        'con_decision': con_decision,
-        'pendientes': pendientes,
-        'por_estatus': por_estatus,
-        'por_region': por_region,
-        'por_usuario': por_usuario,
-    })
+    return jsonify(
+        {
+            "total": total,
+            "con_decision": con_decision,
+            "pendientes": pendientes,
+            "por_estatus": por_estatus,
+            "por_region": por_region,
+            "por_usuario": por_usuario,
+        }
+    )
 
 
-@app.route('/api/resultados-15k/decisiones')
+@app.route("/api/resultados-15k/decisiones")
 @login_required
 def api_resultados_15k_decisiones():
     """Return ALL decided polygons from all users."""
     from models.user import User
 
-    records = Analizador15K.query.filter_by(tiene_decision=True).order_by(Analizador15K.idx_shp).all()
+    records = (
+        Analizador15K.query.filter_by(tiene_decision=True)
+        .order_by(Analizador15K.idx_shp)
+        .all()
+    )
 
     decisiones = []
     for r in records:
@@ -6674,24 +7887,27 @@ def api_resultados_15k_decisiones():
         # Add username of who decided
         if r.decidido_por_id:
             user = User.query.get(r.decidido_por_id)
-            d['decidido_por'] = user.username if user else None
+            d["decidido_por"] = user.username if user else None
         else:
-            d['decidido_por'] = None
+            d["decidido_por"] = None
         decisiones.append(d)
 
-    return jsonify({
-        'total': len(decisiones),
-        'decisiones': decisiones,
-    })
+    return jsonify(
+        {
+            "total": len(decisiones),
+            "decisiones": decisiones,
+        }
+    )
 
 
-@app.route('/api/resultados-15k/exportar')
+@app.route("/api/resultados-15k/exportar")
 @login_required
 def api_resultados_15k_exportar():
     """Export all decided polygons to Excel with original columns + 3 work fields."""
     import io as _io
 
     from flask_login import current_user
+
     query = Analizador15K.query.filter_by(tiene_decision=True)
 
     # Non-admin users only see their own assigned polygons
@@ -6699,60 +7915,80 @@ def api_resultados_15k_exportar():
         query = query.filter(
             db.or_(
                 Analizador15K.usuario_asignado_id == current_user.id,
-                Analizador15K.usuario_asignado_id.is_(None)
+                Analizador15K.usuario_asignado_id.is_(None),
             )
         )
 
     records = query.order_by(Analizador15K.idx_shp).all()
 
     if not records:
-        return jsonify({'error': 'No hay decisiones para exportar'}), 404
+        return jsonify({"error": "No hay decisiones para exportar"}), 404
 
     try:
         import openpyxl
+
         wb = openpyxl.Workbook()
         ws = wb.active
-        ws.title = 'Resultados 15K'
+        ws.title = "Resultados 15K"
 
         # Headers: original Excel columns + 3 work fields
         headers = [
-            'IF', 'ID CREDITO', 'ID DTU', 'NOMBRE_INTERMEDIARIO_1',
-            'FECHA CREACIÓN', 'FECHA AUTORIZACION', 'FECHA VENCIMIENTO',
-            'ACCION', 'DESCRIPCION ACCION', 'ID PERSONA',
-            'ESTADO', 'MUNICIPIO', 'ID_CARGA', 'ID_POLIGONO',
-            'Nombre del Archivo ZIP', 'SUPERFICIE', 'DESCRIPCION',
-            'ESTATUS', 'ESTADO_CREDITO', 'CADENA', 'COMENTARIOS',
-            'Estatus_Chapingo', 'ID_poligono_unico', 'SUPERFICIE CALCULADA',
+            "IF",
+            "ID CREDITO",
+            "ID DTU",
+            "NOMBRE_INTERMEDIARIO_1",
+            "FECHA CREACIÓN",
+            "FECHA AUTORIZACION",
+            "FECHA VENCIMIENTO",
+            "ACCION",
+            "DESCRIPCION ACCION",
+            "ID PERSONA",
+            "ESTADO",
+            "MUNICIPIO",
+            "ID_CARGA",
+            "ID_POLIGONO",
+            "Nombre del Archivo ZIP",
+            "SUPERFICIE",
+            "DESCRIPCION",
+            "ESTATUS",
+            "ESTADO_CREDITO",
+            "CADENA",
+            "COMENTARIOS",
+            "Estatus_Chapingo",
+            "ID_poligono_unico",
+            "SUPERFICIE CALCULADA",
         ]
         ws.append(headers)
 
         for r in records:
-            ws.append([
-                r.intermediario_financiero,
-                r.id_credito,
-                r.id_dtu,
-                r.nombre_intermediario,
-                r.fecha_creacion_credito,
-                r.fecha_autorizacion,
-                r.fecha_vencimiento,
-                r.accion,
-                r.descripcion_accion,
-                r.id_persona,
-                r.estado,
-                r.municipio,
-                r.id_carga,
-                r.id_poligon,
-                r.nombre_zip,
-                r.superficie_excel,
-                r.descripcion,
-                r.estatus_excel,
-                r.estado_credito,
-                r.cadena,
-                r.comentarios_excel,
-                r.estatus_chapingo,
-                r.id_poligono_unico,
-                r.superficie_calculada,
-            ])
+            ws.append(
+                [
+                    r.intermediario_financiero,
+                    r.id_credito,
+                    r.id_dtu,
+                    r.nombre_intermediario,
+                    r.fecha_creacion_credito,
+                    r.fecha_autorizacion,
+                    r.fecha_vencimiento,
+                    r.accion,
+                    r.descripcion_accion,
+                    r.id_persona,
+                    r.estado,
+                    r.municipio,
+                    r.id_carga,
+                    r.id_poligon,
+                    r.nombre_zip,
+                    r.superficie_excel,
+                    r.descripcion,
+                    r.estatus_excel,
+                    r.estado_credito,
+                    r.cadena,
+                    r.comentarios_excel,
+                    r.estatus_chapingo,
+                    r.id_poligono_unico,
+                    r.superficie_calculada,
+                ]
+            )
 
         output = _io.BytesIO()
         wb.save(output)
@@ -6760,18 +7996,18 @@ def api_resultados_15k_exportar():
 
         return send_file(
             output,
-            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             as_attachment=True,
-            download_name='resultados_15k.xlsx'
+            download_name="resultados_15k.xlsx",
         )
     except ImportError:
-        return jsonify({'error': 'openpyxl no está instalado'}), 500
+        return jsonify({"error": "openpyxl no está instalado"}), 500
 
 
-@app.route('/analizador')
+@app.route("/analizador")
 @login_required
 def analizador():
-    return render_template('analizador.html')
+    return render_template("analizador.html")
 
 
 @app.route("/segunda-validacion")
@@ -6784,24 +8020,25 @@ def segunda_validacion():
 # Segunda Validación — Backup API
 # ==============================================
 
-@app.route('/api/segunda-validacion/backup', methods=['POST'])
+
+@app.route("/api/segunda-validacion/backup", methods=["POST"])
 @login_required
 @limiter.exempt
 def api_segunda_validacion_backup():
     """Create a backup snapshot of all Analizador15K rows with tiene_decision=True."""
     if not current_user.is_admin:
-        return jsonify({'error': 'No autorizado'}), 403
+        return jsonify({"error": "No autorizado"}), 403
 
     rows = Analizador15K.query.filter_by(tiene_decision=True).all()
     if not rows:
-        return jsonify({'ok': True, 'backup_id': None, 'rows_backed_up': 0})
+        return jsonify({"ok": True, "backup_id": None, "rows_backed_up": 0})
 
     backup_id = f"backup_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
     batch_size = 500
     total = 0
 
     for i in range(0, len(rows), batch_size):
-        batch = rows[i:i + batch_size]
+        batch = rows[i : i + batch_size]
         for r in batch:
             entry = BackupAnalizador15K(
                 backup_id=backup_id,
@@ -6821,32 +8058,42 @@ def api_segunda_validacion_backup():
         db.session.commit()
         total += len(batch)
 
-    app.logger.info('BACKUP: Usuario %s creó backup %s con %d filas', current_user.username, backup_id, total)
-    return jsonify({'ok': True, 'backup_id': backup_id, 'rows_backed_up': total})
+    app.logger.info(
+        "BACKUP: Usuario %s creó backup %s con %d filas",
+        current_user.username,
+        backup_id,
+        total,
+    )
+    return jsonify({"ok": True, "backup_id": backup_id, "rows_backed_up": total})
 
 
-@app.route('/api/segunda-validacion/backups', methods=['GET'])
+@app.route("/api/segunda-validacion/backups", methods=["GET"])
 @login_required
 @limiter.exempt
 def api_segunda_validacion_backups():
     """Return list of distinct backup_ids with their fecha and row count."""
     from sqlalchemy import func
 
-    results = db.session.query(
-        BackupAnalizador15K.backup_id,
-        db.func.min(BackupAnalizador15K.backup_fecha).label('fecha'),
-        func.count(BackupAnalizador15K.id).label('total_rows'),
-    ).group_by(BackupAnalizador15K.backup_id).order_by(db.func.min(BackupAnalizador15K.backup_fecha).desc()).all()
+    results = (
+        db.session.query(
+            BackupAnalizador15K.backup_id,
+            db.func.min(BackupAnalizador15K.backup_fecha).label("fecha"),
+            func.count(BackupAnalizador15K.id).label("total_rows"),
+        )
+        .group_by(BackupAnalizador15K.backup_id)
+        .order_by(db.func.min(BackupAnalizador15K.backup_fecha).desc())
+        .all()
+    )
 
     backups = [
         {
-            'backup_id': row.backup_id,
-            'fecha': row.fecha.isoformat() if row.fecha else None,
-            'total_rows': row.total_rows,
+            "backup_id": row.backup_id,
+            "fecha": row.fecha.isoformat() if row.fecha else None,
+            "total_rows": row.total_rows,
         }
         for row in results
     ]
-    return jsonify({'backups': backups})
+    return jsonify({"backups": backups})
 
 
 # ==============================================
@@ -6854,8 +8101,8 @@ def api_segunda_validacion_backups():
 # ==============================================
 
 _segunda_val_state = {
-    "status": "idle",   # idle | running | done | error
-    "phase": "",        # "traslape" | "agrupamiento" | "aplicando"
+    "status": "idle",  # idle | running | done | error
+    "phase": "",  # "traslape" | "agrupamiento" | "aplicando"
     "processed": 0,
     "total": 0,
     "progress": 0,
@@ -6892,7 +8139,7 @@ def calcular_traslapes_nuevos_entre_si(on_progress=None):
     from shapely.validation import make_valid
 
     if shp_cache.validacion is None:
-        raise RuntimeError('Shapefile validacion no cargado')
+        raise RuntimeError("Shapefile validacion no cargado")
 
     # 1. Query all NUEVO records from Analizador15K
     nuevos_records = Analizador15K.query.filter_by(estatus_chapingo="NUEVO").all()
@@ -6938,7 +8185,7 @@ def calcular_traslapes_nuevos_entre_si(on_progress=None):
         centroid_a = geom_a.centroid
         utm_zone_a = int((centroid_a.x + 180) / 6) + 1
         transformer_a = pyproj.Transformer.from_crs(
-            'EPSG:4326', f'EPSG:326{utm_zone_a:02d}', always_xy=True
+            "EPSG:4326", f"EPSG:326{utm_zone_a:02d}", always_xy=True
         )
         geom_a_utm = transform(transformer_a.transform, geom_a)
         area_a = geom_a_utm.area
@@ -6948,8 +8195,8 @@ def calcular_traslapes_nuevos_entre_si(on_progress=None):
                 on_progress(pos_a + 1, total)
             continue
 
-        id_poligon_a = str(row_a.get('ID_POLIGON', ''))
-        id_credito_a = str(row_a.get('ID_CREDITO', ''))
+        id_poligon_a = str(row_a.get("ID_POLIGON", ""))
+        id_credito_a = str(row_a.get("ID_CREDITO", ""))
 
         # Candidate positions in sub_gdf via spatial index
         candidate_positions = list(sub_sindex.intersection(geom_a.bounds))
@@ -7000,21 +8247,23 @@ def calcular_traslapes_nuevos_entre_si(on_progress=None):
             if overlap_pct_a < 90.0 or overlap_pct_b < 90.0:
                 continue
 
-            id_poligon_b = str(row_b.get('ID_POLIGON', ''))
-            id_credito_b = str(row_b.get('ID_CREDITO', ''))
+            id_poligon_b = str(row_b.get("ID_POLIGON", ""))
+            id_credito_b = str(row_b.get("ID_CREDITO", ""))
             same_credit = id_credito_a == id_credito_b
 
-            results.append({
-                "idx_a": int(orig_idx_a),
-                "idx_b": int(orig_idx_b),
-                "id_poligon_a": id_poligon_a,
-                "id_poligon_b": id_poligon_b,
-                "id_credito_a": id_credito_a,
-                "id_credito_b": id_credito_b,
-                "overlap_pct_a": round(overlap_pct_a, 2),
-                "overlap_pct_b": round(overlap_pct_b, 2),
-                "same_credit": same_credit,
-            })
+            results.append(
+                {
+                    "idx_a": int(orig_idx_a),
+                    "idx_b": int(orig_idx_b),
+                    "id_poligon_a": id_poligon_a,
+                    "id_poligon_b": id_poligon_b,
+                    "id_credito_a": id_credito_a,
+                    "id_credito_b": id_credito_b,
+                    "overlap_pct_a": round(overlap_pct_a, 2),
+                    "overlap_pct_b": round(overlap_pct_b, 2),
+                    "same_credit": same_credit,
+                }
+            )
 
         if on_progress:
             on_progress(pos_a + 1, total)
@@ -7145,30 +8394,36 @@ def agrupar_y_decidir_nuevos(pairs):
                 # Multiple credits
                 if info["id_credito"] == principal_id_credito:
                     decision = "ELIMINAR"
-                    reason = f"Duplicado mismo crédito que principal {principal_id_poligon}"
+                    reason = (
+                        f"Duplicado mismo crédito que principal {principal_id_poligon}"
+                    )
                 elif info["id_credito"] in seen_credits:
                     decision = "ELIMINAR"
-                    reason = f'Crédito {info["id_credito"]} ya vinculado en este grupo. Eliminado a favor de {principal_id_poligon}'
+                    reason = f"Crédito {info['id_credito']} ya vinculado en este grupo. Eliminado a favor de {principal_id_poligon}"
                 else:
                     decision = "VINCULAR"
                     reason = f"Diferente crédito, vinculado a {principal_id_poligon}"
                     seen_credits.add(info["id_credito"])
 
-            members.append({
-                "idx_shp": idx,
-                "id_poligon": info["id_poligon"],
-                "id_credito": info["id_credito"],
-                "decision": decision,
-                "reason": reason,
-            })
+            members.append(
+                {
+                    "idx_shp": idx,
+                    "id_poligon": info["id_poligon"],
+                    "id_credito": info["id_credito"],
+                    "decision": decision,
+                    "reason": reason,
+                }
+            )
 
-        groups.append({
-            "group_id": group_id,
-            "principal_idx": principal_idx,
-            "principal_id_poligon": principal_id_poligon,
-            "principal_id_credito": principal_id_credito,
-            "members": members,
-        })
+        groups.append(
+            {
+                "group_id": group_id,
+                "principal_idx": principal_idx,
+                "principal_id_poligon": principal_id_poligon,
+                "principal_id_credito": principal_id_credito,
+                "members": members,
+            }
+        )
         group_id += 1
 
     return groups
@@ -7177,6 +8432,7 @@ def agrupar_y_decidir_nuevos(pairs):
 # ==============================================
 # Segunda Validación — Background runner + API
 # ==============================================
+
 
 def _run_segunda_validacion():
     """Background thread: runs full segunda validación pipeline.
@@ -7197,23 +8453,30 @@ def _run_segunda_validacion():
             _segunda_val_state["phase"] = "backup"
 
             # Check if a segunda-validación backup already exists
-            existing_backup = db.session.query(BackupAnalizador15K.backup_id).filter(
-                BackupAnalizador15K.backup_id.like('%_seg_val')
-            ).order_by(BackupAnalizador15K.backup_fecha.asc()).first()
+            existing_backup = (
+                db.session.query(BackupAnalizador15K.backup_id)
+                .filter(BackupAnalizador15K.backup_id.like("%_seg_val"))
+                .order_by(BackupAnalizador15K.backup_fecha.asc())
+                .first()
+            )
 
             if existing_backup:
                 # Reuse original backup — don't overwrite pre-segunda-validación state
                 backup_id = existing_backup[0]
-                app.logger.info(f'Segunda validación re-run: preserving original backup {backup_id}')
+                app.logger.info(
+                    f"Segunda validación re-run: preserving original backup {backup_id}"
+                )
             else:
                 # First run — create backup
                 rows = Analizador15K.query.filter_by(tiene_decision=True).all()
                 backup_id = None
                 if rows:
-                    backup_id = f"backup_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_seg_val"
+                    backup_id = (
+                        f"backup_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_seg_val"
+                    )
                     batch_size = 500
                     for i in range(0, len(rows), batch_size):
-                        batch = rows[i:i + batch_size]
+                        batch = rows[i : i + batch_size]
                         for r in batch:
                             entry = BackupAnalizador15K(
                                 backup_id=backup_id,
@@ -7245,8 +8508,10 @@ def _run_segunda_validacion():
                     Analizador15K.comentario_chapingo.ilike("%Duplicado%"),
                     Analizador15K.comentario_chapingo.ilike("%vinculado%"),
                     Analizador15K.comentario_chapingo.ilike("%Eliminado a favor%"),
-                    Analizador15K.comentario_chapingo.ilike("%ya vinculado en este grupo%"),
-                )
+                    Analizador15K.comentario_chapingo.ilike(
+                        "%ya vinculado en este grupo%"
+                    ),
+                ),
             ).all()
             for row in prev_modified:
                 row.estatus_chapingo = "NUEVO"
@@ -7254,7 +8519,9 @@ def _run_segunda_validacion():
                 row.comentario_chapingo = None
                 row.tiene_decision = False
             db.session.commit()
-            app.logger.info(f"Segunda validación re-run: reset {len(prev_modified)} previous decisions")
+            app.logger.info(
+                f"Segunda validación re-run: reset {len(prev_modified)} previous decisions"
+            )
 
             # ------------------------------------------------------------------
             # Step 2: Traslape engine
@@ -7267,7 +8534,9 @@ def _run_segunda_validacion():
             def on_progress(processed, total):
                 _segunda_val_state["processed"] = processed
                 _segunda_val_state["total"] = total
-                _segunda_val_state["progress"] = int(processed / total * 100) if total > 0 else 0
+                _segunda_val_state["progress"] = (
+                    int(processed / total * 100) if total > 0 else 0
+                )
 
             pairs = calcular_traslapes_nuevos_entre_si(on_progress=on_progress)
 
@@ -7296,7 +8565,9 @@ def _run_segunda_validacion():
                         sin_cambio += 1
                         continue
 
-                    record = Analizador15K.query.filter_by(idx_shp=member["idx_shp"]).first()
+                    record = Analizador15K.query.filter_by(
+                        idx_shp=member["idx_shp"]
+                    ).first()
                     if record is None:
                         continue
 
@@ -7342,17 +8613,17 @@ def _run_segunda_validacion():
         _segunda_val_state["error"] = str(e)
 
 
-@app.route('/api/segunda-validacion/ejecutar', methods=['POST'])
+@app.route("/api/segunda-validacion/ejecutar", methods=["POST"])
 @login_required
 @limiter.exempt
 def api_segunda_validacion_ejecutar():
     """Start the full segunda validación pipeline in a background thread."""
     global _segunda_val_state
     if not current_user.is_admin:
-        return jsonify({'error': 'No autorizado'}), 403
+        return jsonify({"error": "No autorizado"}), 403
 
     if _segunda_val_state["status"] == "running":
-        return jsonify({'error': 'Segunda validación ya en progreso'}), 409
+        return jsonify({"error": "Segunda validación ya en progreso"}), 409
 
     # Reset state
     _segunda_val_state["status"] = "running"
@@ -7367,7 +8638,7 @@ def api_segunda_validacion_ejecutar():
     return jsonify({"ok": True, "message": "Segunda validación iniciada"})
 
 
-@app.route('/api/segunda-validacion/estado', methods=['GET'])
+@app.route("/api/segunda-validacion/estado", methods=["GET"])
 @login_required
 @limiter.exempt
 def api_segunda_validacion_estado():
@@ -7375,17 +8646,17 @@ def api_segunda_validacion_estado():
     return jsonify(_segunda_val_state)
 
 
-@app.route('/api/segunda-validacion/resultado', methods=['GET'])
+@app.route("/api/segunda-validacion/resultado", methods=["GET"])
 @login_required
 @limiter.exempt
 def api_segunda_validacion_resultado():
     """Return the final result summary when the pipeline is done."""
     if _segunda_val_state["status"] != "done":
-        return jsonify({'error': 'Segunda validación no completada aún'}), 404
+        return jsonify({"error": "Segunda validación no completada aún"}), 404
     return jsonify(_segunda_val_state["result"])
 
 
-@app.route('/api/segunda-validacion/dashboard/<backup_id>', methods=['GET'])
+@app.route("/api/segunda-validacion/dashboard/<backup_id>", methods=["GET"])
 @login_required
 @limiter.exempt
 def api_segunda_validacion_dashboard(backup_id):
@@ -7394,10 +8665,12 @@ def api_segunda_validacion_dashboard(backup_id):
     # --- ANTES: load backup rows ---
     backup_rows = BackupAnalizador15K.query.filter_by(backup_id=backup_id).all()
     if not backup_rows:
-        return jsonify({'error': f'Backup no encontrado: {backup_id}'}), 404
+        return jsonify({"error": f"Backup no encontrado: {backup_id}"}), 404
 
     # Determine backup_fecha from the first row
-    backup_fecha = backup_rows[0].backup_fecha.isoformat() if backup_rows[0].backup_fecha else None
+    backup_fecha = (
+        backup_rows[0].backup_fecha.isoformat() if backup_rows[0].backup_fecha else None
+    )
 
     # Build ANTES stats
     antes_por_estatus = {"NUEVO": 0, "VINCULAR": 0, "ELIMINAR": 0}
@@ -7450,16 +8723,18 @@ def api_segunda_validacion_dashboard(backup_id):
 
             # Collect detail (limit 500)
             if len(detalle_cambios) < 500:
-                detalle_cambios.append({
-                    "idx_shp": cr.idx_shp,
-                    "id_poligon": cr.id_poligon,
-                    "id_credito": cr.id_credito,
-                    "estatus_antes": estatus_antes,
-                    "estatus_despues": estatus_despues,
-                    "id_poligono_unico_antes": br.id_poligono_unico if br else None,
-                    "id_poligono_unico_despues": cr.id_poligono_unico,
-                    "comentario": cr.comentario_chapingo,
-                })
+                detalle_cambios.append(
+                    {
+                        "idx_shp": cr.idx_shp,
+                        "id_poligon": cr.id_poligon,
+                        "id_credito": cr.id_credito,
+                        "estatus_antes": estatus_antes,
+                        "estatus_despues": estatus_despues,
+                        "id_poligono_unico_antes": br.id_poligono_unico if br else None,
+                        "id_poligono_unico_despues": cr.id_poligono_unico,
+                        "comentario": cr.comentario_chapingo,
+                    }
+                )
 
     cambios = {
         "nuevos_a_vincular": nuevos_a_vincular,
@@ -7468,36 +8743,39 @@ def api_segunda_validacion_dashboard(backup_id):
         "detalle_cambios": detalle_cambios,
     }
 
-    return jsonify({
-        "backup_id": backup_id,
-        "backup_fecha": backup_fecha,
-        "antes": antes,
-        "despues": despues,
-        "cambios": cambios,
-    })
+    return jsonify(
+        {
+            "backup_id": backup_id,
+            "backup_fecha": backup_fecha,
+            "antes": antes,
+            "despues": despues,
+            "cambios": cambios,
+        }
+    )
 
 
 # ==============================================
 # Segunda Validación — Restaurar, Exportar, Grupos
 # ==============================================
 
-@app.route('/api/segunda-validacion/restaurar/<backup_id>', methods=['POST'])
+
+@app.route("/api/segunda-validacion/restaurar/<backup_id>", methods=["POST"])
 @login_required
 @limiter.exempt
 def api_segunda_validacion_restaurar(backup_id):
     """Restore Analizador15K rows to the state captured in the given backup."""
     if not current_user.is_admin:
-        return jsonify({'error': 'No autorizado'}), 403
+        return jsonify({"error": "No autorizado"}), 403
 
     backup_rows = BackupAnalizador15K.query.filter_by(backup_id=backup_id).all()
     if not backup_rows:
-        return jsonify({'error': f'Backup no encontrado: {backup_id}'}), 404
+        return jsonify({"error": f"Backup no encontrado: {backup_id}"}), 404
 
     rows_restored = 0
     batch_size = 200
 
     for i in range(0, len(backup_rows), batch_size):
-        batch = backup_rows[i:i + batch_size]
+        batch = backup_rows[i : i + batch_size]
         for br in batch:
             record = Analizador15K.query.filter_by(idx_shp=br.idx_shp).first()
             if record is None:
@@ -7511,13 +8789,15 @@ def api_segunda_validacion_restaurar(backup_id):
         db.session.commit()
 
     app.logger.info(
-        'RESTAURAR: Usuario %s restauró backup %s (%d filas)',
-        current_user.username, backup_id, rows_restored,
+        "RESTAURAR: Usuario %s restauró backup %s (%d filas)",
+        current_user.username,
+        backup_id,
+        rows_restored,
     )
-    return jsonify({'ok': True, 'rows_restored': rows_restored})
+    return jsonify({"ok": True, "rows_restored": rows_restored})
 
 
-@app.route('/api/segunda-validacion/exportar-grupos', methods=['GET'])
+@app.route("/api/segunda-validacion/exportar-grupos", methods=["GET"])
 @login_required
 @limiter.exempt
 def api_segunda_validacion_exportar_grupos():
@@ -7525,14 +8805,22 @@ def api_segunda_validacion_exportar_grupos():
     import io as _io
 
     # Determine changed rows: prefer in-memory result, fall back to DB query
-    result = _segunda_val_state.get("result") if _segunda_val_state.get("status") == "done" else None
+    result = (
+        _segunda_val_state.get("result")
+        if _segunda_val_state.get("status") == "done"
+        else None
+    )
 
-    changed_rows = Analizador15K.query.filter(
-        db.or_(
-            Analizador15K.comentario_chapingo.ilike('%Duplicado%'),
-            Analizador15K.comentario_chapingo.ilike('%vinculado%'),
+    changed_rows = (
+        Analizador15K.query.filter(
+            db.or_(
+                Analizador15K.comentario_chapingo.ilike("%Duplicado%"),
+                Analizador15K.comentario_chapingo.ilike("%vinculado%"),
+            )
         )
-    ).order_by(Analizador15K.idx_shp).all()
+        .order_by(Analizador15K.idx_shp)
+        .all()
+    )
 
     # Build backup lookup for "estatus anterior" if we have a backup_id
     backup_dict = {}
@@ -7545,6 +8833,7 @@ def api_segunda_validacion_exportar_grupos():
 
     try:
         import openpyxl
+
         wb = openpyxl.Workbook()
 
         # ------------------------------------------------------------------
@@ -7555,15 +8844,21 @@ def api_segunda_validacion_exportar_grupos():
         ws_resumen.append(["Métrica", "Valor"])
 
         if result:
-            ws_resumen.append(["Total NUEVOS analizados", result.get("total_nuevos_analizados", 0)])
+            ws_resumen.append(
+                ["Total NUEVOS analizados", result.get("total_nuevos_analizados", 0)]
+            )
             ws_resumen.append(["Pares encontrados", result.get("total_pairs_found", 0)])
             ws_resumen.append(["Grupos", result.get("total_groups", 0)])
             ws_resumen.append(["Vinculados", result.get("vinculados", 0)])
             ws_resumen.append(["Eliminados", result.get("eliminados", 0)])
             ws_resumen.append(["Sin cambio", result.get("sin_cambio", 0)])
         else:
-            vincular_count = sum(1 for r in changed_rows if r.estatus_chapingo == "VINCULAR")
-            eliminar_count = sum(1 for r in changed_rows if r.estatus_chapingo == "ELIMINAR")
+            vincular_count = sum(
+                1 for r in changed_rows if r.estatus_chapingo == "VINCULAR"
+            )
+            eliminar_count = sum(
+                1 for r in changed_rows if r.estatus_chapingo == "ELIMINAR"
+            )
             ws_resumen.append(["Total NUEVOS analizados", len(changed_rows)])
             ws_resumen.append(["Pares encontrados", 0])
             ws_resumen.append(["Grupos", 0])
@@ -7575,24 +8870,32 @@ def api_segunda_validacion_exportar_grupos():
         # Sheet 2: Cambios Detallados
         # ------------------------------------------------------------------
         ws_cambios = wb.create_sheet("Cambios Detallados")
-        ws_cambios.append([
-            "idx_shp", "ID Polígono", "ID Crédito",
-            "Estatus Anterior (backup)", "Estatus Actual",
-            "ID Polígono Único", "Comentario",
-        ])
+        ws_cambios.append(
+            [
+                "idx_shp",
+                "ID Polígono",
+                "ID Crédito",
+                "Estatus Anterior (backup)",
+                "Estatus Actual",
+                "ID Polígono Único",
+                "Comentario",
+            ]
+        )
 
         for r in changed_rows:
             br = backup_dict.get(r.idx_shp)
             estatus_anterior = br.estatus_chapingo if br else None
-            ws_cambios.append([
-                r.idx_shp,
-                r.id_poligon,
-                r.id_credito,
-                estatus_anterior,
-                r.estatus_chapingo,
-                r.id_poligono_unico,
-                r.comentario_chapingo,
-            ])
+            ws_cambios.append(
+                [
+                    r.idx_shp,
+                    r.id_poligon,
+                    r.id_credito,
+                    estatus_anterior,
+                    r.estatus_chapingo,
+                    r.id_poligono_unico,
+                    r.comentario_chapingo,
+                ]
+            )
 
         output = _io.BytesIO()
         wb.save(output)
@@ -7600,39 +8903,49 @@ def api_segunda_validacion_exportar_grupos():
 
         return send_file(
             output,
-            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             as_attachment=True,
-            download_name='segunda_validacion_grupos.xlsx',
+            download_name="segunda_validacion_grupos.xlsx",
         )
     except ImportError:
-        return jsonify({'error': 'openpyxl no está instalado'}), 500
+        return jsonify({"error": "openpyxl no está instalado"}), 500
 
 
-@app.route('/api/segunda-validacion/grupos', methods=['GET'])
+@app.route("/api/segunda-validacion/grupos", methods=["GET"])
 @login_required
 @limiter.exempt
 def api_segunda_validacion_grupos():
     """Return group structure from in-memory state or reconstruct from DB."""
 
     # Try to return groups from in-memory result if available
-    result = _segunda_val_state.get("result") if _segunda_val_state.get("status") == "done" else None
+    result = (
+        _segunda_val_state.get("result")
+        if _segunda_val_state.get("status") == "done"
+        else None
+    )
     if result and result.get("groups"):
         groups = result["groups"]
-        return jsonify({
-            "total_groups": len(groups),
-            "groups": groups,
-        })
+        return jsonify(
+            {
+                "total_groups": len(groups),
+                "groups": groups,
+            }
+        )
 
     # Reconstruct groups from current DB state
     # First, get all rows that were modified by segunda validación
-    modified_rows = Analizador15K.query.filter(
-        Analizador15K.estatus_chapingo.in_(["VINCULAR", "ELIMINAR"]),
-        db.or_(
-            Analizador15K.comentario_chapingo.ilike('%Duplicado%'),
-            Analizador15K.comentario_chapingo.ilike('%vinculado%'),
-            Analizador15K.comentario_chapingo.ilike('%Eliminado a favor%'),
+    modified_rows = (
+        Analizador15K.query.filter(
+            Analizador15K.estatus_chapingo.in_(["VINCULAR", "ELIMINAR"]),
+            db.or_(
+                Analizador15K.comentario_chapingo.ilike("%Duplicado%"),
+                Analizador15K.comentario_chapingo.ilike("%vinculado%"),
+                Analizador15K.comentario_chapingo.ilike("%Eliminado a favor%"),
+            ),
         )
-    ).order_by(Analizador15K.idx_shp).all()
+        .order_by(Analizador15K.idx_shp)
+        .all()
+    )
 
     # Group by id_poligono_unico (which is the principal's id_poligon)
     groups_dict = {}
@@ -7640,14 +8953,16 @@ def api_segunda_validacion_grupos():
         key = r.id_poligono_unico or ""
         if key not in groups_dict:
             groups_dict[key] = []
-        groups_dict[key].append({
-            "idx_shp": r.idx_shp,
-            "id_poligon": r.id_poligon,
-            "id_credito": r.id_credito,
-            "estatus_chapingo": r.estatus_chapingo,
-            "decision": r.estatus_chapingo,
-            "reason": r.comentario_chapingo or "",
-        })
+        groups_dict[key].append(
+            {
+                "idx_shp": r.idx_shp,
+                "id_poligon": r.id_poligon,
+                "id_credito": r.id_credito,
+                "estatus_chapingo": r.estatus_chapingo,
+                "decision": r.estatus_chapingo,
+                "reason": r.comentario_chapingo or "",
+            }
+        )
 
     # Now find the principal polygon for each group
     # The principal is the one whose id_poligon matches the group key (id_poligono_unico)
@@ -7665,7 +8980,9 @@ def api_segunda_validacion_grupos():
             principal_map[p.id_poligon] = p
 
         groups = []
-        for group_idx, (principal_id_poligon, members) in enumerate(groups_dict.items(), 1):
+        for group_idx, (principal_id_poligon, members) in enumerate(
+            groups_dict.items(), 1
+        ):
             principal_record = principal_map.get(principal_id_poligon)
 
             # Build the principal member entry
@@ -7683,23 +9000,31 @@ def api_segunda_validacion_grupos():
             else:
                 all_members = members
 
-            groups.append({
-                "group_id": group_idx,
-                "principal_idx": principal_record.idx_shp if principal_record else None,
-                "principal_id_poligon": principal_id_poligon,
-                "principal_id_credito": principal_record.id_credito if principal_record else None,
-                "members": all_members,
-            })
+            groups.append(
+                {
+                    "group_id": group_idx,
+                    "principal_idx": principal_record.idx_shp
+                    if principal_record
+                    else None,
+                    "principal_id_poligon": principal_id_poligon,
+                    "principal_id_credito": principal_record.id_credito
+                    if principal_record
+                    else None,
+                    "members": all_members,
+                }
+            )
     else:
         groups = []
 
-    return jsonify({
-        "total_groups": len(groups),
-        "groups": groups,
-    })
+    return jsonify(
+        {
+            "total_groups": len(groups),
+            "groups": groups,
+        }
+    )
 
 
-@app.route('/api/segunda-validacion/grupo-geometrias', methods=['GET'])
+@app.route("/api/segunda-validacion/grupo-geometrias", methods=["GET"])
 @login_required
 @limiter.exempt
 def api_segunda_validacion_grupo_geometrias():
@@ -7712,20 +9037,20 @@ def api_segunda_validacion_grupo_geometrias():
         properties: {idx_shp, id_poligon, id_credito, area_ha}
         geometry: the polygon geometry
     """
-    indices_str = request.args.get('indices', '')
+    indices_str = request.args.get("indices", "")
     if not indices_str:
-        return jsonify({'error': 'Parámetro indices requerido'}), 400
+        return jsonify({"error": "Parámetro indices requerido"}), 400
 
     try:
-        indices = [int(x.strip()) for x in indices_str.split(',') if x.strip()]
+        indices = [int(x.strip()) for x in indices_str.split(",") if x.strip()]
     except ValueError:
-        return jsonify({'error': 'Indices inválidos'}), 400
+        return jsonify({"error": "Indices inválidos"}), 400
 
     if len(indices) > 200:
-        return jsonify({'error': 'Máximo 200 índices'}), 400
+        return jsonify({"error": "Máximo 200 índices"}), 400
 
     if shp_cache.validacion is None:
-        return jsonify({'error': 'Shapefiles no cargados'}), 500
+        return jsonify({"error": "Shapefiles no cargados"}), 500
 
     import pyproj
     import shapely
@@ -7747,26 +9072,25 @@ def api_segunda_validacion_grupo_geometrias():
         # Calculate area in hectares
         centroid = vgeom.centroid
         utm_zone = int((centroid.x + 180) / 6) + 1
-        transformer = pyproj.Transformer.from_crs('EPSG:4326', f'EPSG:326{utm_zone:02d}', always_xy=True)
+        transformer = pyproj.Transformer.from_crs(
+            "EPSG:4326", f"EPSG:326{utm_zone:02d}", always_xy=True
+        )
         vgeom_utm = transform(transformer.transform, vgeom)
         area_ha = round(vgeom_utm.area / 10000, 4)
 
         feature = {
-            'type': 'Feature',
-            'properties': {
-                'idx_shp': int(idx),
-                'id_poligon': str(vrow.get('ID_POLIGON', '') or ''),
-                'id_credito': str(vrow.get('ID_CREDITO', '') or ''),
-                'area_ha': area_ha,
+            "type": "Feature",
+            "properties": {
+                "idx_shp": int(idx),
+                "id_poligon": str(vrow.get("ID_POLIGON", "") or ""),
+                "id_credito": str(vrow.get("ID_CREDITO", "") or ""),
+                "area_ha": area_ha,
             },
-            'geometry': json.loads(shapely.to_geojson(vgeom))
+            "geometry": json.loads(shapely.to_geojson(vgeom)),
         }
         features.append(feature)
 
-    return jsonify({
-        'type': 'FeatureCollection',
-        'features': features
-    })
+    return jsonify({"type": "FeatureCollection", "features": features})
 
 
 shp_cache.preload_all()  # Preload in production for gunicorn preload_app
@@ -7776,126 +9100,150 @@ shp_cache.preload_all()  # Preload in production for gunicorn preload_app
 # Admin — User Management Routes
 # ==============================================
 
-@app.route('/admin/usuarios')
+
+@app.route("/admin/usuarios")
 @login_required
 def admin_usuarios():
     if not current_user.is_admin:
-        flash('Acceso denegado', 'danger')
-        return redirect(url_for('index'))
+        flash("Acceso denegado", "danger")
+        return redirect(url_for("index"))
     users = User.query.order_by(User.created_at.desc()).all()
     # Get polygon assignment counts per user
     from sqlalchemy import func
-    asignaciones = db.session.query(
-        Analizador15K.usuario_asignado_id,
-        func.count(Analizador15K.id).label('total'),
-        func.count(db.case((Analizador15K.tiene_decision == True, 1))).label('decididos')
-    ).filter(Analizador15K.usuario_asignado_id.isnot(None)).group_by(Analizador15K.usuario_asignado_id).all()
 
-    asig_map = {a.usuario_asignado_id: {'total': a.total, 'decididos': a.decididos} for a in asignaciones}
+    asignaciones = (
+        db.session.query(
+            Analizador15K.usuario_asignado_id,
+            func.count(Analizador15K.id).label("total"),
+            func.count(db.case((Analizador15K.tiene_decision == True, 1))).label(
+                "decididos"
+            ),
+        )
+        .filter(Analizador15K.usuario_asignado_id.isnot(None))
+        .group_by(Analizador15K.usuario_asignado_id)
+        .all()
+    )
 
-    return render_template('admin_usuarios.html', users=users, asig_map=asig_map)
+    asig_map = {
+        a.usuario_asignado_id: {"total": a.total, "decididos": a.decididos}
+        for a in asignaciones
+    }
+
+    return render_template("admin_usuarios.html", users=users, asig_map=asig_map)
 
 
-@app.route('/api/admin/usuarios/<int:user_id>/toggle-active', methods=['POST'])
+@app.route("/api/admin/usuarios/<int:user_id>/toggle-active", methods=["POST"])
 @login_required
 def api_admin_toggle_active(user_id):
     if not current_user.is_admin:
-        return jsonify({'error': 'No autorizado'}), 403
+        return jsonify({"error": "No autorizado"}), 403
     user = User.query.get_or_404(user_id)
     if user.id == current_user.id:
-        return jsonify({'error': 'No puedes desactivarte a ti mismo'}), 400
+        return jsonify({"error": "No puedes desactivarte a ti mismo"}), 400
     user.is_active = not user.is_active
     db.session.commit()
-    return jsonify({'success': True, 'is_active': user.is_active, 'username': user.username})
+    return jsonify(
+        {"success": True, "is_active": user.is_active, "username": user.username}
+    )
 
 
-@app.route('/api/admin/usuarios/<int:user_id>/toggle-admin', methods=['POST'])
+@app.route("/api/admin/usuarios/<int:user_id>/toggle-admin", methods=["POST"])
 @login_required
 def api_admin_toggle_admin(user_id):
     if not current_user.is_admin:
-        return jsonify({'error': 'No autorizado'}), 403
+        return jsonify({"error": "No autorizado"}), 403
     user = User.query.get_or_404(user_id)
     if user.id == current_user.id:
-        return jsonify({'error': 'No puedes quitarte admin a ti mismo'}), 400
+        return jsonify({"error": "No puedes quitarte admin a ti mismo"}), 400
     user.is_admin = not user.is_admin
     db.session.commit()
-    return jsonify({'success': True, 'is_admin': user.is_admin, 'username': user.username})
+    return jsonify(
+        {"success": True, "is_admin": user.is_admin, "username": user.username}
+    )
 
 
-@app.route('/api/admin/usuarios/crear', methods=['POST'])
+@app.route("/api/admin/usuarios/crear", methods=["POST"])
 @login_required
 def api_admin_crear_usuario():
     if not current_user.is_admin:
-        return jsonify({'error': 'No autorizado'}), 403
+        return jsonify({"error": "No autorizado"}), 403
     data = request.get_json()
-    username = (data.get('username') or '').strip()
-    email = (data.get('email') or '').strip()
-    password = data.get('password', '')
-    is_admin = data.get('is_admin', False)
+    username = (data.get("username") or "").strip()
+    email = (data.get("email") or "").strip()
+    password = data.get("password", "")
+    is_admin = data.get("is_admin", False)
 
     if not username or not email or not password:
-        return jsonify({'error': 'Username, email y password son requeridos'}), 400
+        return jsonify({"error": "Username, email y password son requeridos"}), 400
     if len(password) < 6:
-        return jsonify({'error': 'Password debe tener al menos 6 caracteres'}), 400
+        return jsonify({"error": "Password debe tener al menos 6 caracteres"}), 400
     if User.query.filter_by(username=username).first():
-        return jsonify({'error': f'Username "{username}" ya existe'}), 400
+        return jsonify({"error": f'Username "{username}" ya existe'}), 400
     if User.query.filter_by(email=email).first():
-        return jsonify({'error': f'Email "{email}" ya existe'}), 400
+        return jsonify({"error": f'Email "{email}" ya existe'}), 400
 
     user = User(username=username, email=email, is_admin=bool(is_admin), is_active=True)
     user.set_password(password)
     db.session.add(user)
     db.session.commit()
-    return jsonify({'success': True, 'user_id': user.id, 'username': user.username})
+    return jsonify({"success": True, "user_id": user.id, "username": user.username})
 
 
-@app.route('/api/admin/reset-decisiones', methods=['POST'])
+@app.route("/api/admin/reset-decisiones", methods=["POST"])
 @login_required
 def api_admin_reset_decisiones():
     if not current_user.is_admin:
-        return jsonify({'error': 'No autorizado'}), 403
+        return jsonify({"error": "No autorizado"}), 403
 
     data = request.get_json() or {}
-    password = data.get('password', '')
+    password = data.get("password", "")
 
     if not password:
-        return jsonify({'error': 'Contraseña requerida'}), 400
+        return jsonify({"error": "Contraseña requerida"}), 400
 
     if not current_user.check_password(password):
-        return jsonify({'error': 'Contraseña incorrecta'}), 403
+        return jsonify({"error": "Contraseña incorrecta"}), 403
 
     # Reset all decision fields to null/false
     count = Analizador15K.query.filter_by(tiene_decision=True).count()
-    Analizador15K.query.update({
-        Analizador15K.estatus_chapingo: None,
-        Analizador15K.id_poligono_unico: None,
-        Analizador15K.superficie_chapingo: None,
-        Analizador15K.superficie_calculada: None,
-        Analizador15K.comentario_chapingo: None,
-        Analizador15K.tiene_decision: False,
-        Analizador15K.decidido_por_id: None,
-        Analizador15K.fecha_decision: None,
-    })
+    Analizador15K.query.update(
+        {
+            Analizador15K.estatus_chapingo: None,
+            Analizador15K.id_poligono_unico: None,
+            Analizador15K.superficie_chapingo: None,
+            Analizador15K.superficie_calculada: None,
+            Analizador15K.comentario_chapingo: None,
+            Analizador15K.tiene_decision: False,
+            Analizador15K.decidido_por_id: None,
+            Analizador15K.fecha_decision: None,
+        }
+    )
     db.session.commit()
-    app.logger.warning('ADMIN RESET: Usuario %s reseteó %d decisiones', current_user.username, count)
-    return jsonify({'success': True, 'registros_reseteados': count})
+    app.logger.warning(
+        "ADMIN RESET: Usuario %s reseteó %d decisiones", current_user.username, count
+    )
+    return jsonify({"success": True, "registros_reseteados": count})
 
 
-@app.route('/api/admin/usuarios/<int:user_id>/eliminar', methods=['DELETE'])
+@app.route("/api/admin/usuarios/<int:user_id>/eliminar", methods=["DELETE"])
 @login_required
 def api_admin_eliminar_usuario(user_id):
     if not current_user.is_admin:
-        return jsonify({'error': 'No autorizado'}), 403
+        return jsonify({"error": "No autorizado"}), 403
     user = User.query.get_or_404(user_id)
     if user.id == current_user.id:
-        return jsonify({'error': 'No puedes eliminarte a ti mismo'}), 400
+        return jsonify({"error": "No puedes eliminarte a ti mismo"}), 400
     # Unassign polygons
-    Analizador15K.query.filter_by(usuario_asignado_id=user_id).update({Analizador15K.usuario_asignado_id: None})
+    Analizador15K.query.filter_by(usuario_asignado_id=user_id).update(
+        {Analizador15K.usuario_asignado_id: None}
+    )
     # Clear decidido_por references
-    Analizador15K.query.filter_by(decidido_por_id=user_id).update({Analizador15K.decidido_por_id: None})
+    Analizador15K.query.filter_by(decidido_por_id=user_id).update(
+        {Analizador15K.decidido_por_id: None}
+    )
     db.session.delete(user)
     db.session.commit()
-    return jsonify({'success': True})
+    return jsonify({"success": True})
 
 
 @app.route("/revisor")
@@ -7932,10 +9280,7 @@ def api_revisor_indices():
     records = query.order_by(Analizador15K.idx_shp).all()
     indices = [r.idx_shp for r in records]
 
-    return jsonify({
-        "indices": indices,
-        "total": len(indices)
-    })
+    return jsonify({"indices": indices, "total": len(indices)})
 
 
 @app.route("/api/revisor/poligono/<int:idx>")
@@ -7948,7 +9293,9 @@ def api_revisor_poligono(idx):
     if shp_cache.validacion is None:
         return jsonify({"error": "Shapefiles no cargados"}), 500
     if idx < 0 or idx >= len(shp_cache.validacion):
-        return jsonify({"error": f"idx fuera de rango (0-{len(shp_cache.validacion)-1})"}), 400
+        return jsonify(
+            {"error": f"idx fuera de rango (0-{len(shp_cache.validacion) - 1})"}
+        ), 400
 
     # Get polygon geometry and overlaps
     try:
@@ -7966,18 +9313,24 @@ def api_revisor_poligono(idx):
             "superficie_chapingo": record.superficie_chapingo,
             "superficie_calculada": record.superficie_calculada,
             "comentario_chapingo": record.comentario_chapingo,
-            "decidido_por": record.decidido_por.username if record.decidido_por else None,
-            "fecha_decision": record.fecha_decision.strftime("%Y-%m-%d %H:%M") if record.fecha_decision else None,
+            "decidido_por": record.decidido_por.username
+            if record.decidido_por
+            else None,
+            "fecha_decision": record.fecha_decision.strftime("%Y-%m-%d %H:%M")
+            if record.fecha_decision
+            else None,
         }
 
-    return jsonify({
-        "index": idx,
-        "total": len(shp_cache.validacion),
-        "poligono": data["poligono"],
-        "matches": data["matches"],
-        "match_features": data["match_features"],
-        "decision": decision,
-    })
+    return jsonify(
+        {
+            "index": idx,
+            "total": len(shp_cache.validacion),
+            "poligono": data["poligono"],
+            "matches": data["matches"],
+            "match_features": data["match_features"],
+            "decision": decision,
+        }
+    )
 
 
 @app.route("/api/revisor/estadisticas")
@@ -7989,39 +9342,46 @@ def api_revisor_estadisticas():
 
     from sqlalchemy import func
 
-    total_validados = Analizador15K.query.filter(Analizador15K.tiene_decision == True).count()
-    total_poligonos = len(shp_cache.validacion) if shp_cache.validacion is not None else 0
+    total_validados = Analizador15K.query.filter(
+        Analizador15K.tiene_decision == True
+    ).count()
+    total_poligonos = (
+        len(shp_cache.validacion) if shp_cache.validacion is not None else 0
+    )
 
     por_estatus = dict(
-        db.session.query(
-            Analizador15K.estatus_chapingo, func.count()
-        ).filter(
-            Analizador15K.tiene_decision == True
-        ).group_by(Analizador15K.estatus_chapingo).all()
+        db.session.query(Analizador15K.estatus_chapingo, func.count())
+        .filter(Analizador15K.tiene_decision == True)
+        .group_by(Analizador15K.estatus_chapingo)
+        .all()
     )
 
     por_usuario = []
-    user_rows = db.session.query(
-        Analizador15K.decidido_por_id,
-        func.count()
-    ).filter(
-        Analizador15K.tiene_decision == True
-    ).group_by(Analizador15K.decidido_por_id).all()
+    user_rows = (
+        db.session.query(Analizador15K.decidido_por_id, func.count())
+        .filter(Analizador15K.tiene_decision == True)
+        .group_by(Analizador15K.decidido_por_id)
+        .all()
+    )
 
     for uid, cnt in user_rows:
         user = User.query.get(uid) if uid else None
-        por_usuario.append({
-            "usuario_id": uid,
-            "username": user.username if user else "desconocido",
-            "total": cnt
-        })
+        por_usuario.append(
+            {
+                "usuario_id": uid,
+                "username": user.username if user else "desconocido",
+                "total": cnt,
+            }
+        )
 
-    return jsonify({
-        "total_validados": total_validados,
-        "total_poligonos": total_poligonos,
-        "por_estatus": por_estatus,
-        "por_usuario": por_usuario
-    })
+    return jsonify(
+        {
+            "total_validados": total_validados,
+            "total_poligonos": total_poligonos,
+            "por_estatus": por_estatus,
+            "por_usuario": por_usuario,
+        }
+    )
 
 
 @app.route("/api/revisor/usuarios")
@@ -8033,23 +9393,21 @@ def api_revisor_usuarios():
 
     from sqlalchemy import func
 
-    user_rows = db.session.query(
-        Analizador15K.decidido_por_id,
-        func.count()
-    ).filter(
-        Analizador15K.tiene_decision == True,
-        Analizador15K.decidido_por_id.isnot(None)
-    ).group_by(Analizador15K.decidido_por_id).all()
+    user_rows = (
+        db.session.query(Analizador15K.decidido_por_id, func.count())
+        .filter(
+            Analizador15K.tiene_decision == True,
+            Analizador15K.decidido_por_id.isnot(None),
+        )
+        .group_by(Analizador15K.decidido_por_id)
+        .all()
+    )
 
     usuarios = []
     for uid, cnt in user_rows:
         user = User.query.get(uid)
         if user:
-            usuarios.append({
-                "id": uid,
-                "username": user.username,
-                "decisiones": cnt
-            })
+            usuarios.append({"id": uid, "username": user.username, "decisiones": cnt})
 
     return jsonify({"usuarios": usuarios})
 
@@ -8058,28 +9416,33 @@ def api_revisor_usuarios():
 # Validación de Polígonos — Admin Assignment & Stats
 # ==============================================
 
-@app.route('/admin/asignar-poligonos-validacion', methods=['POST'])
+
+@app.route("/admin/asignar-poligonos-validacion", methods=["POST"])
 @login_required
 def asignar_poligonos_validacion():
     if not current_user.is_admin:
-        flash('Acceso denegado', 'error')
-        return redirect(url_for('validacion_poligonos', tab='lista'))
+        flash("Acceso denegado", "error")
+        return redirect(url_for("validacion_poligonos", tab="lista"))
 
     try:
         # Get non-admin users
-        usuarios = User.query.filter_by(is_admin=False, is_active=True).order_by(User.id).all()
+        usuarios = (
+            User.query.filter_by(is_admin=False, is_active=True).order_by(User.id).all()
+        )
         if not usuarios:
-            flash('No hay usuarios no-admin activos para asignar', 'error')
-            return redirect(url_for('validacion_poligonos', tab='lista'))
+            flash("No hay usuarios no-admin activos para asignar", "error")
+            return redirect(url_for("validacion_poligonos", tab="lista"))
 
         # Get unassigned polygons (ordered by id for consistent distribution)
-        poligonos = Poligono.query.filter(
-            Poligono.usuario_asignado_id.is_(None)
-        ).order_by(Poligono.id).all()
+        poligonos = (
+            Poligono.query.filter(Poligono.usuario_asignado_id.is_(None))
+            .order_by(Poligono.id)
+            .all()
+        )
 
         if not poligonos:
-            flash('No hay polígonos sin asignar', 'warning')
-            return redirect(url_for('validacion_poligonos', tab='lista'))
+            flash("No hay polígonos sin asignar", "warning")
+            return redirect(url_for("validacion_poligonos", tab="lista"))
 
         # Distribute evenly using round-robin
         for i, poligono in enumerate(poligonos):
@@ -8091,29 +9454,32 @@ def asignar_poligonos_validacion():
         resumen = []
         for u in usuarios:
             count = Poligono.query.filter_by(usuario_asignado_id=u.id).count()
-            resumen.append(f'{u.username}: {count}')
+            resumen.append(f"{u.username}: {count}")
 
-        flash(f'Asignados {len(poligonos)} polígonos a {len(usuarios)} usuarios ({", ".join(resumen)})', 'success')
+        flash(
+            f"Asignados {len(poligonos)} polígonos a {len(usuarios)} usuarios ({', '.join(resumen)})",
+            "success",
+        )
     except Exception as e:
         db.session.rollback()
-        app.logger.error(f'Error asignando polígonos: {e}')
-        flash(f'Error al asignar polígonos: {str(e)}', 'error')
+        app.logger.error(f"Error asignando polígonos: {e}")
+        flash(f"Error al asignar polígonos: {str(e)}", "error")
 
-    return redirect(url_for('validacion_poligonos', tab='lista'))
+    return redirect(url_for("validacion_poligonos", tab="lista"))
 
 
-@app.route('/validar-geometria', methods=['POST'])
+@app.route("/validar-geometria", methods=["POST"])
 @login_required
 def validar_geometria_route():
     """Validación geométrica masiva: marca polígonos inválidos como Estatus 6."""
     if not current_user.is_admin:
-        flash('Solo administradores pueden ejecutar esta acción', 'error')
-        return redirect(url_for('validacion_poligonos', tab='lista'))
+        flash("Solo administradores pueden ejecutar esta acción", "error")
+        return redirect(url_for("validacion_poligonos", tab="lista"))
 
     try:
         # Query polygons with no estatus assigned (NULL or empty)
         poligonos = Poligono.query.filter(
-            db.or_(Poligono.estatus.is_(None), Poligono.estatus == '')
+            db.or_(Poligono.estatus.is_(None), Poligono.estatus == "")
         ).all()
 
         total_evaluados = len(poligonos)
@@ -8121,38 +9487,46 @@ def validar_geometria_route():
 
         for poligono in poligonos:
             es_valido, motivo = validar_geometria(
-                poligono.coordenadas_corregidas,
-                poligono.superficie
+                poligono.coordenadas_corregidas, poligono.superficie
             )
 
             if not es_valido:
-                poligono.estatus = '6'
-                poligono.comentarios = 'NO SE PUEDE DIGITALIZAR'
-                poligono.descripcion = motivo  # Store the specific reason in descripcion
+                poligono.estatus = "6"
+                poligono.comentarios = "NO SE PUEDE DIGITALIZAR"
+                poligono.descripcion = (
+                    motivo  # Store the specific reason in descripcion
+                )
                 total_invalidos += 1
 
         db.session.commit()
 
-        flash(f'Validación geométrica: {total_invalidos} polígonos marcados como inválidos de {total_evaluados} evaluados', 'success')
+        flash(
+            f"Validación geométrica: {total_invalidos} polígonos marcados como inválidos de {total_evaluados} evaluados",
+            "success",
+        )
     except Exception as e:
         db.session.rollback()
-        app.logger.error(f'Error en validación geométrica: {e}')
-        flash(f'Error en validación geométrica: {str(e)}', 'error')
+        app.logger.error(f"Error en validación geométrica: {e}")
+        flash(f"Error en validación geométrica: {str(e)}", "error")
 
-    return redirect(url_for('validacion_poligonos', tab='lista'))
+    return redirect(url_for("validacion_poligonos", tab="lista"))
 
 
-@app.route('/api/validacion-poligonos/estadisticas')
+@app.route("/api/validacion-poligonos/estadisticas")
 @login_required
 def api_validacion_poligonos_estadisticas():
     try:
         # Get IDs to exclude (same logic as Lista tab, lines 793-809)
         vincular_ids = set(
-            v.poligono_id for v in ValidacionMegacapa.query.filter_by(estatus_megacapa='VINCULAR').all()
+            v.poligono_id
+            for v in ValidacionMegacapa.query.filter_by(
+                estatus_megacapa="VINCULAR"
+            ).all()
         )
         seg_val_excluir_ids = set(
-            sv.poligono_id for sv in SegundaValidacionPoligono.query.filter(
-                SegundaValidacionPoligono.decision.in_(['ELIMINAR', 'VINCULAR'])
+            sv.poligono_id
+            for sv in SegundaValidacionPoligono.query.filter(
+                SegundaValidacionPoligono.decision.in_(["ELIMINAR", "VINCULAR"])
             ).all()
         )
         excluir_ids = vincular_ids | seg_val_excluir_ids
@@ -8164,41 +9538,46 @@ def api_validacion_poligonos_estadisticas():
 
         total = base_query.count()
         con_estatus = base_query.filter(
-            Poligono.estatus.isnot(None), Poligono.estatus != ''
+            Poligono.estatus.isnot(None), Poligono.estatus != ""
         ).count()
         sin_estatus = total - con_estatus
         sin_asignar = base_query.filter(Poligono.usuario_asignado_id.is_(None)).count()
 
         # Per-user stats — also only count NUEVOS
-        usuarios = User.query.filter_by(is_admin=False, is_active=True).order_by(User.id).all()
+        usuarios = (
+            User.query.filter_by(is_admin=False, is_active=True).order_by(User.id).all()
+        )
         por_usuario = []
         for u in usuarios:
             user_query = base_query.filter(Poligono.usuario_asignado_id == u.id)
             asignados = user_query.count()
             editados = user_query.filter(
-                Poligono.estatus.isnot(None),
-                Poligono.estatus != ''
+                Poligono.estatus.isnot(None), Poligono.estatus != ""
             ).count()
             pendientes = asignados - editados
             avance_pct = round((editados / asignados * 100), 1) if asignados > 0 else 0
-            por_usuario.append({
-                'username': u.username,
-                'asignados': asignados,
-                'editados': editados,
-                'pendientes': pendientes,
-                'avance_pct': avance_pct,
-            })
+            por_usuario.append(
+                {
+                    "username": u.username,
+                    "asignados": asignados,
+                    "editados": editados,
+                    "pendientes": pendientes,
+                    "avance_pct": avance_pct,
+                }
+            )
 
-        return jsonify({
-            'total': total,
-            'con_estatus': con_estatus,
-            'sin_estatus': sin_estatus,
-            'sin_asignar': sin_asignar,
-            'por_usuario': por_usuario,
-        })
+        return jsonify(
+            {
+                "total": total,
+                "con_estatus": con_estatus,
+                "sin_estatus": sin_estatus,
+                "sin_asignar": sin_asignar,
+                "por_usuario": por_usuario,
+            }
+        )
     except Exception as e:
-        app.logger.error(f'Error en estadísticas de validación: {e}')
-        return jsonify({'error': str(e)}), 500
+        app.logger.error(f"Error en estadísticas de validación: {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 # ============================================================
@@ -8206,28 +9585,31 @@ def api_validacion_poligonos_estadisticas():
 # ============================================================
 
 import json as _json
-_SEG_VAL_STATE_FILE = '/tmp/seg_val_poligonos_state.json'
+
+_SEG_VAL_STATE_FILE = "/tmp/seg_val_poligonos_state.json"
+
 
 def _get_seg_val_state():
     """Read segunda validacion state from shared file."""
     try:
-        with open(_SEG_VAL_STATE_FILE, 'r') as f:
+        with open(_SEG_VAL_STATE_FILE, "r") as f:
             return _json.load(f)
     except (FileNotFoundError, _json.JSONDecodeError):
         return {
-            'status': 'idle',
-            'phase': '',
-            'progress': 0,
-            'message': '',
-            'result': None,
+            "status": "idle",
+            "phase": "",
+            "progress": 0,
+            "message": "",
+            "result": None,
         }
+
 
 def _set_seg_val_state(**kwargs):
     """Update segunda validacion state in shared file."""
     state = _get_seg_val_state()
     state.update(kwargs)
     try:
-        with open(_SEG_VAL_STATE_FILE, 'w') as f:
+        with open(_SEG_VAL_STATE_FILE, "w") as f:
             _json.dump(state, f)
     except Exception:
         pass
@@ -8238,7 +9620,7 @@ def _build_nuevo_geodataframe():
     import geopandas as gpd
     from utils.validacion_megacapa import construir_geometria
 
-    nuevos_vm = ValidacionMegacapa.query.filter_by(estatus_megacapa='NUEVO').all()
+    nuevos_vm = ValidacionMegacapa.query.filter_by(estatus_megacapa="NUEVO").all()
     nuevo_poligono_ids = {vm.poligono_id for vm in nuevos_vm}
 
     poligonos = Poligono.query.filter(Poligono.id.in_(nuevo_poligono_ids)).all()
@@ -8248,17 +9630,19 @@ def _build_nuevo_geodataframe():
         geom, error = construir_geometria(p.coordenadas_corregidas)
         if geom is None or geom.is_empty:
             continue
-        rows.append({
-            'poligono_id': p.id,
-            'id_poligono': p.id_poligono,
-            'id_credito': p.id_credito,
-            'geometry': geom,
-        })
+        rows.append(
+            {
+                "poligono_id": p.id,
+                "id_poligono": p.id_poligono,
+                "id_credito": p.id_credito,
+                "geometry": geom,
+            }
+        )
 
     if not rows:
         return gpd.GeoDataFrame()
 
-    gdf = gpd.GeoDataFrame(rows, geometry='geometry', crs='EPSG:4326')
+    gdf = gpd.GeoDataFrame(rows, geometry="geometry", crs="EPSG:4326")
     return gdf
 
 
@@ -8291,14 +9675,17 @@ def _calcular_traslapes_poligonos(on_progress=None):
         # Project to UTM for area calculation
         centroid = geom_a.centroid
         utm_zone = int((centroid.x + 180) / 6) + 1
-        epsg_utm = f'EPSG:326{utm_zone:02d}' if centroid.y >= 0 else f'EPSG:327{utm_zone:02d}'
+        epsg_utm = (
+            f"EPSG:326{utm_zone:02d}" if centroid.y >= 0 else f"EPSG:327{utm_zone:02d}"
+        )
         try:
-            transformer = Transformer.from_crs('EPSG:4326', epsg_utm, always_xy=True)
+            transformer = Transformer.from_crs("EPSG:4326", epsg_utm, always_xy=True)
         except Exception:
             continue
 
         try:
             from shapely.ops import transform as shapely_transform
+
             geom_a_utm = shapely_transform(transformer.transform, geom_a)
             area_a = geom_a_utm.area
         except Exception:
@@ -8307,9 +9694,9 @@ def _calcular_traslapes_poligonos(on_progress=None):
         if area_a <= 0:
             continue
 
-        pid_a = int(row_a['poligono_id'])
-        id_poligono_a = row_a.get('id_poligono', '')
-        id_credito_a = row_a.get('id_credito', '')
+        pid_a = int(row_a["poligono_id"])
+        id_poligono_a = row_a.get("id_poligono", "")
+        id_credito_a = row_a.get("id_credito", "")
 
         candidates = list(sindex.intersection(geom_a.bounds))
         for pos_b in candidates:
@@ -8317,7 +9704,7 @@ def _calcular_traslapes_poligonos(on_progress=None):
                 continue
 
             row_b = gdf.iloc[pos_b]
-            pid_b = int(row_b['poligono_id'])
+            pid_b = int(row_b["poligono_id"])
             geom_b = row_b.geometry
             if geom_b is None or geom_b.is_empty:
                 continue
@@ -8340,18 +9727,20 @@ def _calcular_traslapes_poligonos(on_progress=None):
                 overlap_pct_b = (inter_area / area_b) * 100
 
                 if overlap_pct_a >= 90 and overlap_pct_b >= 90:
-                    id_credito_b = row_b.get('id_credito', '')
-                    pairs.append({
-                        'pid_a': pid_a,
-                        'pid_b': pid_b,
-                        'id_poligono_a': id_poligono_a,
-                        'id_poligono_b': row_b.get('id_poligono', ''),
-                        'id_credito_a': id_credito_a,
-                        'id_credito_b': id_credito_b,
-                        'overlap_pct_a': round(overlap_pct_a, 2),
-                        'overlap_pct_b': round(overlap_pct_b, 2),
-                        'same_credit': str(id_credito_a) == str(id_credito_b),
-                    })
+                    id_credito_b = row_b.get("id_credito", "")
+                    pairs.append(
+                        {
+                            "pid_a": pid_a,
+                            "pid_b": pid_b,
+                            "id_poligono_a": id_poligono_a,
+                            "id_poligono_b": row_b.get("id_poligono", ""),
+                            "id_credito_a": id_credito_a,
+                            "id_credito_b": id_credito_b,
+                            "overlap_pct_a": round(overlap_pct_a, 2),
+                            "overlap_pct_b": round(overlap_pct_b, 2),
+                            "same_credit": str(id_credito_a) == str(id_credito_b),
+                        }
+                    )
             except Exception:
                 continue
 
@@ -8366,11 +9755,17 @@ def _agrupar_y_decidir_poligonos(pairs):
     node_info = {}
     edges = []
     for p in pairs:
-        pid_a, pid_b = p['pid_a'], p['pid_b']
+        pid_a, pid_b = p["pid_a"], p["pid_b"]
         if pid_a not in node_info:
-            node_info[pid_a] = {'id_poligono': p['id_poligono_a'], 'id_credito': p['id_credito_a']}
+            node_info[pid_a] = {
+                "id_poligono": p["id_poligono_a"],
+                "id_credito": p["id_credito_a"],
+            }
         if pid_b not in node_info:
-            node_info[pid_b] = {'id_poligono': p['id_poligono_b'], 'id_credito': p['id_credito_b']}
+            node_info[pid_b] = {
+                "id_poligono": p["id_poligono_b"],
+                "id_credito": p["id_credito_b"],
+            }
         edges.append((pid_a, pid_b))
 
     # Union-Find
@@ -8406,46 +9801,48 @@ def _agrupar_y_decidir_poligonos(pairs):
         principal_pid = members[0]
         principal_info = node_info[principal_pid]
 
-        unique_credits = set(str(node_info[m]['id_credito']) for m in members)
-        seen_credits = {str(principal_info['id_credito'])}
+        unique_credits = set(str(node_info[m]["id_credito"]) for m in members)
+        seen_credits = {str(principal_info["id_credito"])}
 
         group = {
-            'group_id': group_id,
-            'principal_pid': principal_pid,
-            'principal_id_poligono': principal_info['id_poligono'],
-            'principal_id_credito': principal_info['id_credito'],
-            'members': [],
+            "group_id": group_id,
+            "principal_pid": principal_pid,
+            "principal_id_poligono": principal_info["id_poligono"],
+            "principal_id_credito": principal_info["id_credito"],
+            "members": [],
         }
 
         for m in members:
             info = node_info[m]
-            cred = str(info['id_credito'])
+            cred = str(info["id_credito"])
 
             if m == principal_pid:
-                decision = 'NUEVO'
-                reason = 'Polígono principal del grupo'
+                decision = "NUEVO"
+                reason = "Polígono principal del grupo"
             elif len(unique_credits) == 1:
-                decision = 'ELIMINAR'
-                reason = f'Duplicado mismo crédito. Eliminado a favor de {principal_info["id_poligono"]}'
+                decision = "ELIMINAR"
+                reason = f"Duplicado mismo crédito. Eliminado a favor de {principal_info['id_poligono']}"
             else:
-                if cred == str(principal_info['id_credito']):
-                    decision = 'ELIMINAR'
-                    reason = f'Duplicado mismo crédito que principal {principal_info["id_poligono"]}'
+                if cred == str(principal_info["id_credito"]):
+                    decision = "ELIMINAR"
+                    reason = f"Duplicado mismo crédito que principal {principal_info['id_poligono']}"
                 elif cred in seen_credits:
-                    decision = 'ELIMINAR'
-                    reason = f'Crédito {cred} ya vinculado en este grupo'
+                    decision = "ELIMINAR"
+                    reason = f"Crédito {cred} ya vinculado en este grupo"
                 else:
-                    decision = 'VINCULAR'
-                    reason = f'Diferente crédito, vinculado a {principal_info["id_poligono"]}'
+                    decision = "VINCULAR"
+                    reason = f"Diferente crédito, vinculado a {principal_info['id_poligono']}"
                     seen_credits.add(cred)
 
-            group['members'].append({
-                'poligono_id': int(m),
-                'id_poligono': info['id_poligono'],
-                'id_credito': info['id_credito'],
-                'decision': decision,
-                'reason': reason,
-            })
+            group["members"].append(
+                {
+                    "poligono_id": int(m),
+                    "id_poligono": info["id_poligono"],
+                    "id_credito": info["id_credito"],
+                    "decision": decision,
+                    "reason": reason,
+                }
+            )
 
         groups.append(group)
 
@@ -8457,50 +9854,67 @@ def _run_seg_val_poligonos():
     try:
         with app.app_context():
             # Phase 1: Reset
-            _set_seg_val_state(phase='reset', progress=5, message='Limpiando resultados anteriores...')
+            _set_seg_val_state(
+                phase="reset", progress=5, message="Limpiando resultados anteriores..."
+            )
             db.session.query(SegundaValidacionPoligono).delete()
             db.session.commit()
 
             # Phase 2: Traslape
-            _set_seg_val_state(phase='traslape', progress=10, message='Construyendo geometrías y calculando traslapes...')
+            _set_seg_val_state(
+                phase="traslape",
+                progress=10,
+                message="Construyendo geometrías y calculando traslapes...",
+            )
 
             def on_progress(current, total):
                 if total > 0:
                     pct = 10 + int((current / total) * 60)
-                    _set_seg_val_state(progress=min(pct, 70), message=f'Analizando polígono {current}/{total}...')
+                    _set_seg_val_state(
+                        progress=min(pct, 70),
+                        message=f"Analizando polígono {current}/{total}...",
+                    )
 
             pairs = _calcular_traslapes_poligonos(on_progress)
 
             # Phase 3: Agrupamiento
-            _set_seg_val_state(phase='agrupamiento', progress=75, message=f'Agrupando {len(pairs)} pares encontrados...')
+            _set_seg_val_state(
+                phase="agrupamiento",
+                progress=75,
+                message=f"Agrupando {len(pairs)} pares encontrados...",
+            )
             groups = _agrupar_y_decidir_poligonos(pairs)
 
             # Phase 4: Aplicando
-            _set_seg_val_state(phase='aplicando', progress=80, message='Guardando resultados en base de datos...')
+            _set_seg_val_state(
+                phase="aplicando",
+                progress=80,
+                message="Guardando resultados en base de datos...",
+            )
 
             vinculados = 0
             eliminados = 0
             count = 0
 
             for group in groups:
-                for member in group['members']:
+                for member in group["members"]:
                     registro = SegundaValidacionPoligono(
-                        poligono_id=int(member['poligono_id']),
-                        id_poligono=member['id_poligono'],
-                        id_credito=member['id_credito'],
-                        group_id=group['group_id'],
-                        is_principal=(member['poligono_id'] == group['principal_pid']),
-                        decision=member['decision'],
-                        principal_poligono_id=int(group['principal_pid']),
-                        principal_id_poligono=group['principal_id_poligono'],
-                        razon=member['reason'],
+                        poligono_id=int(member["poligono_id"]),
+                        id_poligono=member["id_poligono"],
+                        id_credito=member["id_credito"],
+                        group_id=group["group_id"],
+                        is_principal=(member["poligono_id"] == group["principal_pid"]),
+                        decision=member["decision"],
+                        principal_poligono_id=int(group["principal_pid"]),
+                        principal_id_poligono=group["principal_id_poligono"],
+                        razon=member["reason"],
                     )
                     db.session.add(registro)
                     count += 1
 
-                    if member['decision'] == 'VINCULAR':
+                    if member["decision"] == "VINCULAR":
                         vinculados += 1
-                    elif member['decision'] == 'ELIMINAR':
+                    elif member["decision"] == "ELIMINAR":
                         eliminados += 1
 
                     if count % 100 == 0:
@@ -8509,108 +9923,113 @@ def _run_seg_val_poligonos():
             db.session.commit()
 
             # Count NUEVO from megacapa that had no duplicates
-            total_nuevos = ValidacionMegacapa.query.filter_by(estatus_megacapa='NUEVO').count()
-            poligonos_en_grupos = len([m for g in groups for m in g['members']])
+            total_nuevos = ValidacionMegacapa.query.filter_by(
+                estatus_megacapa="NUEVO"
+            ).count()
+            poligonos_en_grupos = len([m for g in groups for m in g["members"]])
             sin_duplicados = total_nuevos - poligonos_en_grupos
 
             # Phase 5: Done
             _set_seg_val_state(
-                status='done',
-                phase='done',
+                status="done",
+                phase="done",
                 progress=100,
-                message='Segunda validación completada',
+                message="Segunda validación completada",
                 result={
-                    'total_nuevos_analizados': total_nuevos,
-                    'total_pairs_found': len(pairs),
-                    'total_groups': len(groups),
-                    'verdaderamente_nuevos': total_nuevos - vinculados - eliminados,
-                    'vinculados': vinculados,
-                    'eliminados': eliminados,
-                    'sin_duplicados': sin_duplicados,
-                }
+                    "total_nuevos_analizados": total_nuevos,
+                    "total_pairs_found": len(pairs),
+                    "total_groups": len(groups),
+                    "verdaderamente_nuevos": total_nuevos - vinculados - eliminados,
+                    "vinculados": vinculados,
+                    "eliminados": eliminados,
+                    "sin_duplicados": sin_duplicados,
+                },
             )
 
     except Exception as e:
         import traceback
+
         traceback.print_exc()
-        _set_seg_val_state(status='error', message=str(e))
+        _set_seg_val_state(status="error", message=str(e))
 
 
-@app.route('/api/validacion-poligonos/segunda-validacion/ejecutar', methods=['POST'])
+@app.route("/api/validacion-poligonos/segunda-validacion/ejecutar", methods=["POST"])
 @login_required
 def api_seg_val_poligonos_ejecutar():
     if not current_user.is_admin:
-        return jsonify({'error': 'Solo administradores'}), 403
+        return jsonify({"error": "Solo administradores"}), 403
 
     state = _get_seg_val_state()
-    if state['status'] == 'running':
-        return jsonify({'error': 'Ya hay una validación en curso'}), 409
+    if state["status"] == "running":
+        return jsonify({"error": "Ya hay una validación en curso"}), 409
 
     _set_seg_val_state(
-        status='running',
-        phase='iniciando',
+        status="running",
+        phase="iniciando",
         progress=0,
-        message='Iniciando segunda validación...',
+        message="Iniciando segunda validación...",
         result=None,
     )
 
     import threading
+
     t = threading.Thread(target=_run_seg_val_poligonos, daemon=True)
     t.start()
 
-    return jsonify({'ok': True, 'message': 'Segunda validación iniciada'})
+    return jsonify({"ok": True, "message": "Segunda validación iniciada"})
 
 
-@app.route('/api/validacion-poligonos/segunda-validacion/estado')
+@app.route("/api/validacion-poligonos/segunda-validacion/estado")
 @login_required
 def api_seg_val_poligonos_estado():
     return jsonify(_get_seg_val_state())
 
 
-@app.route('/api/validacion-poligonos/segunda-validacion/resultado')
+@app.route("/api/validacion-poligonos/segunda-validacion/resultado")
 @login_required
 def api_seg_val_poligonos_resultado():
     state = _get_seg_val_state()
-    if state['status'] == 'done' and state.get('result'):
-        return jsonify(state['result'])
-    return jsonify({'error': 'No hay resultados disponibles'}), 404
+    if state["status"] == "done" and state.get("result"):
+        return jsonify(state["result"])
+    return jsonify({"error": "No hay resultados disponibles"}), 404
 
 
-@app.route('/api/validacion-poligonos/segunda-validacion/grupos')
+@app.route("/api/validacion-poligonos/segunda-validacion/grupos")
 @login_required
 def api_seg_val_poligonos_grupos():
     try:
         registros = SegundaValidacionPoligono.query.order_by(
-            SegundaValidacionPoligono.group_id,
-            SegundaValidacionPoligono.poligono_id
+            SegundaValidacionPoligono.group_id, SegundaValidacionPoligono.poligono_id
         ).all()
 
         if not registros:
-            return jsonify({'groups': []})
+            return jsonify({"groups": []})
 
         groups_map = {}
         for r in registros:
             if r.group_id not in groups_map:
                 groups_map[r.group_id] = {
-                    'group_id': r.group_id,
-                    'principal_pid': r.principal_poligono_id,
-                    'principal_id_poligono': r.principal_id_poligono,
-                    'members': [],
+                    "group_id": r.group_id,
+                    "principal_pid": r.principal_poligono_id,
+                    "principal_id_poligono": r.principal_id_poligono,
+                    "members": [],
                 }
-            groups_map[r.group_id]['members'].append({
-                'poligono_id': r.poligono_id,
-                'id_poligono': r.id_poligono,
-                'id_credito': r.id_credito,
-                'decision': r.decision,
-                'reason': r.razon,
-            })
+            groups_map[r.group_id]["members"].append(
+                {
+                    "poligono_id": r.poligono_id,
+                    "id_poligono": r.id_poligono,
+                    "id_credito": r.id_credito,
+                    "decision": r.decision,
+                    "reason": r.razon,
+                }
+            )
 
-        return jsonify({'groups': list(groups_map.values())})
+        return jsonify({"groups": list(groups_map.values())})
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"error": str(e)}), 500
 
 
-@app.route('/api/validacion-poligonos/segunda-validacion/grupo-geometrias')
+@app.route("/api/validacion-poligonos/segunda-validacion/grupo-geometrias")
 @login_required
 def api_seg_val_poligonos_grupo_geometrias():
     """Return GeoJSON for a set of poligono_ids."""
@@ -8618,11 +10037,11 @@ def api_seg_val_poligonos_grupo_geometrias():
         from utils.validacion_megacapa import construir_geometria
         from shapely.geometry import mapping
 
-        ids_param = request.args.get('ids', '')
+        ids_param = request.args.get("ids", "")
         if not ids_param:
-            return jsonify({'error': 'Parámetro ids requerido'}), 400
+            return jsonify({"error": "Parámetro ids requerido"}), 400
 
-        poligono_ids = [int(x) for x in ids_param.split(',') if x.strip()][:200]
+        poligono_ids = [int(x) for x in ids_param.split(",") if x.strip()][:200]
 
         features = []
         for pid in poligono_ids:
@@ -8638,48 +10057,59 @@ def api_seg_val_poligonos_grupo_geometrias():
             try:
                 centroid = geom.centroid
                 utm_zone = int((centroid.x + 180) / 6) + 1
-                epsg_utm = f'EPSG:326{utm_zone:02d}' if centroid.y >= 0 else f'EPSG:327{utm_zone:02d}'
+                epsg_utm = (
+                    f"EPSG:326{utm_zone:02d}"
+                    if centroid.y >= 0
+                    else f"EPSG:327{utm_zone:02d}"
+                )
                 from pyproj import Transformer
                 from shapely.ops import transform as shapely_transform
-                transformer = Transformer.from_crs('EPSG:4326', epsg_utm, always_xy=True)
+
+                transformer = Transformer.from_crs(
+                    "EPSG:4326", epsg_utm, always_xy=True
+                )
                 geom_utm = shapely_transform(transformer.transform, geom)
                 area_ha = geom_utm.area / 10000
             except Exception:
                 area_ha = 0
 
-            features.append({
-                'type': 'Feature',
-                'properties': {
-                    'poligono_id': pid,
-                    'id_poligono': poligono.id_poligono,
-                    'id_credito': poligono.id_credito,
-                    'area_ha': round(area_ha, 4),
-                },
-                'geometry': mapping(geom),
-            })
+            features.append(
+                {
+                    "type": "Feature",
+                    "properties": {
+                        "poligono_id": pid,
+                        "id_poligono": poligono.id_poligono,
+                        "id_credito": poligono.id_credito,
+                        "area_ha": round(area_ha, 4),
+                    },
+                    "geometry": mapping(geom),
+                }
+            )
 
-        return jsonify({
-            'type': 'FeatureCollection',
-            'features': features,
-        })
+        return jsonify(
+            {
+                "type": "FeatureCollection",
+                "features": features,
+            }
+        )
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"error": str(e)}), 500
 
 
-@app.route('/api/validacion-poligonos/segunda-validacion/reset', methods=['POST'])
+@app.route("/api/validacion-poligonos/segunda-validacion/reset", methods=["POST"])
 @login_required
 def api_seg_val_poligonos_reset():
     if not current_user.is_admin:
-        return jsonify({'error': 'Solo administradores'}), 403
+        return jsonify({"error": "Solo administradores"}), 403
     try:
         deleted = db.session.query(SegundaValidacionPoligono).delete()
         db.session.commit()
-        _set_seg_val_state(status='idle', phase='', progress=0, message='', result=None)
-        return jsonify({'ok': True, 'deleted': deleted})
+        _set_seg_val_state(status="idle", phase="", progress=0, message="", result=None)
+        return jsonify({"ok": True, "deleted": deleted})
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"error": str(e)}), 500
 
 
-if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+if __name__ == "__main__":
+    app.run(debug=True, host="0.0.0.0", port=5000)
