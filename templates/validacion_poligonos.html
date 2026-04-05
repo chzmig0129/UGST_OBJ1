@@ -2013,11 +2013,11 @@ document.addEventListener('DOMContentLoaded', function() {
                         if (data.total !== undefined && polygon_id) {
                             // Crear un toast para informar cuántos polígonos se cargaron
                             var toastHTML = `
-                            <div class="toast-container position-fixed bottom-0 end-0 p-3">
+                            <div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 9999;">
                               <div class="toast show" role="alert" aria-live="assertive" aria-atomic="true">
                                 <div class="toast-header">
                                   <strong class="me-auto">Polígonos Históricos</strong>
-                                  <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+                                  <button type="button" class="btn-close" aria-label="Close" onclick="this.closest('.toast-container').remove()"></button>
                                 </div>
                                 <div class="toast-body">
                                   Se cargaron ${data.total} polígonos históricos en un radio de ${data.radio_km}km.
@@ -2029,10 +2029,10 @@ document.addEventListener('DOMContentLoaded', function() {
                             toastDiv.innerHTML = toastHTML;
                             document.body.appendChild(toastDiv);
                             
-                            // Eliminar el toast después de 5 segundos
+                            // Eliminar el toast después de 3 segundos
                             setTimeout(function() {
                                 toastDiv.remove();
-                            }, 5000);
+                            }, 3000);
                         }
                         
                         console.log("Polígonos históricos cargados correctamente");
