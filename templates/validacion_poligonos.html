@@ -2009,32 +2009,6 @@ document.addEventListener('DOMContentLoaded', function() {
                             });
                         }
                         
-                        // Si se cargaron polígonos por radio, mostrar notificación
-                        if (data.total !== undefined && polygon_id) {
-                            // Crear un toast para informar cuántos polígonos se cargaron
-                            var toastHTML = `
-                            <div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 9999;">
-                              <div class="toast show" role="alert" aria-live="assertive" aria-atomic="true">
-                                <div class="toast-header">
-                                  <strong class="me-auto">Polígonos Históricos</strong>
-                                  <button type="button" class="btn-close" aria-label="Close" onclick="this.closest('.toast-container').remove()"></button>
-                                </div>
-                                <div class="toast-body">
-                                  Se cargaron ${data.total} polígonos históricos en un radio de ${data.radio_km}km.
-                                </div>
-                              </div>
-                            </div>`;
-                            
-                            var toastDiv = document.createElement('div');
-                            toastDiv.innerHTML = toastHTML;
-                            document.body.appendChild(toastDiv);
-                            
-                            // Eliminar el toast después de 3 segundos
-                            setTimeout(function() {
-                                toastDiv.remove();
-                            }, 3000);
-                        }
-                        
                         console.log("Polígonos históricos cargados correctamente");
                         
                         // Cargar también polígonos actuales con traslapes si hay un polygon_id
