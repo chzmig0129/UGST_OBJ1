@@ -78,22 +78,29 @@ def serializar_coordenadas(coords_list: List[Union[List[float], tuple]]) -> str:
 
 
 def ordenar_coordenadas(coordenadas_str: Optional[str]) -> Optional[str]:
-    """Sort polygon vertices angularly around their centroid (counter-clockwise).
+    """Order polygon vertices using Shapely's Convex Hull algorithm.
 
     This eliminates self-intersecting (bowtie) polygons that arise when
-    vertices are stored in arbitrary order.
+    vertices are stored in arbitrary order.  Unlike the previous angular-sort
+    approach, Convex Hull works correctly even when the centroid falls outside
+    the polygon (concave input sets).
 
     Algorithm
     ---------
     1. Parse the coordinate string into ``(lat, lon)`` tuples.
     2. If fewer than 3 points, return the input unchanged (not a polygon).
     3. Remove duplicate points (preserving first occurrence order).
-    4. Compute the centroid as the arithmetic mean of all latitudes and
-       longitudes.
-    5. For each point compute the angle from the centroid using
-       ``math.atan2(lat - centroid_lat, lon - centroid_lon)``.
-    6. Sort points by angle ascending (counter-clockwise order).
-    7. Serialize back to ``'lat,lon | lat,lon | ...'`` with 6 decimal places.
+    4. If exactly 3 unique points remain, return them as-is (a triangle
+       cannot self-intersect).
+    5. Build a ``shapely.geometry.MultiPoint`` from the unique points,
+       swapping to ``(lon, lat)`` order as required by Shapely's ``(x, y)``
+       convention.
+    6. Compute ``hull = multipoint.convex_hull``.
+    7. If the hull is not a Polygon (e.g. collinear points yield a
+       LineString), fall back to returning the deduplicated points in their
+       original order.
+    8. Extract the hull's exterior ring coordinates (dropping the closing
+       duplicate), swap back to ``(lat, lon)`` order, and serialize.
 
     Parameters
     ----------
@@ -102,7 +109,7 @@ def ordenar_coordenadas(coordenadas_str: Optional[str]) -> Optional[str]:
 
     Returns
     -------
-    Sorted coordinate string in the same format, or the original value
+    Ordered coordinate string in the same format, or the original value
     unchanged when the input is empty/None or has fewer than 3 points.
 
     Examples
@@ -114,6 +121,8 @@ def ordenar_coordenadas(coordenadas_str: Optional[str]) -> Optional[str]:
     ... )
     >>> # Result is a convex ordering with no self-intersections
     """
+    from shapely.geometry import MultiPoint  # noqa: PLC0415
+
     # Edge case: empty or None
     if coordenadas_str is None:
         return None
@@ -140,18 +149,25 @@ def ordenar_coordenadas(coordenadas_str: Optional[str]) -> Optional[str]:
     if len(unique) < 3:
         return coordenadas_str
 
-    # Centroid
-    n = len(unique)
-    centroid_lat = sum(p[0] for p in unique) / n
-    centroid_lon = sum(p[1] for p in unique) / n
+    # Triangle: cannot self-intersect, return as-is
+    if len(unique) == 3:
+        return serializar_coordenadas(unique)
 
-    # Angular sort (counter-clockwise)
-    def angle_key(point: List[float]) -> float:
-        return math.atan2(point[0] - centroid_lat, point[1] - centroid_lon)
+    # Build MultiPoint using Shapely's (x, y) = (lon, lat) convention
+    multipoint = MultiPoint([(p[1], p[0]) for p in unique])
+    hull = multipoint.convex_hull
 
-    sorted_coords = sorted(unique, key=angle_key)
+    # Collinear points produce a LineString or Point — fall back to original order
+    from shapely.geometry import Polygon as _Polygon  # noqa: PLC0415
 
-    return serializar_coordenadas(sorted_coords)
+    if not isinstance(hull, _Polygon):
+        return serializar_coordenadas(unique)
+
+    # Extract exterior ring, drop closing duplicate, swap back to (lat, lon)
+    hull_coords = list(hull.exterior.coords)[:-1]
+    ordered = [(lat, lon) for lon, lat in hull_coords]
+
+    return serializar_coordenadas(ordered)
 
 
 def validar_geometria(
@@ -254,7 +270,7 @@ def validar_geometria(
     lats = [p[0] for p in coords]
     mean_lat_rad = math.radians(sum(lats) / len(lats))
     # shapely area is in degrees²; convert to m² then to ha
-    area_ha = polygon.area * (111_320 ** 2) * math.cos(mean_lat_rad) / 10_000
+    area_ha = polygon.area * (111_320**2) * math.cos(mean_lat_rad) / 10_000
     if area_ha > 1000:
         return (False, "Área excesiva (>1000 ha), posible error de coordenadas")
 
