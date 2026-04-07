@@ -2048,7 +2048,7 @@ def get_historico_poligonos():
     """Endpoint para cargar y devolver los polígonos históricos como GeoJSON"""
     try:
         # Ruta al archivo shapefile histórico
-        historico_shapefile = "data/MEGA_CAPA_V1_OL.shp"
+        historico_shapefile = "data/MEGA_CAPA_V2.shp"
 
         # Leer el shapefile con geopandas
         historico_gdf = gpd.read_file(historico_shapefile)
@@ -2111,7 +2111,7 @@ def get_historico_poligonos_radio(polygon_id):
         lon_ref = float(first_point[1])
 
         # Ruta al archivo shapefile histórico
-        historico_shapefile = "data/MEGA_CAPA_V1_OL.shp"
+        historico_shapefile = "data/MEGA_CAPA_V2.shp"
 
         # Leer el shapefile con geopandas
         historico_gdf = gpd.read_file(historico_shapefile)
@@ -5623,7 +5623,7 @@ def api_mapa_15k_validacion():
 @limiter.exempt
 def api_mapa_15k_historico():
     try:
-        gdf = gpd.read_file("data/MEGA_CAPA_V1_OL.shp")
+        gdf = gpd.read_file("data/MEGA_CAPA_V2.shp")
         if gdf.crs is not None and gdf.crs.to_epsg() != 4326:
             gdf = gdf.to_crs(epsg=4326)
         gdf["geometry"] = gdf["geometry"].simplify(
@@ -5675,7 +5675,7 @@ def api_mapa_15k_historico():
             }
         )
     except Exception as e:
-        app.logger.error(f"Error al cargar MEGA_CAPA_V1_OL: {e}")
+        app.logger.error(f"Error al cargar MEGA_CAPA_V2: {e}")
         return jsonify({"error": str(e)}), 500
 
 
