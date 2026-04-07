@@ -1884,7 +1884,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Si se proporciona un ID de polígono, usar la API de radio
                 if (polygon_id) {
                     url = `/get-historico-poligonos-radio/${polygon_id}`;
-                    console.log(`Cargando polígonos históricos en un radio de 100m alrededor del polígono ${polygon_id}...`);
+                    console.log(`Cargando polígonos históricos en un radio de 1km alrededor del polígono ${polygon_id}...`);
                 }
                 
                 fetchWithRetry(url)

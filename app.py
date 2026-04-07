@@ -2086,7 +2086,7 @@ def get_historico_poligonos():
 @login_required
 @limiter.exempt
 def get_historico_poligonos_radio(polygon_id):
-    """Endpoint para cargar y devolver los polígonos históricos dentro de un radio de 100m"""
+    """Endpoint para cargar y devolver los polígonos históricos dentro de un radio de 1km"""
     try:
         # Buscar el polígono en la base de datos
         poligono = Poligono.query.get(polygon_id)
@@ -2120,7 +2120,7 @@ def get_historico_poligonos_radio(polygon_id):
         if historico_gdf.crs != "EPSG:4326":
             historico_gdf = historico_gdf.to_crs(epsg=4326)
 
-        # Filtrar polígonos en el radio de 5km
+        # Filtrar polígonos en el radio de 1km
         from shapely.geometry import Point
         import math
 
@@ -2157,8 +2157,8 @@ def get_historico_poligonos_radio(polygon_id):
             # Calcular la distancia
             distancia = haversine(lat_ref, lon_ref, lat, lon)
 
-            # Retornar True si está dentro del radio (100m)
-            return distancia <= 0.1
+            # Retornar True si está dentro del radio (1km)
+            return distancia <= 1.0
 
         # Aplicar el filtro a todas las geometrías
         mask = historico_gdf.geometry.apply(en_radio)
@@ -2182,7 +2182,7 @@ def get_historico_poligonos_radio(polygon_id):
             "id_field": id_field,
             "orden_field": orden_field,
             "total": len(historico_filtrado),
-            "radio_km": 0.1,
+            "radio_km": 1.0,
         }
 
         return jsonify(respuesta)
