@@ -1,0 +1,293 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="validacion-container">
+    <div class="section-header">
+        <div class="d-flex align-items-center">
+            <div class="app-icon">
+                <svg viewBox="0 0 24 24" width="28" height="28" stroke="currentColor" stroke-width="2" fill="none">
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                    <line x1="16" y1="2" x2="16" y2="6"></line>
+                    <line x1="8" y1="2" x2="8" y2="6"></line>
+                    <line x1="3" y1="10" x2="21" y2="10"></line>
+                </svg>
+            </div>
+            <div>
+                <h1 class="mb-0">Validación Diciembre</h1>
+                <p class="text-muted mb-0">Validación de la Capa Diciembre contra Megacapa + Estatus 7</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mensajes flash -->
+    {% with messages = get_flashed_messages() %}
+        {% if messages %}
+            <div class="flash-messages">
+                {% for message in messages %}
+                <div class="alert alert-info alert-dismissible fade show">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <!-- Toast de notificaciones -->
+    <div id="toastContainer" class="position-fixed top-0 end-0 p-3" style="z-index: 9999;">
+        <div id="notifToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="toast-header">
+                <strong class="me-auto" id="toastTitle">Notificación</strong>
+                <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+            <div class="toast-body" id="toastBody"></div>
+        </div>
+    </div>
+
+    <div class="tab-content">
+        <div class="container-fluid mt-3">
+
+            <!-- Tarjetas de resumen -->
+            <div class="row mb-4">
+                <div class="col-md-3">
+                    <div class="card text-center">
+                        <div class="card-body">
+                            <h5 class="card-title">Total Cargados</h5>
+                            <h2 class="text-primary">{{ resumen.total_cargados }}</h2>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card text-center border-success">
+                        <div class="card-body">
+                            <h5 class="card-title">Vinculados</h5>
+                            <h2 class="text-success">{{ resumen.vinculados }}</h2>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card text-center border-warning">
+                        <div class="card-body">
+                            <h5 class="card-title">Nuevos</h5>
+                            <h2 class="text-warning">{{ resumen.nuevos }}</h2>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card text-center">
+                        <div class="card-body">
+                            <h5 class="card-title">Pendientes</h5>
+                            <h2 class="text-secondary">{{ resumen.pendientes_validar }}</h2>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Botones de acción (solo admin) -->
+            {% if is_admin %}
+            <div class="row mb-4">
+                <div class="col-12 d-flex gap-2 flex-wrap">
+                    <button type="button" class="btn btn-success" onclick="cargarShapefile()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="me-1">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                        Cargar Shapefile
+                    </button>
+                    <form method="POST" action="{{ url_for('validacion_diciembre_ejecutar') }}" style="display:inline;" onsubmit="return confirmarEjecucion(this);">
+                        <button type="submit" class="btn btn-primary" id="btnEjecutar">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="me-1">
+                                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                            </svg>
+                            Ejecutar Validación
+                        </button>
+                    </form>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Tabla de resultados -->
+            {% if resultados %}
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Resultados de Validación</h5>
+                    <span class="badge bg-secondary">{{ resultados|length }} registros</span>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover table-sm mb-0">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>#</th>
+                                    <th>ID_POLIGONO</th>
+                                    <th>ID_CREDITO</th>
+                                    <th>ESTATUS</th>
+                                    <th>% Traslape</th>
+                                    <th>Match</th>
+                                    <th>Fuente</th>
+                                    <th>Motivo</th>
+                                    <th>Acción</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for r in resultados %}
+                                <tr id="fila-{{ r.id }}">
+                                    <td>{{ loop.index }}</td>
+                                    <td>{{ r.id_poligono or '—' }}</td>
+                                    <td>{{ r.id_credito or '—' }}</td>
+                                    <td>
+                                        {% if r.estatus_validacion == 'VINCULAR' %}
+                                            <span class="badge bg-success">VINCULAR</span>
+                                        {% else %}
+                                            <span class="badge bg-warning text-dark">NUEVO</span>
+                                        {% endif %}
+                                        {% if r.estatus_manual %}
+                                            <small class="text-muted ms-1" title="Modificado manualmente"><i class="fas fa-pencil-alt"></i></small>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if r.porcentaje_traslape is not none %}
+                                            {{ "%.1f"|format(r.porcentaje_traslape) }}%
+                                        {% else %}
+                                            —
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if r.id_poligono_match %}
+                                            <span class="text-monospace small">{{ r.id_poligono_match }}</span>
+                                            {% if r.id_credito_match %}
+                                                <br><small class="text-muted">{{ r.id_credito_match }}</small>
+                                            {% endif %}
+                                        {% else %}
+                                            —
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if r.fuente_match %}
+                                            {% if r.fuente_match == 'megacapa' %}
+                                                <span class="badge bg-info text-dark">megacapa</span>
+                                            {% else %}
+                                                <span class="badge bg-secondary">estatus7</span>
+                                            {% endif %}
+                                        {% else %}
+                                            —
+                                        {% endif %}
+                                    </td>
+                                    <td><small>{{ r.motivo or '—' }}</small></td>
+                                    <td>
+                                        {% if r.estatus_validacion == 'VINCULAR' %}
+                                            <button class="btn btn-warning btn-sm"
+                                                    onclick="cambiarEstatus({{ r.id }}, 'NUEVO')">
+                                                Cambiar a NUEVO
+                                            </button>
+                                        {% else %}
+                                            <button class="btn btn-success btn-sm"
+                                                    onclick="cambiarEstatus({{ r.id }}, 'VINCULAR')">
+                                                Cambiar a VINCULAR
+                                            </button>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            {% else %}
+            <div class="card">
+                <div class="card-body text-center text-muted py-5">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="mb-3">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                    </svg>
+                    <p class="mb-1">No hay resultados de validación aún.</p>
+                    {% if is_admin %}
+                    <p class="small">Cargue el shapefile y ejecute la validación para ver resultados.</p>
+                    {% else %}
+                    <p class="small">Contacte a un administrador para ejecutar la validación.</p>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+
+        </div>
+    </div>
+</div>
+
+<script>
+function mostrarToast(titulo, mensaje, tipo) {
+    var toastEl = document.getElementById('notifToast');
+    var toastTitle = document.getElementById('toastTitle');
+    var toastBody = document.getElementById('toastBody');
+    toastTitle.textContent = titulo;
+    toastBody.textContent = mensaje;
+    toastEl.className = 'toast align-items-center text-white border-0';
+    if (tipo === 'error') {
+        toastEl.classList.add('bg-danger');
+    } else {
+        toastEl.classList.add('bg-success');
+    }
+    var toast = new bootstrap.Toast(toastEl, {delay: 5000});
+    toast.show();
+}
+
+function cargarShapefile() {
+    if (!confirm('¿Desea cargar el shapefile CAPA_DICIEMBRE_VALIDADOS.shp? Esta operación vaciará y recargará la tabla.')) {
+        return;
+    }
+    fetch('/validacion-diciembre/cargar-shapefile', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token() if csrf_token is defined else "" }}'},
+    })
+    .then(function(resp) { return resp.json(); })
+    .then(function(data) {
+        if (data.success) {
+            mostrarToast('Shapefile cargado', 'Insertados: ' + data.insertados + ', Descartados: ' + data.descartados, 'success');
+            setTimeout(function() { window.location.reload(); }, 2000);
+        } else {
+            mostrarToast('Error', data.error || 'Error desconocido', 'error');
+        }
+    })
+    .catch(function(err) {
+        mostrarToast('Error', 'No se pudo conectar al servidor', 'error');
+    });
+}
+
+function confirmarEjecucion(form) {
+    if (!confirm('¿Desea ejecutar la validación completa? Este proceso puede tardar varios minutos.')) {
+        return false;
+    }
+    var btn = document.getElementById('btnEjecutar');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Procesando...';
+    return true;
+}
+
+function cambiarEstatus(validacionId, nuevoEstatus) {
+    var etiqueta = nuevoEstatus === 'VINCULAR' ? 'VINCULAR' : 'NUEVO';
+    if (!confirm('¿Cambiar el estatus de este registro a ' + etiqueta + '?')) {
+        return;
+    }
+    fetch('/api/validacion-diciembre/cambiar-estatus', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({validacion_id: validacionId, nuevo_estatus: nuevoEstatus}),
+    })
+    .then(function(resp) { return resp.json(); })
+    .then(function(data) {
+        if (data.success) {
+            mostrarToast('Estatus actualizado', 'Registro actualizado a ' + nuevoEstatus, 'success');
+            setTimeout(function() { window.location.reload(); }, 1500);
+        } else {
+            mostrarToast('Error', data.error || 'Error al cambiar estatus', 'error');
+        }
+    })
+    .catch(function(err) {
+        mostrarToast('Error', 'No se pudo conectar al servidor (endpoint aún no implementado)', 'error');
+    });
+}
+</script>
+{% endblock %}

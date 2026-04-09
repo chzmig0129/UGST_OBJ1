@@ -10142,5 +10142,54 @@ def validacion_diciembre_cargar_shape():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/validacion-diciembre', defaults={'tab': 'resultados'})
+@app.route('/validacion-diciembre/<tab>')
+@login_required
+def validacion_diciembre(tab):
+    from models.capa_diciembre import CapaDiciembre
+    from models.validacion_diciembre import ValidacionDiciembre
+
+    valid_tabs = ['resultados']
+    if tab not in valid_tabs:
+        tab = 'resultados'
+
+    total_cargados = CapaDiciembre.query.count()
+    resultados = ValidacionDiciembre.query.all()
+    total_validados = len(resultados)
+    vinculados = sum(1 for r in resultados if r.estatus_validacion == 'VINCULAR')
+    nuevos = total_validados - vinculados
+
+    resumen = {
+        'total_cargados': total_cargados,
+        'total_validados': total_validados,
+        'vinculados': vinculados,
+        'nuevos': nuevos,
+        'pendientes_validar': max(0, total_cargados - total_validados),
+    }
+
+    return render_template(
+        'validacion_diciembre.html',
+        tab=tab,
+        resumen=resumen,
+        resultados=[r.to_dict() for r in resultados],
+        is_admin=current_user.is_admin,
+    )
+
+
+@app.route('/validacion-diciembre/ejecutar', methods=['POST'])
+@login_required
+def validacion_diciembre_ejecutar():
+    if not current_user.is_admin:
+        return jsonify({'error': 'Solo admins'}), 403
+    try:
+        from utils.validacion_diciembre import ejecutar_validacion_diciembre
+        resultado = ejecutar_validacion_diciembre(umbral_traslape=85.0)
+        return jsonify({'success': True, **resultado})
+    except Exception as e:
+        app.logger.error(f'Error ejecutando validacion diciembre: {e}')
+        import traceback; traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
