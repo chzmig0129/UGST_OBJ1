@@ -10262,5 +10262,119 @@ def api_validacion_diciembre_cambiar_estatus():
     return jsonify({'success': True, 'validacion_id': validacion_id, 'estatus': nuevo_estatus})
 
 
+@app.route('/api/validacion-diciembre/grupo-geometrias')
+@login_required
+def api_validacion_diciembre_grupo_geometrias():
+    '''Retorna GeoJSON con el target del universo + todos los polígonos de Diciembre que se vincularon a él.'''
+    from utils.validacion_megacapa import construir_geometria
+    from utils.shapefile_cache import shp_cache
+    from shapely.geometry import mapping
+
+    key = request.args.get('key', '').strip()
+    if not key:
+        return jsonify({'error': 'Parámetro key requerido'}), 400
+
+    try:
+        features = []
+
+        # 1) Buscar el/los target(s) del universo que correspondan a esta key
+        if key in ('SIN ID', 'SIN NINGUN ID'):
+            # Caso especial: agrupar todos los estatus 7 sin ID
+            vincular_ids = set(v.poligono_id for v in ValidacionMegacapa.query.filter_by(estatus_megacapa='VINCULAR').all())
+            excluir_sv = set(sv.poligono_id for sv in SegundaValidacionPoligono.query.filter(SegundaValidacionPoligono.decision.in_(['ELIMINAR', 'VINCULAR'])).all())
+            excluir = vincular_ids | excluir_sv
+
+            q = Poligono.query.filter(Poligono.estatus == '7')
+            if excluir:
+                q = q.filter(~Poligono.id.in_(excluir))
+            if key == 'SIN NINGUN ID':
+                q = q.filter((Poligono.id_poligono == None) | (Poligono.id_poligono == ''))
+                q = q.filter((Poligono.id_credito == None) | (Poligono.id_credito == ''))
+            else:  # 'SIN ID'
+                q = q.filter((Poligono.id_poligono == None) | (Poligono.id_poligono == ''))
+
+            for p in q.all():
+                geom, _ = construir_geometria(p.coordenadas_corregidas)
+                if geom is None or geom.is_empty:
+                    continue
+                features.append({
+                    'type': 'Feature',
+                    'properties': {
+                        'tipo': 'target',
+                        'fuente': 'estatus7',
+                        'id_poligono': p.id_poligono or '(sin id)',
+                        'id_credito': p.id_credito or '(sin credito)',
+                        'db_id': p.id,
+                    },
+                    'geometry': mapping(geom),
+                })
+        else:
+            # 1a) Buscar primero en megacapa
+            mega = shp_cache.mega
+            mask = mega['ID_POLIGON'].astype(str) == key
+            if mask.any():
+                for _, row in mega[mask].iterrows():
+                    if row.geometry is None or row.geometry.is_empty:
+                        continue
+                    features.append({
+                        'type': 'Feature',
+                        'properties': {
+                            'tipo': 'target',
+                            'fuente': 'megacapa',
+                            'id_poligono': str(row['ID_POLIGON']),
+                            'id_credito': str(row['ID_CREDITO']),
+                        },
+                        'geometry': mapping(row.geometry),
+                    })
+            else:
+                # 1b) Buscar en Poligono (estatus 7)
+                p = Poligono.query.filter(Poligono.id_poligono == key, Poligono.estatus == '7').first()
+                if p is not None:
+                    geom, _ = construir_geometria(p.coordenadas_corregidas)
+                    if geom is not None and not geom.is_empty:
+                        features.append({
+                            'type': 'Feature',
+                            'properties': {
+                                'tipo': 'target',
+                                'fuente': 'estatus7',
+                                'id_poligono': p.id_poligono,
+                                'id_credito': p.id_credito or '(sin credito)',
+                                'db_id': p.id,
+                            },
+                            'geometry': mapping(geom),
+                        })
+
+        # 2) Buscar todos los polígonos Diciembre que se vincularon a esta key
+        vds = ValidacionDiciembre.query.filter(
+            ValidacionDiciembre.estatus_validacion == 'VINCULAR',
+            ValidacionDiciembre.id_poligono_match == key
+        ).all()
+
+        for vd in vds:
+            cd = CapaDiciembre.query.get(vd.capa_diciembre_id)
+            if cd is None:
+                continue
+            geom, _ = construir_geometria(cd.coordenadas)
+            if geom is None or geom.is_empty:
+                continue
+            features.append({
+                'type': 'Feature',
+                'properties': {
+                    'tipo': 'diciembre',
+                    'validacion_id': vd.id,
+                    'id_poligono': cd.id_poligono or '(sin id)',
+                    'id_credito': cd.id_credito or '(sin credito)',
+                    'porcentaje_traslape': vd.porcentaje_traslape,
+                },
+                'geometry': mapping(geom),
+            })
+
+        return jsonify({'type': 'FeatureCollection', 'features': features})
+    except Exception as e:
+        app.logger.error(f'Error en grupo-geometrias diciembre: {e}')
+        import traceback; traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)

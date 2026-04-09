@@ -164,7 +164,10 @@
                                     </div>
                                     {% endif %}
                                 </div>
+                                <div class="d-flex gap-1">
                                 <button class="btn btn-sm btn-outline-secondary" onclick="toggleGrupo(this)">Ver detalle</button>
+                                <button class="btn btn-sm btn-outline-primary ms-1" onclick='verMapaGrupoDic("{{ g.id_poligono_match }}")'><i class="bi bi-map"></i> Mapa</button>
+                                </div>
                             </div>
                             <div class="group-detail mt-2" style="display:none;">
                                 <table class="table table-sm table-bordered mb-0">
@@ -288,6 +291,31 @@
             </div>
             {% endif %}
 
+        </div>
+    </div>
+</div>
+
+<!-- Modal Mapa Grupo Diciembre -->
+<div class="modal fade" id="modalMapaGrupoDic" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="modalGrupoDicTitle">Grupo Diciembre</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-0">
+                <div class="d-flex">
+                    <div id="mapaGrupoDic" style="height: 500px; flex: 1;"></div>
+                    <div id="mapaGrupoDicToggles" style="width: 250px; max-height: 500px; overflow-y: auto; border-left: 1px solid #dee2e6; padding: 10px; background: #f8f9fa;">
+                        <strong class="d-block mb-2"><i class="bi bi-layers"></i> Polígonos</strong>
+                        <div id="togglesListDic"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <span id="grupoInfoTextDic" class="me-auto text-muted"></span>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+            </div>
         </div>
     </div>
 </div>
@@ -418,6 +446,113 @@ function cambiarEstatus(validacionId, nuevoEstatus) {
     })
     .catch(function(err) {
         mostrarToast('Error', 'No se pudo conectar al servidor (endpoint aún no implementado)', 'error');
+    });
+}
+
+var dicMapInstance = null;
+
+function verMapaGrupoDic(key) {
+    var modal = new bootstrap.Modal(document.getElementById('modalMapaGrupoDic'));
+    document.getElementById('modalGrupoDicTitle').textContent = 'Grupo: ' + key;
+    document.getElementById('togglesListDic').innerHTML = '<div class="text-muted small">Cargando...</div>';
+    modal.show();
+
+    setTimeout(function() {
+        if (dicMapInstance) { dicMapInstance.remove(); }
+        dicMapInstance = L.map('mapaGrupoDic').setView([23.6, -102.5], 5);
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            attribution: 'Tiles &copy; Esri',
+            maxNativeZoom: 18,
+            maxZoom: 22,
+            errorTileUrl: ''
+        }).addTo(dicMapInstance);
+
+        var colors = ['#3388ff', '#33cc66', '#ff8833', '#8833ff', '#33ffff', '#ffff33', '#ff33cc', '#00cc99'];
+        var layerRefs = [];
+
+        fetch('/api/validacion-diciembre/grupo-geometrias?key=' + encodeURIComponent(key))
+        .then(function(r) { return r.json(); })
+        .then(function(geojson) {
+            var bounds = L.latLngBounds();
+            var togglesHtml = '';
+            var diciembreIndex = 0;
+
+            geojson.features.forEach(function(f, i) {
+                var isTarget = f.properties.tipo === 'target';
+                var color, weight, fillOpacity;
+                if (isTarget) {
+                    color = '#dc3545';
+                    weight = 4;
+                    fillOpacity = 0.4;
+                } else {
+                    color = colors[diciembreIndex % colors.length];
+                    diciembreIndex++;
+                    weight = 2;
+                    fillOpacity = 0.25;
+                }
+
+                var layer = L.geoJSON(f, {
+                    style: { color: color, weight: weight, fillOpacity: fillOpacity, fillColor: color }
+                }).addTo(dicMapInstance);
+
+                var tooltipContent;
+                if (isTarget) {
+                    tooltipContent = '<strong>TARGET</strong><br>' + (f.properties.id_poligono || '') + '<br>Crédito: ' + (f.properties.id_credito || '');
+                } else {
+                    tooltipContent = '<strong>' + (f.properties.id_poligono || '') + '</strong><br>Crédito: ' + (f.properties.id_credito || '') + '<br>Traslape: ' + (f.properties.porcentaje_traslape || 0) + '%';
+                }
+                layer.bindTooltip(tooltipContent, {permanent: false});
+                bounds.extend(layer.getBounds());
+                layerRefs.push(layer);
+
+                togglesHtml += '<div class="form-check mb-2" style="border-left: 4px solid ' + color + '; padding-left: 10px;">';
+                togglesHtml += '<input class="form-check-input" type="checkbox" checked id="toggle-poly-dic-' + i + '" onchange="togglePolyLayerDic(' + i + ', this.checked)">';
+                togglesHtml += '<label class="form-check-label small" for="toggle-poly-dic-' + i + '">';
+                if (isTarget) {
+                    togglesHtml += '<strong>\uD83C\uDFAF TARGET</strong><br>';
+                    togglesHtml += '<span class="text-muted">' + (f.properties.id_poligono || '') + '</span>';
+                } else {
+                    togglesHtml += '<strong>' + (f.properties.id_poligono || 'Polígono ' + (i+1)) + '</strong><br>';
+                    togglesHtml += '<span class="text-muted">Crédito: ' + (f.properties.id_credito || '--') + '</span><br>';
+                    togglesHtml += '<span class="text-muted">' + (f.properties.porcentaje_traslape || 0) + '% traslape</span>';
+                }
+                togglesHtml += '</label></div>';
+            });
+
+            var controlsHtml = '<div class="btn-group btn-group-sm w-100 mb-2">';
+            controlsHtml += '<button class="btn btn-outline-success btn-sm" onclick="toggleAllPolyLayersDic(true)"><i class="bi bi-eye"></i> Todos</button>';
+            controlsHtml += '<button class="btn btn-outline-danger btn-sm" onclick="toggleAllPolyLayersDic(false)"><i class="bi bi-eye-slash"></i> Ninguno</button>';
+            controlsHtml += '</div>';
+
+            document.getElementById('togglesListDic').innerHTML = controlsHtml + togglesHtml;
+
+            if (bounds.isValid()) dicMapInstance.fitBounds(bounds, {padding: [30, 30]});
+            document.getElementById('grupoInfoTextDic').textContent = geojson.features.length + ' polígonos en el grupo';
+
+            window._dicLayerRefs = layerRefs;
+        });
+    }, 300);
+}
+
+function togglePolyLayerDic(index, visible) {
+    if (!window._dicLayerRefs || !window._dicLayerRefs[index]) return;
+    if (visible) {
+        window._dicLayerRefs[index].addTo(dicMapInstance);
+    } else {
+        dicMapInstance.removeLayer(window._dicLayerRefs[index]);
+    }
+}
+
+function toggleAllPolyLayersDic(visible) {
+    if (!window._dicLayerRefs) return;
+    window._dicLayerRefs.forEach(function(layer, i) {
+        var checkbox = document.getElementById('toggle-poly-dic-' + i);
+        if (checkbox) checkbox.checked = visible;
+        if (visible) {
+            layer.addTo(dicMapInstance);
+        } else {
+            dicMapInstance.removeLayer(layer);
+        }
     });
 }
 </script>
