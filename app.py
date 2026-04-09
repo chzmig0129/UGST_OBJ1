@@ -296,6 +296,7 @@ from models.validacion_megacapa import ValidacionMegacapa  # noqa: E402  — mus
 from models.segunda_validacion_poligono import SegundaValidacionPoligono  # noqa: E402
 from models.capa_diciembre import CapaDiciembre  # noqa: E402
 from models.validacion_diciembre import ValidacionDiciembre  # noqa: E402
+from models.mega_capa_v3 import MegaCapaV3  # noqa: E402,F401
 
 # Variable global para almacenar los datos del Excel (mantener por compatibilidad)
 excel_data = {
