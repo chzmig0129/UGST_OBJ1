@@ -294,6 +294,8 @@ class Poligono(db.Model):
 
 from models.validacion_megacapa import ValidacionMegacapa  # noqa: E402  — must be after Poligono is defined
 from models.segunda_validacion_poligono import SegundaValidacionPoligono  # noqa: E402
+from models.capa_diciembre import CapaDiciembre  # noqa: E402
+from models.validacion_diciembre import ValidacionDiciembre  # noqa: E402
 
 # Variable global para almacenar los datos del Excel (mantener por compatibilidad)
 excel_data = {
