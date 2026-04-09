@@ -3782,8 +3782,12 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
         
-        // Ejecutar el cálculo cuando la página carga
-        calcularEstatus();
+        // Ejecutar el cálculo cuando la página carga SOLO si no hay estatus previo guardado
+        // (si el polígono ya tiene estatus en DB, el radio ya viene marcado por Jinja — no pisarlo)
+        var estatusYaSeleccionado = document.querySelector('input[name="ESTATUS"]:checked');
+        if (!estatusYaSeleccionado) {
+            calcularEstatus();
+        }
         
         // Calcular el Estatus cuando cambian los valores de las áreas
         document.getElementById('Area_reportada').addEventListener('input', calcularEstatus);
