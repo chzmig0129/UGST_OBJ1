@@ -10376,5 +10376,91 @@ def api_validacion_diciembre_grupo_geometrias():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/validacion-diciembre/nuevo-geometrias')
+@login_required
+def api_validacion_diciembre_nuevo_geometrias():
+    '''Retorna GeoJSON con un polígono Diciembre + su mejor match (si existe).'''
+    from utils.validacion_megacapa import construir_geometria
+    from utils.shapefile_cache import shp_cache
+    from shapely.geometry import mapping
+    from models.capa_diciembre import CapaDiciembre
+    from models.validacion_diciembre import ValidacionDiciembre
+
+    validacion_id = request.args.get('validacion_id', type=int)
+    if not validacion_id:
+        return jsonify({'error': 'Parámetro validacion_id requerido'}), 400
+
+    try:
+        vd = ValidacionDiciembre.query.get(validacion_id)
+        if not vd:
+            return jsonify({'error': 'No encontrado'}), 404
+
+        features = []
+
+        # 1) El polígono de Diciembre
+        cd = CapaDiciembre.query.get(vd.capa_diciembre_id)
+        if cd is not None:
+            geom, _ = construir_geometria(cd.coordenadas)
+            if geom is not None and not geom.is_empty:
+                features.append({
+                    'type': 'Feature',
+                    'properties': {
+                        'tipo': 'diciembre',
+                        'validacion_id': vd.id,
+                        'id_poligono': cd.id_poligono or '(sin id)',
+                        'id_credito': cd.id_credito or '(sin credito)',
+                        'porcentaje_traslape': vd.porcentaje_traslape,
+                    },
+                    'geometry': mapping(geom),
+                })
+
+        # 2) Su mejor match si lo tuvo (aunque sea < 85%)
+        if vd.id_poligono_match and vd.fuente_match:
+            if vd.fuente_match == 'megacapa':
+                mega = shp_cache.mega
+                mask = mega['ID_POLIGON'].astype(str) == vd.id_poligono_match
+                if mask.any():
+                    for _, row in mega[mask].iterrows():
+                        if row.geometry is None or row.geometry.is_empty:
+                            continue
+                        features.append({
+                            'type': 'Feature',
+                            'properties': {
+                                'tipo': 'target',
+                                'fuente': 'megacapa',
+                                'id_poligono': str(row['ID_POLIGON']),
+                                'id_credito': str(row['ID_CREDITO']),
+                            },
+                            'geometry': mapping(row.geometry),
+                        })
+                        break
+            elif vd.fuente_match == 'estatus7':
+                if vd.id_poligono_match in ('SIN ID', 'SIN NINGUN ID'):
+                    # No buscamos el target específico — sería ambiguo. Solo poner una nota.
+                    pass
+                else:
+                    p = Poligono.query.filter(Poligono.id_poligono == vd.id_poligono_match, Poligono.estatus == '7').first()
+                    if p is not None:
+                        geom_t, _ = construir_geometria(p.coordenadas_corregidas)
+                        if geom_t is not None and not geom_t.is_empty:
+                            features.append({
+                                'type': 'Feature',
+                                'properties': {
+                                    'tipo': 'target',
+                                    'fuente': 'estatus7',
+                                    'id_poligono': p.id_poligono or '(sin id)',
+                                    'id_credito': p.id_credito or '(sin credito)',
+                                    'db_id': p.id,
+                                },
+                                'geometry': mapping(geom_t),
+                            })
+
+        return jsonify({'type': 'FeatureCollection', 'features': features})
+    except Exception as e:
+        app.logger.error(f'Error en nuevo-geometrias diciembre: {e}')
+        import traceback; traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
