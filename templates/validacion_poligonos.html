@@ -1677,8 +1677,14 @@ document.addEventListener('DOMContentLoaded', function() {
                         var infoDigSpan = document.getElementById('infoAreaDigitalizada');
                         if (infoDigSpan) infoDigSpan.textContent = parseFloat(newArea).toFixed(4) + ' ha';
                         console.log("Área calculada:", newArea, "hectáreas");
-                        // Calcular estatus automáticamente
-                        if (typeof calcularEstatus === 'function') calcularEstatus();
+                        // Calcular estatus automáticamente SOLO si no hay estatus previo guardado
+                        // (si el polígono ya tiene estatus en DB, el radio ya viene marcado por Jinja — no pisarlo)
+                        if (typeof calcularEstatus === 'function') {
+                            var estatusYaSeleccionado = document.querySelector('input[name="ESTATUS"]:checked');
+                            if (!estatusYaSeleccionado) {
+                                calcularEstatus();
+                            }
+                        }
                     } catch (e) {
                         console.error("Error al calcular área:", e);
                     }
