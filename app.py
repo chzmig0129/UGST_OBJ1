@@ -10191,5 +10191,25 @@ def validacion_diciembre_ejecutar():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/validacion-diciembre/cambiar-estatus', methods=['POST'])
+@login_required
+def api_validacion_diciembre_cambiar_estatus():
+    if not current_user.is_admin:
+        return jsonify({'error': 'Solo admins'}), 403
+    from models.validacion_diciembre import ValidacionDiciembre
+    data = request.get_json() or {}
+    validacion_id = data.get('validacion_id')
+    nuevo_estatus = data.get('nuevo_estatus')
+    if not validacion_id or nuevo_estatus not in ('VINCULAR', 'NUEVO'):
+        return jsonify({'error': 'Parámetros inválidos'}), 400
+    reg = ValidacionDiciembre.query.get(validacion_id)
+    if not reg:
+        return jsonify({'error': 'No encontrado'}), 404
+    reg.estatus_validacion = nuevo_estatus
+    reg.estatus_manual = True
+    db.session.commit()
+    return jsonify({'success': True, 'validacion_id': validacion_id, 'estatus': nuevo_estatus})
+
+
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
