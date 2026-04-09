@@ -10128,5 +10128,19 @@ def api_seg_val_poligonos_reset():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route('/validacion-diciembre/cargar-shapefile', methods=['POST'])
+@login_required
+def validacion_diciembre_cargar_shape():
+    if not current_user.is_admin:
+        return jsonify({'error': 'Solo admins'}), 403
+    try:
+        from utils.loader_capa_diciembre import cargar_capa_diciembre_desde_shape
+        resultado = cargar_capa_diciembre_desde_shape()
+        return jsonify({'success': True, **resultado})
+    except Exception as e:
+        app.logger.error(f'Error cargando capa diciembre: {e}')
+        return jsonify({'error': str(e)}), 500
+
+
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
