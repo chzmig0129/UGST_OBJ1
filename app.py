@@ -10208,6 +10208,13 @@ def validacion_diciembre(tab):
         for r in todos if r.estatus_validacion == 'NUEVO'
     ], key=lambda x: x['porcentaje_traslape'] or 0, reverse=True)
 
+    eliminados = (
+        ValidacionDiciembre.query
+        .filter_by(estatus_validacion='ELIMINAR')
+        .order_by(ValidacionDiciembre.id_poligono_match, ValidacionDiciembre.id_credito)
+        .all()
+    )
+
     resumen = {
         'total_cargados': CapaDiciembre.query.count(),
         'total_validados': total_validados,
@@ -10223,6 +10230,7 @@ def validacion_diciembre(tab):
         resumen=resumen,
         vinculados_agrupados=vinculados_agrupados,
         nuevos_list=nuevos_list,
+        eliminados=eliminados,
         is_admin=current_user.is_admin,
     )
 
@@ -10251,7 +10259,7 @@ def api_validacion_diciembre_cambiar_estatus():
     data = request.get_json() or {}
     validacion_id = data.get('validacion_id')
     nuevo_estatus = data.get('nuevo_estatus')
-    if not validacion_id or nuevo_estatus not in ('VINCULAR', 'NUEVO'):
+    if not validacion_id or nuevo_estatus not in ('VINCULAR', 'NUEVO', 'ELIMINAR'):
         return jsonify({'error': 'Parámetros inválidos'}), 400
     reg = ValidacionDiciembre.query.get(validacion_id)
     if not reg:

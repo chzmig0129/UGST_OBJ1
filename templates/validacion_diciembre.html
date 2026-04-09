@@ -49,7 +49,7 @@
 
             <!-- Tarjetas de resumen -->
             <div class="row mb-4">
-                <div class="col-md-3">
+                <div class="col">
                     <div class="card text-center">
                         <div class="card-body">
                             <h5 class="card-title">Total Cargados</h5>
@@ -57,7 +57,7 @@
                         </div>
                     </div>
                 </div>
-                <div class="col-md-3">
+                <div class="col">
                     <div class="card text-center border-success">
                         <div class="card-body">
                             <h5 class="card-title">Vinculados</h5>
@@ -65,7 +65,7 @@
                         </div>
                     </div>
                 </div>
-                <div class="col-md-3">
+                <div class="col">
                     <div class="card text-center border-warning">
                         <div class="card-body">
                             <h5 class="card-title">Nuevos</h5>
@@ -73,11 +73,19 @@
                         </div>
                     </div>
                 </div>
-                <div class="col-md-3">
+                <div class="col">
                     <div class="card text-center">
                         <div class="card-body">
                             <h5 class="card-title">Pendientes</h5>
                             <h2 class="text-secondary">{{ resumen.pendientes_validar }}</h2>
+                        </div>
+                    </div>
+                </div>
+                <div class="col">
+                    <div class="card text-center border-danger">
+                        <div class="card-body">
+                            <h5 class="card-title">Eliminados</h5>
+                            <h2 class="text-danger">{{ eliminados|length }}</h2>
                         </div>
                     </div>
                 </div>
@@ -105,8 +113,8 @@
             </div>
             {% endif %}
 
-            <!-- Sub-tabs: Vinculados / Nuevos -->
-            {% if vinculados_agrupados or nuevos_list %}
+            <!-- Sub-tabs: Vinculados / Nuevos / Eliminar -->
+            {% if vinculados_agrupados or nuevos_list or eliminados %}
             <ul class="nav nav-tabs mb-3" id="dicTabs" role="tablist">
                 <li class="nav-item" role="presentation">
                     <button class="nav-link active" id="tab-vinculados" data-bs-toggle="tab"
@@ -122,6 +130,14 @@
                             aria-controls="pane-nuevos" aria-selected="false">
                         Nuevos
                         <span class="badge bg-warning text-dark ms-1">{{ nuevos_list|length }}</span>
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="tab-eliminar" data-bs-toggle="tab"
+                            data-bs-target="#pane-eliminar" type="button" role="tab"
+                            aria-controls="pane-eliminar" aria-selected="false">
+                        Eliminar
+                        <span class="badge bg-danger ms-1">{{ eliminados|length }}</span>
                     </button>
                 </li>
             </ul>
@@ -270,6 +286,48 @@
                     </div>
                     {% else %}
                     <div class="text-muted text-center py-4">No hay nuevos aún.</div>
+                    {% endif %}
+                </div>
+
+                <!-- Tab pane: Eliminar -->
+                <div class="tab-pane fade" id="pane-eliminar" role="tabpanel" aria-labelledby="tab-eliminar">
+                    {% if eliminados %}
+                    <div class="table-responsive">
+                        <table class="table table-hover table-sm mb-0">
+                            <thead class="table-danger">
+                                <tr>
+                                    <th>#</th>
+                                    <th>ID_POLIGONO</th>
+                                    <th>ID_CREDITO</th>
+                                    <th>ID Poligono Match (padre)</th>
+                                    <th>ID Credito Match (padre)</th>
+                                    <th>% Traslape</th>
+                                    <th>Motivo</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for r in eliminados %}
+                                <tr>
+                                    <td>{{ loop.index }}</td>
+                                    <td>{{ r.id_poligono or '—' }}</td>
+                                    <td>{{ r.id_credito or '—' }}</td>
+                                    <td>{{ r.id_poligono_match or '—' }}</td>
+                                    <td>{{ r.id_credito_match or '—' }}</td>
+                                    <td>
+                                        {% if r.porcentaje_traslape is not none %}
+                                            {{ "%.1f"|format(r.porcentaje_traslape) }}%
+                                        {% else %}
+                                            —
+                                        {% endif %}
+                                    </td>
+                                    <td><small>{{ r.motivo or '—' }}</small></td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-muted text-center py-4">No hay registros marcados para eliminar.</div>
                     {% endif %}
                 </div>
 

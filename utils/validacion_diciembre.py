@@ -162,4 +162,68 @@ def ejecutar_validacion_diciembre(umbral_traslape=85.0):
             db.session.commit()
 
     db.session.commit()
+    reclasificar_por_credito()
     return {'total': total, 'vinculados': vinculados, 'nuevos': nuevos, 'errores': errores}
+
+
+def reclasificar_por_credito():
+    '''
+    Reclasifica registros VINCULAR a ELIMINAR según dos reglas de crédito:
+
+    Regla A - mismo crédito que el padre:
+      Si id_credito == id_credito_match (y ambos no son None), el registro pasa a
+      estatus_validacion='ELIMINAR' con motivo='mismo_credito_que_padre'.
+
+    Regla B - duplicados dentro del grupo del padre:
+      Después de aplicar Regla A, para los que siguen en VINCULAR, se agrupan por
+      id_poligono_match. Dentro de cada grupo, se agrupan por id_credito. Si el
+      sub-grupo tiene 2+ registros, el de menor id (primero en orden ASC) queda en
+      VINCULAR y los demás pasan a ELIMINAR con motivo='duplicado_en_grupo'.
+
+    Idempotente dentro de una misma ejecución (la validación hace DELETE+INSERT antes).
+    '''
+    from extensions import db
+    from models.validacion_diciembre import ValidacionDiciembre
+    from collections import defaultdict
+
+    # Obtener todos los VINCULAR ordenados por id ASC
+    vincular_records = (
+        ValidacionDiciembre.query
+        .filter_by(estatus_validacion='VINCULAR')
+        .order_by(ValidacionDiciembre.id)
+        .all()
+    )
+
+    # Regla A: mismo crédito que el padre
+    for r in vincular_records:
+        if (r.id_credito is not None and r.id_credito_match is not None
+                and r.id_credito == r.id_credito_match):
+            r.estatus_validacion = 'ELIMINAR'
+            r.motivo = 'mismo_credito_que_padre'
+
+    # Regla B: duplicados dentro del grupo del padre
+    # Re-filtrar en Python los que siguen VINCULAR tras la Regla A
+    aun_vincular = [r for r in vincular_records if r.estatus_validacion == 'VINCULAR']
+
+    # Agrupar por id_poligono_match (ignorar los que no tienen padre)
+    grupos_por_padre = defaultdict(list)
+    for r in aun_vincular:
+        if r.id_poligono_match is None:
+            continue
+        grupos_por_padre[r.id_poligono_match].append(r)
+
+    for padre_key, miembros in grupos_por_padre.items():
+        # Agrupar por id_credito dentro del grupo
+        sub_grupos = defaultdict(list)
+        for r in miembros:
+            sub_grupos[r.id_credito].append(r)
+
+        for credito_key, sub in sub_grupos.items():
+            if len(sub) >= 2:
+                # El primero (menor id, garantizado por ORDER BY id ASC) sobrevive
+                # Los demás pasan a ELIMINAR
+                for r in sub[1:]:
+                    r.estatus_validacion = 'ELIMINAR'
+                    r.motivo = 'duplicado_en_grupo'
+
+    db.session.commit()

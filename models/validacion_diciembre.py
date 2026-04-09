@@ -9,7 +9,7 @@ class ValidacionDiciembre(db.Model):
     capa_diciembre_id = db.Column(db.Integer, nullable=False)  # FK lógica a capa_diciembre.id
     id_poligono = db.Column(db.Text, nullable=True)   # ID_POLIGONO del polígono de Diciembre (copia para facilitar queries)
     id_credito = db.Column(db.Text, nullable=True)    # ID_CREDITO del polígono de Diciembre
-    estatus_validacion = db.Column(db.Text, nullable=False)  # 'VINCULAR' | 'NUEVO'
+    estatus_validacion = db.Column(db.Text, nullable=False)  # 'VINCULAR' | 'NUEVO' | 'ELIMINAR'
     estatus_manual = db.Column(db.Boolean, default=False)    # True si el usuario cambió el estatus manualmente
     id_poligono_match = db.Column(db.Text, nullable=True)    # ID_POLIGONO del match (o 'SIN ID' o 'SIN NINGÚN ID')
     id_credito_match = db.Column(db.Text, nullable=True)     # ID_CREDITO del match
