@@ -61,7 +61,7 @@ class ShapefileCache:
         return gdf
 
     def _load_mega(self):
-        gdf = gpd.read_file('data/MEGA_CAPA_V3.shp')
+        gdf = gpd.read_file('data/MEGA_CAPA_V2.shp')
         if gdf.crs != 'EPSG:4326':
             gdf = gdf.to_crs(epsg=4326)
         invalid_mask = ~gdf.geometry.is_valid
