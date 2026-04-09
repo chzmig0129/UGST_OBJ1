@@ -10157,7 +10157,7 @@ def validacion_diciembre(tab):
     todos = ValidacionDiciembre.query.all()
     total_validados = len(todos)
     vinculados_count = sum(1 for r in todos if r.estatus_validacion == 'VINCULAR')
-    nuevos_count = total_validados - vinculados_count
+    nuevos_count = sum(1 for r in todos if r.estatus_validacion == 'NUEVO')
 
     # Agrupar vinculados por target
     grupos_dict = defaultdict(lambda: {'members': [], 'fuente': None, 'id_credito_match': None, 'sum_pct': 0.0})
