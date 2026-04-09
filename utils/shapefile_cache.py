@@ -71,6 +71,15 @@ class ShapefileCache:
         return gdf
 
     # ------------------------------------------------------------------
+    # Reload helpers
+    # ------------------------------------------------------------------
+
+    def reload_mega(self):
+        """Fuerza recarga del shapefile mega desde disco (para usar tras regenerar V3)."""
+        self._mega = None
+        _ = self.mega  # lazy reload via la property
+
+    # ------------------------------------------------------------------
     # Preload helper
     # ------------------------------------------------------------------
 
