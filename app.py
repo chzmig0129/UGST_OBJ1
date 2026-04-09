@@ -1167,10 +1167,25 @@ def validacion_poligonos(tab):
 
     elif tab == "resultados":
         try:
+            # Mismos excluir_ids que /api/validacion-poligonos/estadisticas
+            vincular_ids = set(
+                v.poligono_id
+                for v in ValidacionMegacapa.query.filter_by(estatus_megacapa='VINCULAR').all()
+            )
+            seg_val_excluir_ids = set(
+                sv.poligono_id
+                for sv in SegundaValidacionPoligono.query.filter(
+                    SegundaValidacionPoligono.decision.in_(['ELIMINAR', 'VINCULAR'])
+                ).all()
+            )
+            excluir_ids = vincular_ids | seg_val_excluir_ids
+
             # Query polygons that have been edited (have estatus set)
             query = Poligono.query.filter(
                 Poligono.estatus.isnot(None), Poligono.estatus != ""
             )
+            if excluir_ids:
+                query = query.filter(~Poligono.id.in_(excluir_ids))
 
             # Non-admins only see their assigned polygons
             if not current_user.is_admin:
