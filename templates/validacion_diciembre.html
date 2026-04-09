@@ -105,14 +105,105 @@
             </div>
             {% endif %}
 
-            <!-- Tabla de resultados -->
-            {% if resultados %}
-            <div class="card">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0">Resultados de Validación</h5>
-                    <span class="badge bg-secondary">{{ resultados|length }} registros</span>
+            <!-- Sub-tabs: Vinculados / Nuevos -->
+            {% if vinculados_agrupados or nuevos_list %}
+            <ul class="nav nav-tabs mb-3" id="dicTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="tab-vinculados" data-bs-toggle="tab"
+                            data-bs-target="#pane-vinculados" type="button" role="tab"
+                            aria-controls="pane-vinculados" aria-selected="true">
+                        Vinculados (agrupados)
+                        <span class="badge bg-success ms-1">{{ vinculados_agrupados|length }} grupos</span>
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="tab-nuevos" data-bs-toggle="tab"
+                            data-bs-target="#pane-nuevos" type="button" role="tab"
+                            aria-controls="pane-nuevos" aria-selected="false">
+                        Nuevos
+                        <span class="badge bg-warning text-dark ms-1">{{ nuevos_list|length }}</span>
+                    </button>
+                </li>
+            </ul>
+
+            <div class="tab-content" id="dicTabContent">
+
+                <!-- Tab pane: Vinculados agrupados -->
+                <div class="tab-pane fade show active" id="pane-vinculados" role="tabpanel" aria-labelledby="tab-vinculados">
+                    <div class="d-flex gap-2 mb-2 align-items-center flex-wrap">
+                        <div class="btn-group btn-group-sm" role="group">
+                            <button type="button" class="btn btn-outline-secondary active" id="filtro-todos"
+                                    onclick="filtroAgrupados('todos')">Todos</button>
+                            <button type="button" class="btn btn-outline-secondary" id="filtro-solo2"
+                                    onclick="filtroAgrupados('solo2')">Solo con 2+ matches</button>
+                        </div>
+                        <input type="text" class="form-control form-control-sm" style="max-width:260px;"
+                               placeholder="Buscar por ID polígono match..." oninput="buscarAgrupados(this)">
+                    </div>
+
+                    {% if vinculados_agrupados %}
+                    <div class="list-group list-group-flush" id="vinculados-list-group">
+                        {% for g in vinculados_agrupados %}
+                        <div class="list-group-item group-item" data-count="{{ g.count }}" data-key="{{ g.id_poligono_match }}">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <strong>{{ g.id_poligono_match }}</strong>
+                                    {% if g.id_credito_match %}
+                                    <small class="text-muted"> · crédito {{ g.id_credito_match }}</small>
+                                    {% endif %}
+                                    {% if g.fuente_match == 'megacapa' %}
+                                    <span class="badge bg-success ms-1">megacapa</span>
+                                    {% else %}
+                                    <span class="badge bg-info ms-1">estatus 7</span>
+                                    {% endif %}
+                                    <span class="badge bg-primary ms-1">{{ g.count }} vinculados</span>
+                                    <span class="badge bg-secondary ms-1">{{ g.pct_promedio }}% promedio</span>
+                                    {% if g.es_sin_id %}
+                                    <div class="text-warning small mt-1">
+                                        <i class="bi bi-exclamation-triangle"></i> Agrupa varios polígonos diferentes sin ID textual
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                <button class="btn btn-sm btn-outline-secondary" onclick="toggleGrupo(this)">Ver detalle</button>
+                            </div>
+                            <div class="group-detail mt-2" style="display:none;">
+                                <table class="table table-sm table-bordered mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>ID Polígono Diciembre</th>
+                                            <th>ID Crédito</th>
+                                            <th>% Traslape</th>
+                                            <th>Acción</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for m in g.members %}
+                                        <tr>
+                                            <td>{{ m.id_poligono or '--' }}</td>
+                                            <td>{{ m.id_credito or '--' }}</td>
+                                            <td>{{ m.porcentaje_traslape }}%</td>
+                                            <td>
+                                                <button class="btn btn-sm btn-warning"
+                                                        onclick="cambiarEstatus({{ m.validacion_id }}, 'NUEVO')">
+                                                    Marcar como NUEVO
+                                                </button>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="text-muted text-center py-4">No hay vinculados aún.</div>
+                    {% endif %}
                 </div>
-                <div class="card-body p-0">
+
+                <!-- Tab pane: Nuevos -->
+                <div class="tab-pane fade" id="pane-nuevos" role="tabpanel" aria-labelledby="tab-nuevos">
+                    {% if nuevos_list %}
                     <div class="table-responsive">
                         <table class="table table-hover table-sm mb-0">
                             <thead class="table-dark">
@@ -120,28 +211,27 @@
                                     <th>#</th>
                                     <th>ID_POLIGONO</th>
                                     <th>ID_CREDITO</th>
-                                    <th>ESTATUS</th>
-                                    <th>% Traslape</th>
-                                    <th>Match</th>
+                                    <th>Mejor match</th>
+                                    <th>%</th>
                                     <th>Fuente</th>
                                     <th>Motivo</th>
                                     <th>Acción</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {% for r in resultados %}
-                                <tr id="fila-{{ r.id }}">
+                                {% for r in nuevos_list %}
+                                <tr>
                                     <td>{{ loop.index }}</td>
                                     <td>{{ r.id_poligono or '—' }}</td>
                                     <td>{{ r.id_credito or '—' }}</td>
                                     <td>
-                                        {% if r.estatus_validacion == 'VINCULAR' %}
-                                            <span class="badge bg-success">VINCULAR</span>
+                                        {% if r.id_poligono_match %}
+                                            <span class="small">{{ r.id_poligono_match }}</span>
+                                            {% if r.id_credito_match %}
+                                                <br><small class="text-muted">{{ r.id_credito_match }}</small>
+                                            {% endif %}
                                         {% else %}
-                                            <span class="badge bg-warning text-dark">NUEVO</span>
-                                        {% endif %}
-                                        {% if r.estatus_manual %}
-                                            <small class="text-muted ms-1" title="Modificado manualmente"><i class="fas fa-pencil-alt"></i></small>
+                                            —
                                         {% endif %}
                                     </td>
                                     <td>
@@ -152,21 +242,11 @@
                                         {% endif %}
                                     </td>
                                     <td>
-                                        {% if r.id_poligono_match %}
-                                            <span class="text-monospace small">{{ r.id_poligono_match }}</span>
-                                            {% if r.id_credito_match %}
-                                                <br><small class="text-muted">{{ r.id_credito_match }}</small>
-                                            {% endif %}
-                                        {% else %}
-                                            —
-                                        {% endif %}
-                                    </td>
-                                    <td>
                                         {% if r.fuente_match %}
                                             {% if r.fuente_match == 'megacapa' %}
-                                                <span class="badge bg-info text-dark">megacapa</span>
+                                                <span class="badge bg-success">megacapa</span>
                                             {% else %}
-                                                <span class="badge bg-secondary">estatus7</span>
+                                                <span class="badge bg-info">estatus 7</span>
                                             {% endif %}
                                         {% else %}
                                             —
@@ -174,24 +254,21 @@
                                     </td>
                                     <td><small>{{ r.motivo or '—' }}</small></td>
                                     <td>
-                                        {% if r.estatus_validacion == 'VINCULAR' %}
-                                            <button class="btn btn-warning btn-sm"
-                                                    onclick="cambiarEstatus({{ r.id }}, 'NUEVO')">
-                                                Cambiar a NUEVO
-                                            </button>
-                                        {% else %}
-                                            <button class="btn btn-success btn-sm"
-                                                    onclick="cambiarEstatus({{ r.id }}, 'VINCULAR')">
-                                                Cambiar a VINCULAR
-                                            </button>
-                                        {% endif %}
+                                        <button class="btn btn-success btn-sm"
+                                                onclick="cambiarEstatus({{ r.validacion_id }}, 'VINCULAR')">
+                                            Marcar como VINCULAR
+                                        </button>
                                     </td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
                         </table>
                     </div>
+                    {% else %}
+                    <div class="text-muted text-center py-4">No hay nuevos aún.</div>
+                    {% endif %}
                 </div>
+
             </div>
             {% else %}
             <div class="card">
@@ -283,6 +360,40 @@ function ejecutarValidacionDiciembre() {
         mostrarToast('Error', 'No se pudo conectar al servidor', 'error');
         btn.disabled = false;
         btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="me-1"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Ejecutar Validación';
+    });
+}
+
+function toggleGrupo(btn) {
+    var item = btn.closest('.group-item');
+    var detail = item.querySelector('.group-detail');
+    if (detail.style.display === 'none') {
+        detail.style.display = '';
+        btn.textContent = 'Ocultar';
+    } else {
+        detail.style.display = 'none';
+        btn.textContent = 'Ver detalle';
+    }
+}
+
+function filtroAgrupados(tipo) {
+    var items = document.querySelectorAll('.group-item');
+    items.forEach(function(item) {
+        if (tipo === 'todos') {
+            item.style.display = '';
+        } else if (tipo === 'solo2') {
+            item.style.display = parseInt(item.dataset.count, 10) >= 2 ? '' : 'none';
+        }
+    });
+    document.getElementById('filtro-todos').classList.toggle('active', tipo === 'todos');
+    document.getElementById('filtro-solo2').classList.toggle('active', tipo === 'solo2');
+}
+
+function buscarAgrupados(input) {
+    var q = input.value.toLowerCase();
+    var items = document.querySelectorAll('.group-item');
+    items.forEach(function(item) {
+        var key = (item.dataset.key || '').toLowerCase();
+        item.style.display = key.indexOf(q) !== -1 ? '' : 'none';
     });
 }
 

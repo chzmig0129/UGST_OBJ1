@@ -10146,6 +10146,7 @@ def validacion_diciembre_cargar_shape():
 @app.route('/validacion-diciembre/<tab>')
 @login_required
 def validacion_diciembre(tab):
+    from collections import defaultdict
     from models.capa_diciembre import CapaDiciembre
     from models.validacion_diciembre import ValidacionDiciembre
 
@@ -10153,25 +10154,75 @@ def validacion_diciembre(tab):
     if tab not in valid_tabs:
         tab = 'resultados'
 
-    total_cargados = CapaDiciembre.query.count()
-    resultados = ValidacionDiciembre.query.all()
-    total_validados = len(resultados)
-    vinculados = sum(1 for r in resultados if r.estatus_validacion == 'VINCULAR')
-    nuevos = total_validados - vinculados
+    todos = ValidacionDiciembre.query.all()
+    total_validados = len(todos)
+    vinculados_count = sum(1 for r in todos if r.estatus_validacion == 'VINCULAR')
+    nuevos_count = total_validados - vinculados_count
+
+    # Agrupar vinculados por target
+    grupos_dict = defaultdict(lambda: {'members': [], 'fuente': None, 'id_credito_match': None, 'sum_pct': 0.0})
+    for r in todos:
+        if r.estatus_validacion != 'VINCULAR':
+            continue
+        key = r.id_poligono_match or 'SIN ID'
+        g = grupos_dict[key]
+        g['members'].append({
+            'validacion_id': r.id,
+            'id_poligono': r.id_poligono,
+            'id_credito': r.id_credito,
+            'porcentaje_traslape': r.porcentaje_traslape,
+            'estatus_manual': r.estatus_manual,
+        })
+        g['fuente'] = r.fuente_match or g['fuente']
+        g['id_credito_match'] = r.id_credito_match or g['id_credito_match']
+        if r.porcentaje_traslape:
+            g['sum_pct'] += r.porcentaje_traslape
+
+    vinculados_agrupados = []
+    for key, g in grupos_dict.items():
+        n = len(g['members'])
+        vinculados_agrupados.append({
+            'id_poligono_match': key,
+            'id_credito_match': g['id_credito_match'],
+            'fuente_match': g['fuente'],
+            'count': n,
+            'pct_promedio': round(g['sum_pct'] / n, 2) if n > 0 else 0,
+            'es_sin_id': key in ('SIN ID', 'SIN NINGUN ID'),
+            'members': sorted(g['members'], key=lambda m: m['porcentaje_traslape'] or 0, reverse=True),
+        })
+    # Ordenar por count DESC
+    vinculados_agrupados.sort(key=lambda x: x['count'], reverse=True)
+
+    nuevos_list = sorted([
+        {
+            'validacion_id': r.id,
+            'id_poligono': r.id_poligono,
+            'id_credito': r.id_credito,
+            'porcentaje_traslape': r.porcentaje_traslape,
+            'fuente_match': r.fuente_match,
+            'id_poligono_match': r.id_poligono_match,
+            'id_credito_match': r.id_credito_match,
+            'motivo': r.motivo,
+            'estatus_manual': r.estatus_manual,
+        }
+        for r in todos if r.estatus_validacion == 'NUEVO'
+    ], key=lambda x: x['porcentaje_traslape'] or 0, reverse=True)
 
     resumen = {
-        'total_cargados': total_cargados,
+        'total_cargados': CapaDiciembre.query.count(),
         'total_validados': total_validados,
-        'vinculados': vinculados,
-        'nuevos': nuevos,
-        'pendientes_validar': max(0, total_cargados - total_validados),
+        'vinculados': vinculados_count,
+        'nuevos': nuevos_count,
+        'pendientes_validar': max(0, CapaDiciembre.query.count() - total_validados),
+        'targets_distintos': len(vinculados_agrupados),
     }
 
     return render_template(
         'validacion_diciembre.html',
         tab=tab,
         resumen=resumen,
-        resultados=[r.to_dict() for r in resultados],
+        vinculados_agrupados=vinculados_agrupados,
+        nuevos_list=nuevos_list,
         is_admin=current_user.is_admin,
     )
 
