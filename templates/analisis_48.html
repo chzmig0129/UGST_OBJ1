@@ -24,12 +24,11 @@
     .a48-kv { display: flex; justify-content: space-between; font-size: 13px; padding: 2px 0; }
     .a48-kv .k { color: #6c757d; }
     .a48-kv .v { font-weight: 500; text-align: right; word-break: break-all; max-width: 60%; }
-    .a48-role-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; margin-right: 4px; margin-bottom: 4px; color: #fff; }
-    .a48-role-validador       { background: #dc3545; }
-    .a48-role-padre_tecleado  { background: #0d6efd; }
-    .a48-role-padre_megacapa  { background: #198754; }
-    .a48-role-padre_segunda_val { background: #fd7e14; }
-    .a48-role-missing { background: #6c757d; opacity: 0.55; }
+    .a48-sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: middle; border: 1px solid rgba(0,0,0,0.25); }
+    .a48-toggle-row { padding-left: 2.4em; margin-bottom: 2px; }
+    .a48-toggle-row.missing label { color: #adb5bd; text-decoration: line-through; }
+    .a48-toggle-row.missing .a48-sw { opacity: 0.4; }
+    .a48-toggle-status { font-size: 10px; margin-left: 4px; }
     #a48-loading {
         position: absolute; inset: 0;
         background: rgba(255,255,255,0.7);
@@ -66,11 +65,44 @@
             </div>
 
             <div class="a48-section">
-                <h6>Roles en el mapa</h6>
-                <div id="a48-roles-container"></div>
-                <div class="mt-2">
-                    <button id="a48-fit" class="btn btn-sm btn-outline-primary w-100">
-                        <i class="bi bi-aspect-ratio"></i> Ajustar al caso
+                <h6>Visibilidad de capas</h6>
+                <div class="form-check form-switch a48-toggle-row" data-rol="validador">
+                    <input class="form-check-input a48-toggle" type="checkbox" id="a48-toggle-validador" data-rol="validador" checked>
+                    <label class="form-check-label small" for="a48-toggle-validador">
+                        <span class="a48-sw" style="background:#dc3545;"></span>
+                        validador <span class="a48-toggle-status text-muted"></span>
+                    </label>
+                </div>
+                <div class="form-check form-switch a48-toggle-row" data-rol="padre_tecleado">
+                    <input class="form-check-input a48-toggle" type="checkbox" id="a48-toggle-tecleado" data-rol="padre_tecleado" checked>
+                    <label class="form-check-label small" for="a48-toggle-tecleado">
+                        <span class="a48-sw" style="background:#0d6efd;"></span>
+                        padre tecleado <span class="a48-toggle-status text-muted"></span>
+                    </label>
+                </div>
+                <div class="form-check form-switch a48-toggle-row" data-rol="padre_megacapa">
+                    <input class="form-check-input a48-toggle" type="checkbox" id="a48-toggle-megacapa" data-rol="padre_megacapa" checked>
+                    <label class="form-check-label small" for="a48-toggle-megacapa">
+                        <span class="a48-sw" style="background:#198754;"></span>
+                        padre 1ra val (megacapa) <span class="a48-toggle-status text-muted"></span>
+                    </label>
+                </div>
+                <div class="form-check form-switch a48-toggle-row" data-rol="padre_segunda_val">
+                    <input class="form-check-input a48-toggle" type="checkbox" id="a48-toggle-sv" data-rol="padre_segunda_val" checked>
+                    <label class="form-check-label small" for="a48-toggle-sv">
+                        <span class="a48-sw" style="background:#fd7e14;"></span>
+                        padre 2da val <span class="a48-toggle-status text-muted"></span>
+                    </label>
+                </div>
+                <div class="d-flex gap-1 mt-2">
+                    <button id="a48-toggle-all-on" class="btn btn-sm btn-outline-secondary flex-grow-1" title="Mostrar todas">
+                        <i class="bi bi-eye"></i> Todas
+                    </button>
+                    <button id="a48-toggle-all-off" class="btn btn-sm btn-outline-secondary flex-grow-1" title="Ocultar todas">
+                        <i class="bi bi-eye-slash"></i> Ninguna
+                    </button>
+                    <button id="a48-fit" class="btn btn-sm btn-outline-primary flex-grow-1" title="Centrar mapa en el caso">
+                        <i class="bi bi-aspect-ratio"></i> Ajustar
                     </button>
                 </div>
             </div>
@@ -126,7 +158,7 @@
 </div>
 
 <script>
-(function () {
+document.addEventListener('DOMContentLoaded', function () {
     'use strict';
 
     var ROLE_STYLES = {
@@ -165,6 +197,12 @@
     var casos = [];
     var currentCasoId = null;
     var currentLayer = null;
+    var roleVisibility = {
+        validador: true,
+        padre_tecleado: true,
+        padre_megacapa: true,
+        padre_segunda_val: true
+    };
 
     function roleFeatureLabel(feat) {
         var rol = feat.properties.rol;
@@ -172,12 +210,13 @@
         return ROLE_LABELS[rol] + (id ? ' · ' + id : '');
     }
 
-    function drawCase(casoId) {
+    function drawCase(casoId, autoFit) {
         if (currentLayer) {
             map.removeLayer(currentLayer);
             currentLayer = null;
         }
-        var feats = featuresByCase[casoId] || [];
+        var allFeats = featuresByCase[casoId] || [];
+        var feats = allFeats.filter(function (f) { return roleVisibility[f.properties.rol] !== false; });
         if (feats.length === 0) {
             return;
         }
@@ -197,7 +236,7 @@
                 layer.bindTooltip(html, { sticky: true, className: 'a48-tooltip' });
             }
         }).addTo(map);
-        fitToCurrentCase();
+        if (autoFit !== false) fitToCurrentCase();
     }
 
     function fitToCurrentCase() {
@@ -229,18 +268,25 @@
         document.getElementById('a48-id-psv').textContent = safe(caso.id_padre_segunda_val);
         document.getElementById('a48-pct-sv').textContent = caso.pct_segunda_val != null ? Number(caso.pct_segunda_val).toFixed(1) : '—';
 
-        var rc = document.getElementById('a48-roles-container');
-        rc.innerHTML = '';
         var allRoles = ['validador', 'padre_tecleado', 'padre_megacapa', 'padre_segunda_val'];
         allRoles.forEach(function (rol) {
+            var row = document.querySelector('.a48-toggle-row[data-rol="' + rol + '"]');
+            if (!row) return;
+            var toggle = row.querySelector('.a48-toggle');
+            var status = row.querySelector('.a48-toggle-status');
             var present = caso.roles_presentes.indexOf(rol) !== -1;
-            var badge = document.createElement('span');
-            badge.className = 'a48-role-badge ' + (present ? ('a48-role-' + rol) : 'a48-role-missing');
-            badge.textContent = ROLE_LABELS[rol] + (present ? '' : ' (no disp.)');
-            if (!present && caso.roles_faltantes && caso.roles_faltantes[rol]) {
-                badge.title = caso.roles_faltantes[rol];
+            if (present) {
+                row.classList.remove('missing');
+                toggle.disabled = false;
+                status.textContent = '';
+                toggle.title = '';
+            } else {
+                row.classList.add('missing');
+                toggle.disabled = true;
+                var err = (caso.roles_faltantes && caso.roles_faltantes[rol]) || 'no disponible';
+                status.textContent = '(no disp.)';
+                toggle.title = err;
             }
-            rc.appendChild(badge);
         });
     }
 
@@ -270,6 +316,31 @@
         selectCase(parseInt(this.value, 10));
     });
     document.getElementById('a48-fit').addEventListener('click', fitToCurrentCase);
+
+    Array.prototype.forEach.call(document.querySelectorAll('.a48-toggle'), function (t) {
+        t.addEventListener('change', function () {
+            roleVisibility[this.dataset.rol] = this.checked;
+            if (currentCasoId != null) drawCase(currentCasoId, false);
+        });
+    });
+
+    document.getElementById('a48-toggle-all-on').addEventListener('click', function () {
+        Array.prototype.forEach.call(document.querySelectorAll('.a48-toggle'), function (t) {
+            if (!t.disabled) {
+                t.checked = true;
+                roleVisibility[t.dataset.rol] = true;
+            }
+        });
+        if (currentCasoId != null) drawCase(currentCasoId, false);
+    });
+
+    document.getElementById('a48-toggle-all-off').addEventListener('click', function () {
+        Array.prototype.forEach.call(document.querySelectorAll('.a48-toggle'), function (t) {
+            t.checked = false;
+            roleVisibility[t.dataset.rol] = false;
+        });
+        if (currentCasoId != null) drawCase(currentCasoId, false);
+    });
 
     fetchWithRetry('/api/analisis-48/data')
         .then(function (resp) {
@@ -304,6 +375,6 @@
             document.getElementById('a48-loading').innerHTML =
                 '<div class="text-danger text-center"><strong>Error:</strong> ' + err.message + '</div>';
         });
-})();
+});
 </script>
 {% endblock %}
