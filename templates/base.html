@@ -96,6 +96,12 @@
                     <span>Segunda Validación</span>
                 </a>
                 {% if current_user.is_authenticated and current_user.is_admin %}
+                <a href="{{ url_for('analisis_48') }}" class="nav-item">
+                    <span class="nav-icon">
+                        <i class="bi bi-search-heart" style="font-size:1.25rem;"></i>
+                    </span>
+                    <span>Análisis 48</span>
+                </a>
                 <a href="{{ url_for('revisor') }}" class="nav-item">
                     <span class="nav-icon">
                         <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">

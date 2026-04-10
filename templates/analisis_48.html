@@ -1,0 +1,309 @@
+{% extends 'base.html' %}
+
+{% block head %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.fullscreen@2.4.0/Control.FullScreen.css" />
+<script src="https://cdn.jsdelivr.net/npm/leaflet.fullscreen@2.4.0/Control.FullScreen.js"></script>
+<style>
+    #a48-wrapper { display: flex; gap: 12px; height: calc(100vh - 90px); }
+    #a48-sidebar {
+        width: 380px;
+        flex-shrink: 0;
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        overflow-y: auto;
+        padding: 12px;
+    }
+    #a48-map-col { flex: 1; position: relative; }
+    #a48-map { width: 100%; height: 100%; border-radius: 8px; }
+    .a48-nav-row { display: flex; gap: 6px; align-items: center; margin-bottom: 10px; }
+    .a48-nav-row select { flex: 1; }
+    .a48-section { margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid #dee2e6; }
+    .a48-section:last-child { border-bottom: none; }
+    .a48-section h6 { font-size: 12px; text-transform: uppercase; color: #6c757d; margin-bottom: 6px; letter-spacing: 0.5px; }
+    .a48-kv { display: flex; justify-content: space-between; font-size: 13px; padding: 2px 0; }
+    .a48-kv .k { color: #6c757d; }
+    .a48-kv .v { font-weight: 500; text-align: right; word-break: break-all; max-width: 60%; }
+    .a48-role-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; margin-right: 4px; margin-bottom: 4px; color: #fff; }
+    .a48-role-validador       { background: #dc3545; }
+    .a48-role-padre_tecleado  { background: #0d6efd; }
+    .a48-role-padre_megacapa  { background: #198754; }
+    .a48-role-padre_segunda_val { background: #fd7e14; }
+    .a48-role-missing { background: #6c757d; opacity: 0.55; }
+    #a48-loading {
+        position: absolute; inset: 0;
+        background: rgba(255,255,255,0.7);
+        display: flex; align-items: center; justify-content: center;
+        z-index: 1000; border-radius: 8px;
+    }
+    .a48-legend {
+        position: absolute; bottom: 16px; left: 16px; z-index: 500;
+        background: rgba(255,255,255,0.95); padding: 10px 12px; border-radius: 8px;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.15); font-size: 12px;
+    }
+    .a48-legend .sw { display: inline-block; width: 12px; height: 12px; margin-right: 6px; border: 1px solid rgba(0,0,0,0.3); vertical-align: middle; }
+    .a48-desc-box { background: #fff; border: 1px solid #dee2e6; border-radius: 4px; padding: 6px 8px; font-size: 12px; white-space: pre-wrap; word-break: break-word; }
+    .a48-pill { padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; background: #e9ecef; color: #495057; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="p-3" style="height: 100%; display: flex; flex-direction: column;">
+    <div class="d-flex align-items-center justify-content-between mb-2">
+        <div>
+            <h1 class="mb-0 h4">Análisis 48 — Vincular no coincidentes</h1>
+            <p class="text-muted mb-0 small">Compara cada polígono del validador con el padre que omar tecleó y con los padres asignados por primera/segunda validación (MEGA_CAPA_V2)</p>
+        </div>
+        <span id="a48-count-badge" class="badge bg-secondary">Cargando...</span>
+    </div>
+
+    <div id="a48-wrapper">
+        <aside id="a48-sidebar">
+            <div class="a48-nav-row">
+                <button id="a48-prev" class="btn btn-sm btn-outline-secondary" title="Anterior">&laquo;</button>
+                <select id="a48-caso-select" class="form-select form-select-sm"></select>
+                <button id="a48-next" class="btn btn-sm btn-outline-secondary" title="Siguiente">&raquo;</button>
+            </div>
+
+            <div class="a48-section">
+                <h6>Roles en el mapa</h6>
+                <div id="a48-roles-container"></div>
+                <div class="mt-2">
+                    <button id="a48-fit" class="btn btn-sm btn-outline-primary w-100">
+                        <i class="bi bi-aspect-ratio"></i> Ajustar al caso
+                    </button>
+                </div>
+            </div>
+
+            <div class="a48-section">
+                <h6>Polígono del validador</h6>
+                <div class="a48-kv"><span class="k">db id</span><span class="v" id="a48-db-id">—</span></div>
+                <div class="a48-kv"><span class="k">id_poligono</span><span class="v" id="a48-id-pol">—</span></div>
+                <div class="a48-kv"><span class="k">id_credito</span><span class="v" id="a48-id-cred">—</span></div>
+                <div class="a48-kv"><span class="k">estado</span><span class="v" id="a48-estado">—</span></div>
+                <div class="a48-kv"><span class="k">municipio</span><span class="v" id="a48-muni">—</span></div>
+                <div class="a48-kv"><span class="k">estatus</span><span class="v" id="a48-estatus">—</span></div>
+                <div class="a48-kv"><span class="k">editado por</span><span class="v" id="a48-editado">—</span></div>
+                <div class="a48-kv"><span class="k">fecha</span><span class="v" id="a48-fecha">—</span></div>
+            </div>
+
+            <div class="a48-section">
+                <h6>Comentarios</h6>
+                <div class="a48-desc-box" id="a48-comentarios">—</div>
+            </div>
+
+            <div class="a48-section">
+                <h6>Descripción</h6>
+                <div class="a48-desc-box" id="a48-descripcion">—</div>
+            </div>
+
+            <div class="a48-section">
+                <h6>Comparación de padres</h6>
+                <div class="a48-kv"><span class="k">ID tecleado</span><span class="v" id="a48-id-tecleado">—</span></div>
+                <div class="a48-kv"><span class="k">Padre megacapa</span><span class="v" id="a48-id-pmega">—</span></div>
+                <div class="a48-kv"><span class="k">% megacapa</span><span class="v" id="a48-pct-mega">—</span></div>
+                <div class="a48-kv"><span class="k">Padre segunda val</span><span class="v" id="a48-id-psv">—</span></div>
+                <div class="a48-kv"><span class="k">% segunda val</span><span class="v" id="a48-pct-sv">—</span></div>
+            </div>
+        </aside>
+
+        <div id="a48-map-col">
+            <div id="a48-map"></div>
+            <div id="a48-loading">
+                <div class="text-center">
+                    <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;"></div>
+                    <div class="mt-2 small text-muted">Cargando los 48 casos y MEGA_CAPA_V2...</div>
+                </div>
+            </div>
+            <div class="a48-legend">
+                <div><span class="sw" style="background:#dc3545;"></span>validador (polígono de omar)</div>
+                <div><span class="sw" style="background:#0d6efd;"></span>padre tecleado en descripción</div>
+                <div><span class="sw" style="background:#198754;"></span>padre de 1ra validación (megacapa)</div>
+                <div><span class="sw" style="background:#fd7e14;"></span>padre de 2da validación</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    'use strict';
+
+    var ROLE_STYLES = {
+        validador:         { color: '#dc3545', fillColor: '#dc3545', weight: 2, fillOpacity: 0.25 },
+        padre_tecleado:    { color: '#0d6efd', fillColor: '#0d6efd', weight: 2, fillOpacity: 0.15, dashArray: '4,3' },
+        padre_megacapa:    { color: '#198754', fillColor: '#198754', weight: 2, fillOpacity: 0.15 },
+        padre_segunda_val: { color: '#fd7e14', fillColor: '#fd7e14', weight: 2, fillOpacity: 0.15 }
+    };
+
+    var ROLE_LABELS = {
+        validador: 'validador',
+        padre_tecleado: 'padre tecleado',
+        padre_megacapa: 'padre 1ra val',
+        padre_segunda_val: 'padre 2da val'
+    };
+
+    var map = L.map('a48-map', {
+        center: [24.0, -102.0],
+        zoom: 6,
+        maxZoom: 22,
+        preferCanvas: true,
+        fullscreenControl: true
+    });
+
+    var osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap', maxZoom: 22
+    });
+    var esriLayer = L.tileLayer(
+        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        { attribution: 'Tiles &copy; Esri', maxZoom: 22 }
+    );
+    esriLayer.addTo(map);
+    L.control.layers({ 'Esri World Imagery': esriLayer, 'OpenStreetMap': osmLayer }, {}).addTo(map);
+
+    var featuresByCase = {};   // caso_id -> array of raw features
+    var casos = [];
+    var currentCasoId = null;
+    var currentLayer = null;
+
+    function roleFeatureLabel(feat) {
+        var rol = feat.properties.rol;
+        var id = feat.properties.id_poligono || feat.properties.poligono_db_id || '';
+        return ROLE_LABELS[rol] + (id ? ' · ' + id : '');
+    }
+
+    function drawCase(casoId) {
+        if (currentLayer) {
+            map.removeLayer(currentLayer);
+            currentLayer = null;
+        }
+        var feats = featuresByCase[casoId] || [];
+        if (feats.length === 0) {
+            return;
+        }
+        currentLayer = L.geoJSON(feats, {
+            style: function (feature) {
+                return ROLE_STYLES[feature.properties.rol] || {};
+            },
+            onEachFeature: function (feature, layer) {
+                var props = feature.properties;
+                var html = '<div style="font-size:12px;">'
+                    + '<div><strong>' + (ROLE_LABELS[props.rol] || props.rol) + '</strong></div>'
+                    + (props.id_poligono ? '<div>id_poligono: ' + props.id_poligono + '</div>' : '')
+                    + (props.id_credito ? '<div>id_credito: ' + props.id_credito + '</div>' : '')
+                    + (props.pct_traslape != null ? '<div>% traslape: ' + Number(props.pct_traslape).toFixed(1) + '</div>' : '')
+                    + (props.fuente ? '<div>fuente: ' + props.fuente + '</div>' : '')
+                    + '</div>';
+                layer.bindTooltip(html, { sticky: true, className: 'a48-tooltip' });
+            }
+        }).addTo(map);
+        fitToCurrentCase();
+    }
+
+    function fitToCurrentCase() {
+        if (!currentLayer) return;
+        try {
+            var b = currentLayer.getBounds();
+            if (b.isValid()) {
+                map.fitBounds(b, { padding: [30, 30], maxZoom: 19 });
+            }
+        } catch (e) { /* ignore */ }
+    }
+
+    function safe(v) { return (v === null || v === undefined || v === '') ? '—' : v; }
+
+    function renderSidebar(caso) {
+        document.getElementById('a48-db-id').textContent = safe(caso.poligono_db_id);
+        document.getElementById('a48-id-pol').textContent = safe(caso.id_poligono);
+        document.getElementById('a48-id-cred').textContent = safe(caso.id_credito);
+        document.getElementById('a48-estado').textContent = safe(caso.estado);
+        document.getElementById('a48-muni').textContent = safe(caso.municipio);
+        document.getElementById('a48-estatus').textContent = safe(caso.estatus);
+        document.getElementById('a48-editado').textContent = safe(caso.editado_por);
+        document.getElementById('a48-fecha').textContent = caso.fecha_editado ? caso.fecha_editado.replace('T', ' ').slice(0, 19) : '—';
+        document.getElementById('a48-comentarios').textContent = safe(caso.comentarios);
+        document.getElementById('a48-descripcion').textContent = safe(caso.descripcion);
+        document.getElementById('a48-id-tecleado').textContent = safe(caso.id_tecleado);
+        document.getElementById('a48-id-pmega').textContent = safe(caso.id_padre_megacapa);
+        document.getElementById('a48-pct-mega').textContent = caso.pct_megacapa != null ? Number(caso.pct_megacapa).toFixed(1) : '—';
+        document.getElementById('a48-id-psv').textContent = safe(caso.id_padre_segunda_val);
+        document.getElementById('a48-pct-sv').textContent = caso.pct_segunda_val != null ? Number(caso.pct_segunda_val).toFixed(1) : '—';
+
+        var rc = document.getElementById('a48-roles-container');
+        rc.innerHTML = '';
+        var allRoles = ['validador', 'padre_tecleado', 'padre_megacapa', 'padre_segunda_val'];
+        allRoles.forEach(function (rol) {
+            var present = caso.roles_presentes.indexOf(rol) !== -1;
+            var badge = document.createElement('span');
+            badge.className = 'a48-role-badge ' + (present ? ('a48-role-' + rol) : 'a48-role-missing');
+            badge.textContent = ROLE_LABELS[rol] + (present ? '' : ' (no disp.)');
+            if (!present && caso.roles_faltantes && caso.roles_faltantes[rol]) {
+                badge.title = caso.roles_faltantes[rol];
+            }
+            rc.appendChild(badge);
+        });
+    }
+
+    function selectCase(casoId) {
+        currentCasoId = casoId;
+        var caso = casos.find(function (c) { return c.caso_id === casoId; });
+        if (!caso) return;
+        renderSidebar(caso);
+        drawCase(casoId);
+        var sel = document.getElementById('a48-caso-select');
+        if (sel.value != String(casoId)) sel.value = String(casoId);
+    }
+
+    document.getElementById('a48-prev').addEventListener('click', function () {
+        if (!casos.length) return;
+        var idx = casos.findIndex(function (c) { return c.caso_id === currentCasoId; });
+        idx = (idx <= 0) ? casos.length - 1 : idx - 1;
+        selectCase(casos[idx].caso_id);
+    });
+    document.getElementById('a48-next').addEventListener('click', function () {
+        if (!casos.length) return;
+        var idx = casos.findIndex(function (c) { return c.caso_id === currentCasoId; });
+        idx = (idx < 0 || idx >= casos.length - 1) ? 0 : idx + 1;
+        selectCase(casos[idx].caso_id);
+    });
+    document.getElementById('a48-caso-select').addEventListener('change', function () {
+        selectCase(parseInt(this.value, 10));
+    });
+    document.getElementById('a48-fit').addEventListener('click', fitToCurrentCase);
+
+    fetchWithRetry('/api/analisis-48/data')
+        .then(function (resp) {
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            return resp.json();
+        })
+        .then(function (data) {
+            casos = data.casos || [];
+            (data.features || []).forEach(function (f) {
+                var cid = f.properties.caso_id;
+                if (!featuresByCase[cid]) featuresByCase[cid] = [];
+                featuresByCase[cid].push(f);
+            });
+            var sel = document.getElementById('a48-caso-select');
+            casos.forEach(function (c) {
+                var opt = document.createElement('option');
+                opt.value = String(c.caso_id);
+                var estado = c.estado || '';
+                var muni = c.municipio || '';
+                opt.textContent = 'Caso ' + c.caso_id + ' — ' + (c.id_poligono || c.poligono_db_id)
+                    + (estado ? ' (' + estado + (muni ? ', ' + muni : '') + ')' : '');
+                sel.appendChild(opt);
+            });
+            document.getElementById('a48-count-badge').textContent =
+                casos.length + ' casos · ' + (data.total_features || 0) + ' features';
+            document.getElementById('a48-count-badge').className = 'badge bg-primary';
+            document.getElementById('a48-loading').style.display = 'none';
+            if (casos.length > 0) selectCase(casos[0].caso_id);
+        })
+        .catch(function (err) {
+            console.error('Error cargando /api/analisis-48/data:', err);
+            document.getElementById('a48-loading').innerHTML =
+                '<div class="text-danger text-center"><strong>Error:</strong> ' + err.message + '</div>';
+        });
+})();
+</script>
+{% endblock %}

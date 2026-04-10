@@ -5732,6 +5732,266 @@ def api_mapa_15k_estados():
         return jsonify({"error": str(e)}), 500
 
 
+_mega_v2_cache = None
+_mega_v2_lock = threading.Lock()
+
+
+def _get_mega_v2():
+    """Lazy-load MEGA_CAPA_V2.shp as a standalone cache for analisis-48.
+    Separate from shp_cache.mega (which is V3) per user request."""
+    global _mega_v2_cache
+    if _mega_v2_cache is not None:
+        return _mega_v2_cache
+    with _mega_v2_lock:
+        if _mega_v2_cache is not None:
+            return _mega_v2_cache
+        from shapely.validation import make_valid
+        gdf = gpd.read_file("data/MEGA_CAPA_V2.shp")
+        if gdf.crs is not None and gdf.crs.to_epsg() != 4326:
+            gdf = gdf.to_crs(epsg=4326)
+        invalid_mask = ~gdf.geometry.is_valid
+        if invalid_mask.any():
+            gdf.loc[invalid_mask, "geometry"] = gdf.loc[invalid_mask, "geometry"].apply(make_valid)
+        gdf["_id_norm"] = gdf["ID_POLIGON"].astype(str).str.strip()
+        _ = gdf.sindex
+        _mega_v2_cache = gdf
+        app.logger.info(f"MEGA_CAPA_V2 cargado para analisis-48: {len(gdf)} polígonos")
+        return _mega_v2_cache
+
+
+@app.route("/analisis-48")
+@login_required
+def analisis_48():
+    return render_template("analisis_48.html")
+
+
+@app.route("/api/analisis-48/data")
+@login_required
+@limiter.exempt
+def api_analisis_48_data():
+    """Build FeatureCollection for the 48 VINCULAR polygons where the typed ID
+    in 'parcela igual' does not match any validation parent.
+
+    Returns features with roles: validador, padre_tecleado, padre_megacapa,
+    padre_segunda_val. Each feature carries caso_id for frontend grouping.
+    """
+    from utils.validacion_megacapa import construir_geometria
+    from shapely.geometry import mapping
+
+    ID_RE = re.compile(r"\b(\d{2}-\d+-\d+-\d+)\b")
+
+    try:
+        mega_v2 = _get_mega_v2()
+    except Exception as e:
+        app.logger.error(f"Error cargando MEGA_CAPA_V2: {e}")
+        return jsonify({"error": f"No se pudo cargar MEGA_CAPA_V2: {e}"}), 500
+
+    mega_by_id = {}
+    for idx, id_norm in zip(mega_v2.index, mega_v2["_id_norm"]):
+        if id_norm and id_norm not in mega_by_id:
+            mega_by_id[id_norm] = idx
+
+    rows = db.session.execute(db.text("""
+        SELECT
+            p.id AS poligono_id,
+            p.id_poligono,
+            p.id_credito,
+            p.estado,
+            p.municipio,
+            p.estatus,
+            p.comentarios,
+            p.descripcion,
+            p.coordenadas_corregidas,
+            p.coordenadas,
+            v.estatus_megacapa,
+            v.id_poligono_unico AS id_padre_megacapa,
+            v.porcentaje_traslape AS pct_megacapa,
+            s.decision AS decision_sv,
+            s.principal_poligono_id AS sv_principal_db_id,
+            s.principal_id_poligono AS id_padre_sv,
+            s.max_overlap_pct AS pct_sv,
+            u.username AS editado_por,
+            p.fecha_editado
+        FROM poligono p
+        LEFT JOIN validacion_megacapa v ON v.poligono_id = p.id
+        LEFT JOIN segunda_validacion_poligono s ON s.poligono_id = p.id
+        LEFT JOIN "user" u ON u.id = p.editado_por_id
+        WHERE p.estatus IN ('6','7')
+          AND (v.estatus_megacapa = 'VINCULAR' OR s.decision = 'VINCULAR')
+          AND p.descripcion ILIKE '%parcela igual%'
+    """)).mappings().all()
+
+    def norm(s):
+        return s.strip() if isinstance(s, str) else ""
+
+    mismatch_rows = []
+    sv_principal_ids = set()
+    poligono_by_idp_needed = set()
+    for r in rows:
+        desc = norm(r["descripcion"])
+        ids_found = ID_RE.findall(desc)
+        if not ids_found:
+            continue
+        typed_id = ids_found[0]
+        mega_parent = norm(r["id_padre_megacapa"]) or None
+        sv_parent = norm(r["id_padre_sv"]) or None
+        if typed_id == mega_parent or typed_id == sv_parent:
+            continue
+        mismatch_rows.append((r, typed_id))
+        if r["sv_principal_db_id"]:
+            sv_principal_ids.add(r["sv_principal_db_id"])
+        if typed_id and typed_id not in mega_by_id:
+            poligono_by_idp_needed.add(typed_id)
+
+    sv_principals_by_id = {}
+    if sv_principal_ids:
+        principals = db.session.execute(db.text("""
+            SELECT id, id_poligono, id_credito, coordenadas_corregidas, coordenadas
+            FROM poligono WHERE id = ANY(:ids)
+        """), {"ids": list(sv_principal_ids)}).mappings().all()
+        for pr in principals:
+            sv_principals_by_id[pr["id"]] = dict(pr)
+
+    poligono_by_idp = {}
+    if poligono_by_idp_needed:
+        fallback = db.session.execute(db.text("""
+            SELECT id, id_poligono, id_credito, coordenadas_corregidas, coordenadas
+            FROM poligono WHERE id_poligono = ANY(:ids)
+        """), {"ids": list(poligono_by_idp_needed)}).mappings().all()
+        for fb in fallback:
+            poligono_by_idp[norm(fb["id_poligono"])] = dict(fb)
+
+    features = []
+    casos = []
+
+    def build_poligono_feature(source_row, rol, caso_id, extra_props=None):
+        coords = source_row.get("coordenadas_corregidas") or source_row.get("coordenadas")
+        if not coords or not coords.strip():
+            return None, "sin_coordenadas"
+        try:
+            geom, err = construir_geometria(coords)
+        except Exception as e:
+            return None, f"error_geom: {e}"
+        if geom is None:
+            return None, err or "geom_none"
+        props = {
+            "rol": rol,
+            "caso_id": caso_id,
+            "poligono_db_id": source_row.get("id") or source_row.get("poligono_id"),
+            "id_poligono": source_row.get("id_poligono"),
+            "id_credito": source_row.get("id_credito"),
+        }
+        if extra_props:
+            props.update(extra_props)
+        return {
+            "type": "Feature",
+            "geometry": mapping(geom),
+            "properties": props,
+        }, None
+
+    def build_mega_feature(id_poligon, rol, caso_id, extra_props=None):
+        idx = mega_by_id.get(norm(id_poligon))
+        if idx is None:
+            return None, "no_encontrado_en_v2"
+        row = mega_v2.loc[idx]
+        props = {
+            "rol": rol,
+            "caso_id": caso_id,
+            "id_poligono": norm(id_poligon),
+            "id_credito": str(row.get("ID_CREDITO", "")) if "ID_CREDITO" in mega_v2.columns else None,
+            "fuente": "MEGA_CAPA_V2",
+        }
+        if extra_props:
+            props.update(extra_props)
+        return {
+            "type": "Feature",
+            "geometry": mapping(row.geometry),
+            "properties": props,
+        }, None
+
+    for caso_idx, (r, typed_id) in enumerate(mismatch_rows, start=1):
+        caso = {
+            "caso_id": caso_idx,
+            "poligono_db_id": r["poligono_id"],
+            "id_poligono": r["id_poligono"],
+            "id_credito": r["id_credito"],
+            "estado": r["estado"],
+            "municipio": r["municipio"],
+            "estatus": r["estatus"],
+            "comentarios": r["comentarios"],
+            "descripcion": r["descripcion"],
+            "id_tecleado": typed_id,
+            "id_padre_megacapa": r["id_padre_megacapa"],
+            "pct_megacapa": r["pct_megacapa"],
+            "id_padre_segunda_val": r["id_padre_sv"],
+            "pct_segunda_val": r["pct_sv"],
+            "editado_por": r["editado_por"],
+            "fecha_editado": r["fecha_editado"].isoformat() if r["fecha_editado"] else None,
+            "roles_presentes": [],
+            "roles_faltantes": {},
+        }
+
+        f, err = build_poligono_feature(dict(r), "validador", caso_idx, {
+            "estatus": r["estatus"],
+            "estado": r["estado"],
+            "municipio": r["municipio"],
+            "descripcion": r["descripcion"],
+            "comentarios": r["comentarios"],
+            "editado_por": r["editado_por"],
+        })
+        if f:
+            features.append(f)
+            caso["roles_presentes"].append("validador")
+        else:
+            caso["roles_faltantes"]["validador"] = err
+
+        if typed_id:
+            f, err = build_mega_feature(typed_id, "padre_tecleado", caso_idx)
+            if f is None and typed_id in poligono_by_idp:
+                f, err = build_poligono_feature(
+                    poligono_by_idp[typed_id], "padre_tecleado", caso_idx,
+                    {"fuente": "poligono_table", "id_poligono": typed_id}
+                )
+            if f:
+                features.append(f)
+                caso["roles_presentes"].append("padre_tecleado")
+            else:
+                caso["roles_faltantes"]["padre_tecleado"] = err
+
+        if r["id_padre_megacapa"]:
+            f, err = build_mega_feature(
+                r["id_padre_megacapa"], "padre_megacapa", caso_idx,
+                {"pct_traslape": r["pct_megacapa"]}
+            )
+            if f:
+                features.append(f)
+                caso["roles_presentes"].append("padre_megacapa")
+            else:
+                caso["roles_faltantes"]["padre_megacapa"] = err
+
+        if r["sv_principal_db_id"] and r["sv_principal_db_id"] in sv_principals_by_id:
+            principal = sv_principals_by_id[r["sv_principal_db_id"]]
+            f, err = build_poligono_feature(
+                principal, "padre_segunda_val", caso_idx,
+                {"pct_traslape": r["pct_sv"]}
+            )
+            if f:
+                features.append(f)
+                caso["roles_presentes"].append("padre_segunda_val")
+            else:
+                caso["roles_faltantes"]["padre_segunda_val"] = err
+
+        casos.append(caso)
+
+    return jsonify({
+        "type": "FeatureCollection",
+        "features": features,
+        "casos": casos,
+        "total_casos": len(casos),
+        "total_features": len(features),
+    })
+
+
 def clasificar_traslape(overlap_pct, area_ratio, same_credit):
     """Clasifica el traslape según las reglas de negocio.
 
