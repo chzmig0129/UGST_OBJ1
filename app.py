@@ -1834,6 +1834,12 @@ def actualizar_fila():
                                 Poligono.estatus == "",
                             )
                         )
+                        # Exclude polygons already resolved via validacion_megacapa or segunda_validacion_poligono
+                        # (match the exclusions applied in tab=lista at app.py:910-934)
+                        vincular_megacapa_ids = db.session.query(ValidacionMegacapa.poligono_id).filter_by(estatus_megacapa='VINCULAR').subquery()
+                        seg_val_excluir_ids = db.session.query(SegundaValidacionPoligono.poligono_id).filter(SegundaValidacionPoligono.decision.in_(['ELIMINAR', 'VINCULAR'])).subquery()
+                        next_query = next_query.filter(~Poligono.id.in_(vincular_megacapa_ids))
+                        next_query = next_query.filter(~Poligono.id.in_(seg_val_excluir_ids))
                     elif filtro_estatus == "6":
                         next_query = next_query.filter(Poligono.estatus == "6")
                     elif filtro_estatus == "7":
