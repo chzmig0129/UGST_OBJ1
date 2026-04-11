@@ -1,8 +1,11 @@
 """
 tests/test_geometry.py
 ----------------------
-Unit tests for ``ordenar_coordenadas()`` verifying the Convex Hull behaviour
-introduced in UGST_OBJ1-0i7.1.
+Unit tests for ``ordenar_coordenadas()``.
+
+Covers:
+- Convex Hull fallback for bowtie/self-intersecting polygons (UGST_OBJ1-0i7.1)
+- Concave vertex preservation for valid user-edited polygons (UGST_OBJ1-rhk)
 
 Run with:
     pytest tests/test_geometry.py
@@ -123,34 +126,60 @@ def test_bowtie_square():
 
 
 # ---------------------------------------------------------------------------
-# Test 7 — Concave staircase / L-shape
+# Test 7 — Concave staircase / L-shape (UGST_OBJ1-rhk regression)
 # ---------------------------------------------------------------------------
 
 
 def test_concave_staircase():
-    """Points forming a staircase/L-shape produce a valid convex hull polygon.
+    """Points forming a valid L-shape must have ALL vertices preserved.
 
-    The six input points include an interior concave vertex.  The Convex Hull
-    algorithm drops the interior point and returns the 5-vertex convex
-    boundary, which must be a valid polygon.
+    The six input points form a concave (but non-self-intersecting) polygon.
+    The fix in UGST_OBJ1-rhk ensures the function returns the polygon as-is
+    instead of applying convex hull and silently dropping the concave vertex.
+
+    Assertions
+    ----------
+    - Output parses to the same number of unique vertices as input (no drops).
+    - The concave vertex (1.0, 1.0) is still present in the output.
+    - The resulting polygon is valid and non-self-intersecting.
     """
-    # Six points forming an L-shape staircase (lat,lon using small values)
+    # Six points forming an L-shape staircase (lat,lon using small values).
+    # Connected in order these form a valid concave polygon — no self-intersections.
     staircase = (
         "0.000000,0.000000 | "
         "0.000000,2.000000 | "
         "1.000000,2.000000 | "
-        "1.000000,1.000000 | "  # concave interior vertex
+        "1.000000,1.000000 | "  # concave vertex — must be preserved
         "2.000000,1.000000 | "
         "2.000000,0.000000"
     )
     result = ordenar_coordenadas(staircase)
     assert result is not None
 
+    input_coords = parsear_coordenadas(staircase)
+    output_coords = parsear_coordenadas(result)
+
+    # Same number of unique vertices — no drops
+    input_unique = {(round(c[0], 6), round(c[1], 6)) for c in input_coords}
+    output_unique = {(round(c[0], 6), round(c[1], 6)) for c in output_coords}
+
+    assert len(output_unique) == len(input_unique), (
+        f"Concave polygon must preserve all {len(input_unique)} vertices, "
+        f"got {len(output_unique)}: {result}"
+    )
+
+    # The concave vertex must still be present
+    concave_vertex = (1.0, 1.0)
+    assert concave_vertex in output_unique, (
+        f"Concave vertex {concave_vertex} was dropped. Output: {result}"
+    )
+
+    # The resulting polygon must still be valid (no self-intersections)
     poly = _to_polygon(result)
     assert poly.is_valid, (
-        f"Staircase polygon must be valid after convex hull reordering, got: {result}"
+        f"Concave staircase polygon must be valid, got: {result}"
     )
-    assert poly.is_simple, f"Staircase polygon must not self-intersect, got: {result}"
+    assert poly.is_simple, f"Concave staircase polygon must not self-intersect, got: {result}"
 
 
 # ---------------------------------------------------------------------------

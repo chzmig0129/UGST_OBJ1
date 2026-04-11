@@ -78,12 +78,12 @@ def serializar_coordenadas(coords_list: List[Union[List[float], tuple]]) -> str:
 
 
 def ordenar_coordenadas(coordenadas_str: Optional[str]) -> Optional[str]:
-    """Order polygon vertices using Shapely's Convex Hull algorithm.
+    """Order polygon vertices, preserving concave shapes and fixing bowties.
 
-    This eliminates self-intersecting (bowtie) polygons that arise when
-    vertices are stored in arbitrary order.  Unlike the previous angular-sort
-    approach, Convex Hull works correctly even when the centroid falls outside
-    the polygon (concave input sets).
+    For valid (non-self-intersecting) polygons the vertices are returned in
+    their original order so that user-edited concave shapes are never mutilated.
+    Only when the polygon is self-intersecting (a bowtie) does the function
+    fall back to Shapely's Convex Hull algorithm to produce a valid ordering.
 
     Algorithm
     ---------
@@ -92,14 +92,17 @@ def ordenar_coordenadas(coordenadas_str: Optional[str]) -> Optional[str]:
     3. Remove duplicate points (preserving first occurrence order).
     4. If exactly 3 unique points remain, return them as-is (a triangle
        cannot self-intersect).
-    5. Build a ``shapely.geometry.MultiPoint`` from the unique points,
-       swapping to ``(lon, lat)`` order as required by Shapely's ``(x, y)``
-       convention.
-    6. Compute ``hull = multipoint.convex_hull``.
-    7. If the hull is not a Polygon (e.g. collinear points yield a
+    5. Build a ``shapely.geometry.Polygon`` from the unique points in their
+       given order, swapping to ``(lon, lat)`` as required by Shapely.
+    6. **If the polygon is valid and non-empty** → return the unique points
+       as-is (preserves legitimate concave geometries).
+    7. **Fallback for invalid / bowtie polygons**: build a
+       ``shapely.geometry.MultiPoint`` from the same points and compute the
+       convex hull to obtain a valid non-self-intersecting ordering.
+    8. If the hull is not a Polygon (e.g. collinear points yield a
        LineString), fall back to returning the deduplicated points in their
        original order.
-    8. Extract the hull's exterior ring coordinates (dropping the closing
+    9. Extract the hull's exterior ring coordinates (dropping the closing
        duplicate), swap back to ``(lat, lon)`` order, and serialize.
 
     Parameters
@@ -120,8 +123,15 @@ def ordenar_coordenadas(coordenadas_str: Optional[str]) -> Optional[str]:
     ...     '17.614461,-93.486269 | 17.610058,-93.494614'
     ... )
     >>> # Result is a convex ordering with no self-intersections
+
+    >>> # Concave (L-shape) example — vertices are preserved as-is
+    >>> result = ordenar_coordenadas(
+    ...     '0.0,0.0 | 0.0,2.0 | 1.0,2.0 | 1.0,1.0 | 2.0,1.0 | 2.0,0.0'
+    ... )
+    >>> len(parsear_coordenadas(result))
+    6
     """
-    from shapely.geometry import MultiPoint  # noqa: PLC0415
+    from shapely.geometry import MultiPoint, Polygon as _Polygon  # noqa: PLC0415
 
     # Edge case: empty or None
     if coordenadas_str is None:
@@ -153,13 +163,29 @@ def ordenar_coordenadas(coordenadas_str: Optional[str]) -> Optional[str]:
     if len(unique) == 3:
         return serializar_coordenadas(unique)
 
-    # Build MultiPoint using Shapely's (x, y) = (lon, lat) convention
+    # ---------------------------------------------------------------------- #
+    # Primary path: try the polygon in its current vertex order.             #
+    # If already valid (no self-intersections), return as-is to preserve     #
+    # legitimate concave geometries edited by users.                         #
+    # ---------------------------------------------------------------------- #
+    ring = [(p[1], p[0]) for p in unique]  # (lon, lat) for Shapely
+    if ring[0] != ring[-1]:
+        ring_closed = ring + [ring[0]]
+    else:
+        ring_closed = ring
+    poly = _Polygon(ring_closed)
+
+    if poly.is_valid and not poly.is_empty:
+        return serializar_coordenadas(unique)
+
+    # ---------------------------------------------------------------------- #
+    # Fallback: polygon is invalid (bowtie / self-intersecting).             #
+    # Apply convex hull to produce a valid ordering.                         #
+    # ---------------------------------------------------------------------- #
     multipoint = MultiPoint([(p[1], p[0]) for p in unique])
     hull = multipoint.convex_hull
 
     # Collinear points produce a LineString or Point — fall back to original order
-    from shapely.geometry import Polygon as _Polygon  # noqa: PLC0415
-
     if not isinstance(hull, _Polygon):
         return serializar_coordenadas(unique)
 
