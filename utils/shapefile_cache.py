@@ -15,6 +15,8 @@ class ShapefileCache:
         self._municipios = None
         self._validacion = None
         self._mega = None
+        self._viewer_mega = None
+        self._viewer_mega_sindex = None
 
     # ------------------------------------------------------------------
     # Public lazy properties
@@ -37,6 +39,12 @@ class ShapefileCache:
         if self._mega is None:
             self._mega = self._load_mega()
         return self._mega
+
+    @property
+    def viewer_mega(self):
+        if self._viewer_mega is None:
+            self._viewer_mega = self._load_viewer_mega()
+        return self._viewer_mega
 
     # ------------------------------------------------------------------
     # Private loaders
@@ -70,6 +78,25 @@ class ShapefileCache:
         print("ShapefileCache: mega cargado. Columnas:", gdf.columns.tolist())
         return gdf
 
+    def _load_viewer_mega(self):
+        """Load MEGA_CAPA_V3_VISOR.shp — the clean, reviewable mega capa used
+        by the /mapa-15k viewer. Kept separate from `mega` so the edit flow
+        and the viewer can be swapped independently."""
+        gdf = gpd.read_file('data/MEGA_CAPA_V3_VISOR.shp')
+        if gdf.crs != 'EPSG:4326':
+            gdf = gdf.to_crs(epsg=4326)
+        # Centroids precomputed for fast radius queries.
+        # Compute in a projected CRS to avoid geographic-CRS warnings and
+        # get centimetre-accurate values, then store as lat/lng.
+        proj = gdf.geometry.to_crs(6362)
+        centers = proj.centroid.to_crs('EPSG:4326')
+        gdf['_centroid_lat'] = centers.y
+        gdf['_centroid_lng'] = centers.x
+        # Warm spatial index so first radius query is fast.
+        _ = gdf.sindex
+        print("ShapefileCache: viewer_mega cargado. Columnas:", gdf.columns.tolist())
+        return gdf
+
     # ------------------------------------------------------------------
     # Reload helpers
     # ------------------------------------------------------------------
@@ -78,6 +105,11 @@ class ShapefileCache:
         """Fuerza recarga del shapefile mega desde disco (para usar tras regenerar V3)."""
         self._mega = None
         _ = self.mega  # lazy reload via la property
+
+    def reload_viewer_mega(self):
+        """Fuerza recarga del shapefile del visor desde disco."""
+        self._viewer_mega = None
+        _ = self.viewer_mega
 
     # ------------------------------------------------------------------
     # Preload helper

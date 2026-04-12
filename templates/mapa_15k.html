@@ -1,606 +1,366 @@
 {% extends 'base.html' %}
 
 {% block head %}
-<!-- Leaflet Fullscreen Plugin -->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.fullscreen@2.4.0/Control.FullScreen.css" />
 <script src="https://cdn.jsdelivr.net/npm/leaflet.fullscreen@2.4.0/Control.FullScreen.js"></script>
-
 <style>
-    /* Custom tooltip for 15K map */
-    .custom-tooltip-15k {
-        background: rgba(0, 0, 0, 0.8) !important;
-        color: white !important;
-        border: none !important;
-        border-radius: 4px !important;
-        padding: 6px 10px !important;
-        font-size: 12px !important;
-        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4) !important;
+    .viewer-wrap {
+        position: relative;
+        height: calc(100vh - 110px);
+        min-height: 520px;
+        display: flex;
+        flex-direction: column;
     }
-    .custom-tooltip-15k::before {
-        border-color: transparent !important;
-    }
-
-    /* Loading overlay */
-    .loading-overlay {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(255, 255, 255, 0.7);
-        z-index: 1000;
+    .viewer-header {
         display: flex;
         align-items: center;
-        justify-content: center;
-        border-radius: 8px;
+        gap: 12px;
+        padding: 10px 16px;
+        background: #fff;
+        border-bottom: 1px solid #e2e2e2;
     }
-
-    /* Map container */
-    #map {
-        width: 100%;
-        border-radius: 8px;
+    .viewer-header h2 {
+        margin: 0;
+        font-size: 18px;
+        font-weight: 600;
+        color: #1f2937;
     }
-
-    /* Layer control panel */
-    #layer-control-panel {
-        position: absolute;
-        bottom: 20px;
-        left: 20px;
-        z-index: 1000;
-        min-width: 220px;
+    .viewer-header .meta {
+        color: #6b7280;
+        font-size: 13px;
     }
-
-    /* Map wrapper needs relative positioning for overlay and panel */
-    #map-wrapper {
+    .search-wrap {
+        flex: 1;
         position: relative;
+        max-width: 520px;
     }
-
-    /* Header badge */
-    .polygon-badge {
-        font-size: 0.85rem;
-        padding: 0.4em 0.75em;
+    .search-input {
+        width: 100%;
+        padding: 9px 12px;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        font-size: 14px;
+        outline: none;
     }
+    .search-input:focus {
+        border-color: #2563eb;
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+    }
+    .search-results {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background: #fff;
+        border: 1px solid #d1d5db;
+        border-top: none;
+        max-height: 360px;
+        overflow-y: auto;
+        z-index: 2000;
+        display: none;
+        box-shadow: 0 6px 14px rgba(0, 0, 0, 0.08);
+    }
+    .search-results.open { display: block; }
+    .search-result {
+        padding: 9px 12px;
+        cursor: pointer;
+        border-bottom: 1px solid #f3f4f6;
+        font-size: 13px;
+    }
+    .search-result:hover { background: #f3f4f6; }
+    .search-result .id { font-weight: 600; color: #111827; }
+    .search-result .meta { color: #6b7280; font-size: 11px; }
+    .search-empty { padding: 12px; color: #9ca3af; font-size: 13px; text-align: center; }
 
-    /* Fullscreen button styling */
-    .leaflet-control-fullscreen a {
-        background-color: #fff;
+    #viewer-map { flex: 1; }
+
+    .legend {
+        background: #fff;
+        padding: 10px 12px;
+        border-radius: 6px;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+        font-size: 12px;
+        line-height: 1.5;
+    }
+    .legend .swatch {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        margin-right: 6px;
+        vertical-align: middle;
+        border: 1px solid rgba(0,0,0,0.25);
+    }
+    .legend-title { font-weight: 600; margin-bottom: 4px; color: #111827; }
+
+    .info-panel {
+        position: absolute;
+        top: 72px;
+        right: 14px;
+        background: #fff;
+        padding: 12px 14px;
+        border-radius: 8px;
+        box-shadow: 0 4px 14px rgba(0,0,0,0.18);
+        font-size: 13px;
+        z-index: 1500;
+        max-width: 280px;
+        display: none;
+    }
+    .info-panel.visible { display: block; }
+    .info-panel h4 { margin: 0 0 6px 0; font-size: 14px; color: #1f2937; }
+    .info-panel .row { margin: 2px 0; color: #374151; }
+    .info-panel .row b { color: #111827; }
+
+    .status-bar {
+        position: absolute;
+        bottom: 10px;
+        left: 10px;
+        background: rgba(17, 24, 39, 0.88);
+        color: #fff;
+        padding: 6px 10px;
         border-radius: 4px;
-        box-shadow: 0 1px 5px rgba(0, 0, 0, 0.4);
-        transition: all 0.3s ease;
+        font-size: 12px;
+        z-index: 1200;
+        pointer-events: none;
     }
-    .leaflet-control-fullscreen a:hover {
-        background-color: #f4f4f4;
-        transform: scale(1.05);
+    .loading-spinner {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: rgba(255,255,255,0.92);
+        padding: 16px 22px;
+        border-radius: 8px;
+        box-shadow: 0 4px 14px rgba(0,0,0,0.2);
+        z-index: 2500;
+        display: none;
+        font-size: 13px;
+        color: #1f2937;
     }
+    .loading-spinner.on { display: block; }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="p-3" style="height: 100%; display: flex; flex-direction: column;">
-
-    <!-- Header -->
-    <div class="d-flex align-items-center justify-content-between mb-3">
-        <div class="d-flex align-items-center gap-3">
-            <div class="app-icon">
-                <svg viewBox="0 0 24 24" width="28" height="28" stroke="currentColor" stroke-width="2" fill="none">
-                    <circle cx="12" cy="10" r="3"></circle>
-                    <path d="M12 21.7C17.3 17 20 13 20 10a8 8 0 1 0-16 0c0 3 2.7 7 8 11.7z"></path>
-                </svg>
-            </div>
-            <div>
-                <h1 class="mb-0 h4">Mapa de Polígonos 15K</h1>
-                <p class="text-muted mb-0 small">Visualización masiva de polígonos de validación e histórico</p>
-            </div>
+<div class="viewer-wrap">
+    <div class="viewer-header">
+        <h2>Visor MEGA_CAPA_V3</h2>
+        <div class="search-wrap">
+            <input
+                type="text"
+                id="searchInput"
+                class="search-input"
+                placeholder="Buscar por ID_POLIGONO (ej. 28-5910-00077782-1)"
+                autocomplete="off"
+            />
+            <div id="searchResults" class="search-results"></div>
         </div>
-        <div class="d-flex align-items-center gap-2">
-            <span class="badge bg-secondary polygon-badge" id="polygon-count-badge">
-                <i class="bi bi-hourglass-split me-1"></i>Cargando...
-            </span>
-        </div>
+        <div class="meta" id="headerMeta">Busca un polígono para empezar</div>
     </div>
-
-    <!-- Filter panel -->
-    <div class="filter-panel p-3 mb-2" style="background: #f8f9fa; border-radius: 8px; border: 1px solid #dee2e6;">
-        <div class="row g-2 align-items-end">
-            <div class="col-md-3">
-                <label class="form-label fw-bold" style="font-size: 13px;">Estado</label>
-                <select id="filtro-estado" class="form-select form-select-sm">
-                    <option value="">Todos los estados</option>
-                </select>
-            </div>
-            <div class="col-md-3">
-                <label class="form-label fw-bold" style="font-size: 13px;">Municipio</label>
-                <select id="filtro-municipio" class="form-select form-select-sm" disabled>
-                    <option value="">Seleccione estado primero</option>
-                </select>
-            </div>
-            <div class="col-md-2">
-                <label class="form-label fw-bold" style="font-size: 13px;">ID Crédito</label>
-                <input type="text" id="filtro-id-credito" class="form-control form-control-sm" placeholder="Buscar...">
-            </div>
-            <div class="col-md-2">
-                <label class="form-label fw-bold" style="font-size: 13px;">ID Polígono</label>
-                <input type="text" id="filtro-id-poligono" class="form-control form-control-sm" placeholder="Buscar...">
-            </div>
-            <div class="col-md-2 d-flex gap-2">
-                <button id="btn-aplicar-filtros" class="btn btn-sm btn-primary flex-grow-1">
-                    <i class="bi bi-funnel"></i> Filtrar
-                </button>
-                <button id="btn-limpiar-filtros" class="btn btn-sm btn-outline-secondary flex-grow-1">
-                    <i class="bi bi-x-circle"></i> Limpiar
-                </button>
-            </div>
-        </div>
+    <div id="viewer-map" style="position: relative;">
+        <div id="infoPanel" class="info-panel"></div>
+        <div id="statusBar" class="status-bar" style="display:none;"></div>
+        <div id="loadingSpinner" class="loading-spinner">Cargando…</div>
     </div>
-
-    <!-- Map wrapper -->
-    <div id="map-wrapper" style="flex: 1; position: relative;">
-
-        <!-- Loading overlay (shown while fetching) -->
-        <div class="loading-overlay" id="loading-overlay">
-            <div class="text-center">
-                <div class="spinner-border text-success" role="status" style="width: 3rem; height: 3rem;">
-                    <span class="visually-hidden">Cargando...</span>
-                </div>
-                <div class="mt-3 fw-semibold text-secondary" id="loading-message">Cargando polígonos...</div>
-            </div>
-        </div>
-
-        <!-- Map -->
-        <div id="map" style="height: calc(100vh - 120px);"></div>
-
-        <!-- Layer control panel (floating, bottom-left) -->
-        <div id="layer-control-panel">
-            <div class="card shadow-sm">
-                <div class="card-header py-2 d-flex align-items-center gap-2">
-                    <i class="bi bi-layers"></i>
-                    <span class="fw-semibold small">Control de Capas</span>
-                </div>
-                <div class="card-body py-2 px-3">
-                    <!-- Validación toggle -->
-                    <div class="form-check form-switch mb-2">
-                        <input class="form-check-input" type="checkbox" id="toggleValidacion" checked>
-                        <label class="form-check-label small" for="toggleValidacion">
-                            <span style="color: #4CE600; font-weight: bold;">&#9632;</span>
-                            Validación (15K)
-                        </label>
-                    </div>
-                    <!-- Histórico toggle -->
-                    <div class="form-check form-switch mb-2">
-                        <input class="form-check-input" type="checkbox" id="toggleHistorico" checked>
-                        <label class="form-check-label small" for="toggleHistorico">
-                            <span style="color: #ff8c00; font-weight: bold;">&#9632;</span>
-                            Histórico (57K)
-                        </label>
-                    </div>
-                    <!-- Polygon counter -->
-                    <hr class="my-2">
-                    <div class="text-muted small text-center" id="layer-counter">
-                        <i class="bi bi-hourglass-split me-1"></i>Cargando...
-                    </div>
-                </div>
-            </div>
-        </div>
-
-    </div><!-- /#map-wrapper -->
-
-</div><!-- /.p-3 -->
+</div>
 
 <script>
-(function () {
-    'use strict';
-
-    // ── Layer references ──────────────────────────────────────────────────────
-    var validacionLayer = null;
-    var historicoLayer  = null;
-    var totalLoaded     = 0;
-    var layersReady     = 0;   // increments to 2 when both fetches complete
-
-    // ── Styles ────────────────────────────────────────────────────────────────
-    var STYLE_VALIDACION = {
-        color:       '#00734C',
-        fillColor:   '#4CE600',
-        weight:      1,
-        fillOpacity: 0.3
-    };
-
-    var STYLE_HISTORICO = {
-        color:       '#cc7000',
-        fillColor:   '#ff8c00',
-        weight:      1,
-        fillOpacity: 0.2
-    };
-
-    // ── Map initialisation ────────────────────────────────────────────────────
-    var map = L.map('map', {
-        center: [24.0, -102.0],
-        zoom: 6,
-        maxZoom: 22,
-        preferCanvas: true,          // CRITICAL for 70K+ polygons
+(function() {
+    const map = L.map('viewer-map', {
+        center: [23.6, -102.5],
+        zoom: 5,
         fullscreenControl: true,
-        fullscreenControlOptions: {
-            position: 'topleft',
-            title: 'Pantalla Completa',
-            titleCancel: 'Salir de Pantalla Completa'
-        }
     });
+    L.tileLayer('https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}', {
+        subdomains: ['mt0','mt1','mt2','mt3'],
+        maxZoom: 20,
+        attribution: '© Google',
+    }).addTo(map);
 
-    // ── Base layers ───────────────────────────────────────────────────────────
-    var osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-        maxZoom: 22
-    });
+    // Color por fuente
+    const colorByFuente = {
+        MEGA_CAPA_V2: '#6b7280',
+        ERRORES_VINCULACION: '#2563eb',
+        REPORTE_TRANSFORMADO: '#10b981',
+    };
+    const defaultColor = '#9ca3af';
+    const targetColor = '#f59e0b'; // amarillo
 
-    var esriLayer = L.tileLayer(
-        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-        attribution: 'Tiles &copy; Esri &mdash; Source: Esri',
-        maxZoom: 22
-    });
+    // Leyenda
+    const legend = L.control({ position: 'bottomright' });
+    legend.onAdd = function() {
+        const div = L.DomUtil.create('div', 'legend');
+        div.innerHTML =
+            '<div class="legend-title">Fuente</div>' +
+            '<div><span class="swatch" style="background:#6b7280"></span>MEGA_CAPA_V2</div>' +
+            '<div><span class="swatch" style="background:#2563eb"></span>ERRORES_VINCULACION</div>' +
+            '<div><span class="swatch" style="background:#10b981"></span>REPORTE_TRANSFORMADO</div>' +
+            '<div><span class="swatch" style="background:#f59e0b"></span>Polígono buscado</div>';
+        return div;
+    };
+    legend.addTo(map);
 
-    var cartoLayer = L.tileLayer(
-        'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, &copy; <a href="https://carto.com/attributions">CARTO</a>',
-        maxZoom: 22
-    });
+    let radiusLayer = null;
+    const infoPanel = document.getElementById('infoPanel');
+    const statusBar = document.getElementById('statusBar');
+    const spinner = document.getElementById('loadingSpinner');
+    const headerMeta = document.getElementById('headerMeta');
 
-    // Default base layer: Esri World Imagery (same as Validar module)
-    esriLayer.addTo(map);
-
-    // Layer control for base maps
-    L.control.layers({
-        'OpenStreetMap':      osmLayer,
-        'Esri World Imagery': esriLayer,
-        'CartoDB Dark':       cartoLayer
-    }, {}).addTo(map);
-
-    // ── Helpers ───────────────────────────────────────────────────────────────
-    function safeVal(val) {
-        return (val !== null && val !== undefined && val !== '') ? val : 'N/A';
+    function setStatus(text) {
+        if (!text) { statusBar.style.display = 'none'; return; }
+        statusBar.textContent = text;
+        statusBar.style.display = 'block';
+    }
+    function setLoading(on) {
+        spinner.classList.toggle('on', !!on);
     }
 
-    function updateCounters(total) {
-        var text = total.toLocaleString('es-MX') + ' polígonos cargados';
-        document.getElementById('layer-counter').innerHTML =
-            '<i class="bi bi-check-circle-fill text-success me-1"></i>' + text;
-        document.getElementById('polygon-count-badge').innerHTML =
-            '<i class="bi bi-geo-alt-fill me-1"></i>' + text;
-        document.getElementById('polygon-count-badge').className =
-            'badge bg-success polygon-badge';
-    }
-
-    function showLoadingOverlay() {
-        var overlay = document.getElementById('loading-overlay');
-        if (overlay) {
-            overlay.style.display = 'flex';
-        }
-    }
-
-    function hideLoadingOverlay() {
-        var overlay = document.getElementById('loading-overlay');
-        if (overlay) {
-            overlay.style.display = 'none';
-        }
-    }
-
-    function onLayerReady() {
-        layersReady += 1;
-        if (layersReady >= 2) {
-            hideLoadingOverlay();
-            updateCounters(totalLoaded);
-        }
-    }
-
-    function updateLoadingMessage(msg) {
-        var el = document.getElementById('loading-message');
-        if (el) el.textContent = msg;
-    }
-
-    // ── onEachFeature factories ───────────────────────────────────────────────
-    function makeOnEachFeature(includeNombreZip, originalStyle) {
-        return function (feature, layer) {
-            var props = feature.properties || {};
-            var estado     = safeVal(props.ESTADO);
-            var municipio  = safeVal(props.MUNICIPIO);
-            var idPoligon  = safeVal(props.ID_POLIGON);
-            var idCredito  = safeVal(props.ID_CREDITO);
-
-            var tooltipHtml =
-                '<b>Estado:</b> '     + estado    + '<br>' +
-                '<b>Municipio:</b> '  + municipio + '<br>' +
-                '<b>ID Polígono:</b> ' + idPoligon + '<br>' +
-                '<b>ID Crédito:</b> '  + idCredito;
-
-            if (includeNombreZip) {
-                var nombreZip = safeVal(props.NOMBRE_ZIP);
-                tooltipHtml += '<br><b>Archivo:</b> ' + nombreZip;
-            }
-
-            layer.bindTooltip(tooltipHtml, {
-                permanent:  false,
-                direction:  'auto',
-                opacity:    0.9,
-                className:  'custom-tooltip-15k'
-            });
-
-            // Hover effects
-            layer.on('mouseover', function () {
-                layer.setStyle({ weight: 3, fillOpacity: 0.6 });
-            });
-            layer.on('mouseout', function () {
-                layer.setStyle(originalStyle);
-            });
+    function styleFor(feature, targetId) {
+        const props = feature.properties || {};
+        const isTarget = String(props.ID_POLIGON) === String(targetId);
+        const color = isTarget ? targetColor : (colorByFuente[props.FUENTE] || defaultColor);
+        return {
+            color: color,
+            weight: isTarget ? 3 : 1.5,
+            opacity: 0.95,
+            fillColor: color,
+            fillOpacity: isTarget ? 0.45 : 0.2,
         };
     }
 
-    // ── Reusable layer creation functions ─────────────────────────────────────
-    function crearCapaValidacion(geojsonData) {
-        var layer = L.geoJSON(geojsonData, {
-            style: STYLE_VALIDACION,
-            onEachFeature: makeOnEachFeature(true, STYLE_VALIDACION)
-        });
-        return layer;
+    function onEachFeature(feature, layer) {
+        const p = feature.properties || {};
+        layer.on('click', () => showFeatureInfo(p));
+        const label = p.ID_POLIGON || '(sin id)';
+        layer.bindTooltip(label, { sticky: true });
     }
 
-    function crearCapaHistorico(geojsonData) {
-        var layer = L.geoJSON(geojsonData, {
-            style: STYLE_HISTORICO,
-            onEachFeature: makeOnEachFeature(false, STYLE_HISTORICO)
-        });
-        return layer;
+    function showFeatureInfo(p) {
+        infoPanel.innerHTML =
+            '<h4>' + (p.ID_POLIGON || '-') + '</h4>' +
+            '<div class="row"><b>Crédito:</b> ' + (p.ID_CREDITO || '-') + '</div>' +
+            '<div class="row"><b>Fuente:</b> ' + (p.FUENTE || '-') + '</div>';
+        infoPanel.classList.add('visible');
     }
 
-    // ── Build query string from active filters ────────────────────────────────
-    function buildQueryString() {
-        var params = [];
-        var estado     = document.getElementById('filtro-estado').value;
-        var municipio  = document.getElementById('filtro-municipio').value;
-        var idCredito  = document.getElementById('filtro-id-credito').value.trim();
-        var idPoligono = document.getElementById('filtro-id-poligono').value.trim();
-
-        if (estado)     params.push('estado='     + encodeURIComponent(estado));
-        if (municipio)  params.push('municipio='  + encodeURIComponent(municipio));
-        if (idCredito)  params.push('id_credito=' + encodeURIComponent(idCredito));
-        if (idPoligono) params.push('id_poligono='+ encodeURIComponent(idPoligono));
-
-        return params.length ? '?' + params.join('&') : '';
-    }
-
-    // ── Reload both layers with current filter params ─────────────────────────
-    function recargarCapas() {
-        var qs = buildQueryString();
-
-        // Show loading overlay
-        showLoadingOverlay();
-        updateLoadingMessage('Aplicando filtros...');
-
-        // Clear existing layers from map
-        if (validacionLayer) {
-            validacionLayer.clearLayers();
-            map.removeLayer(validacionLayer);
-            validacionLayer = null;
-        }
-        if (historicoLayer) {
-            historicoLayer.clearLayers();
-            map.removeLayer(historicoLayer);
-            historicoLayer = null;
-        }
-
-        // Reset counters
-        totalLoaded = 0;
-        layersReady = 0;
-
-        var allBounds = [];
-
-        // Fetch validación
-        updateLoadingMessage('Cargando capa de validación (15K)...');
-        fetchWithRetry('/api/mapa-15k/validacion' + qs)
-            .then(function (response) {
-                if (!response.ok) {
-                    throw new Error('Error HTTP ' + response.status + ' al cargar validación');
-                }
-                return response.json();
-            })
-            .then(function (data) {
-                var geojson = data.geojson;
-                var total   = data.total || 0;
-                totalLoaded += total;
-
-                validacionLayer = crearCapaValidacion(geojson);
-
-                // Add to map only if toggle is checked
-                if (document.getElementById('toggleValidacion').checked) {
-                    validacionLayer.addTo(map);
-                }
-
-                // Collect bounds
-                if (validacionLayer.getLayers().length > 0) {
-                    try {
-                        allBounds.push(validacionLayer.getBounds());
-                    } catch (e) { /* ignore */ }
-                }
-
-                updateLoadingMessage('Cargando capa histórica (57K)...');
-                onLayerReadyRecargar(allBounds);
-            })
-            .catch(function (err) {
-                console.error('Error cargando capa validación:', err);
-                onLayerReadyRecargar(allBounds);
-            });
-
-        // Fetch histórico
-        fetchWithRetry('/api/mapa-15k/historico' + qs)
-            .then(function (response) {
-                if (!response.ok) {
-                    throw new Error('Error HTTP ' + response.status + ' al cargar histórico');
-                }
-                return response.json();
-            })
-            .then(function (data) {
-                var geojson = data.geojson;
-                var total   = data.total || 0;
-                totalLoaded += total;
-
-                historicoLayer = crearCapaHistorico(geojson);
-
-                // Add to map only if toggle is checked
-                if (document.getElementById('toggleHistorico').checked) {
-                    historicoLayer.addTo(map);
-                }
-
-                // Collect bounds
-                if (historicoLayer.getLayers().length > 0) {
-                    try {
-                        allBounds.push(historicoLayer.getBounds());
-                    } catch (e) { /* ignore */ }
-                }
-
-                onLayerReadyRecargar(allBounds);
-            })
-            .catch(function (err) {
-                console.error('Error cargando capa histórico:', err);
-                onLayerReadyRecargar(allBounds);
-            });
-    }
-
-    // Helper: called when each layer finishes loading during recargarCapas
-    function onLayerReadyRecargar(allBounds) {
-        layersReady += 1;
-        if (layersReady >= 2) {
-            hideLoadingOverlay();
-            updateCounters(totalLoaded);
-
-            // fitBounds to combined results
-            if (allBounds.length > 0) {
-                try {
-                    var combined = allBounds[0];
-                    for (var i = 1; i < allBounds.length; i++) {
-                        combined = combined.extend(allBounds[i]);
-                    }
-                    map.fitBounds(combined, { padding: [20, 20], maxZoom: 18 });
-                } catch (e) { /* ignore if bounds invalid */ }
+    async function loadRadius(id) {
+        setLoading(true);
+        setStatus('Cargando radio de 1 km…');
+        try {
+            const r = await fetch('/api/viewer-mega/radius?km=1&id=' + encodeURIComponent(id));
+            if (!r.ok) {
+                const err = await r.json().catch(() => ({ error: r.statusText }));
+                throw new Error(err.error || ('HTTP ' + r.status));
             }
+            const data = await r.json();
+            if (radiusLayer) {
+                map.removeLayer(radiusLayer);
+                radiusLayer = null;
+            }
+            radiusLayer = L.geoJSON(data.geojson, {
+                style: (f) => styleFor(f, id),
+                onEachFeature: onEachFeature,
+            }).addTo(map);
+            try {
+                map.fitBounds(radiusLayer.getBounds(), { padding: [30, 30] });
+            } catch (e) {
+                if (data.target_centroid) {
+                    map.setView([data.target_centroid.lat, data.target_centroid.lng], 16);
+                }
+            }
+            headerMeta.textContent = data.total + ' polígono(s) en 1 km alrededor de ' + id;
+            // Abrir info del target automáticamente
+            const targetFeature = data.geojson.features.find(
+                f => String(f.properties.ID_POLIGON) === String(id)
+            );
+            if (targetFeature) showFeatureInfo(targetFeature.properties);
+            setStatus('');
+        } catch (e) {
+            setStatus('Error: ' + e.message);
+            console.error(e);
+        } finally {
+            setLoading(false);
         }
     }
 
-    // ── Initial load ──────────────────────────────────────────────────────────
-    updateLoadingMessage('Cargando capa de validación (15K)...');
+    // Search with debounce
+    const searchInput = document.getElementById('searchInput');
+    const searchResults = document.getElementById('searchResults');
+    let searchTimer = null;
 
-    fetchWithRetry('/api/mapa-15k/validacion')
-        .then(function (response) {
-            if (!response.ok) {
-                throw new Error('Error HTTP ' + response.status + ' al cargar validación');
+    searchInput.addEventListener('input', () => {
+        clearTimeout(searchTimer);
+        const q = searchInput.value.trim();
+        if (q.length < 2) {
+            searchResults.classList.remove('open');
+            searchResults.innerHTML = '';
+            return;
+        }
+        searchTimer = setTimeout(() => runSearch(q), 220);
+    });
+
+    async function runSearch(q) {
+        try {
+            const r = await fetch('/api/viewer-mega/search?q=' + encodeURIComponent(q));
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            const data = await r.json();
+            const items = data.results || [];
+            if (items.length === 0) {
+                searchResults.innerHTML = '<div class="search-empty">Sin resultados</div>';
+                searchResults.classList.add('open');
+                return;
             }
-            return response.json();
-        })
-        .then(function (data) {
-            var geojson = data.geojson;
-            var total   = data.total || 0;
-            totalLoaded += total;
+            const totalTxt = (data.total_matches && data.total_matches > items.length)
+                ? ' <span class="meta">(' + items.length + ' de ' + data.total_matches + ')</span>'
+                : '';
+            searchResults.innerHTML = items.map(it =>
+                '<div class="search-result" data-id="' + it.id_poligon + '">' +
+                '  <div class="id">' + it.id_poligon + '</div>' +
+                '  <div class="meta">Crédito: ' + (it.id_credito || '-') + ' · Fuente: ' + (it.fuente || '-') + '</div>' +
+                '</div>'
+            ).join('') + (totalTxt ? '<div class="search-empty">' + totalTxt + '</div>' : '');
+            searchResults.classList.add('open');
+            searchResults.querySelectorAll('.search-result').forEach(el => {
+                el.addEventListener('click', () => {
+                    const id = el.getAttribute('data-id');
+                    searchInput.value = id;
+                    searchResults.classList.remove('open');
+                    loadRadius(id);
+                });
+            });
+        } catch (e) {
+            console.error(e);
+            searchResults.innerHTML = '<div class="search-empty">Error al buscar</div>';
+            searchResults.classList.add('open');
+        }
+    }
 
-            validacionLayer = crearCapaValidacion(geojson);
-            validacionLayer.addTo(map);
-
-            updateLoadingMessage('Cargando capa histórica (57K)...');
-            onLayerReady();
-        })
-        .catch(function (err) {
-            console.error('Error cargando capa validación:', err);
-            alert('Error al cargar la capa de validación: ' + err.message);
-            onLayerReady(); // still unblock the UI
-        });
-
-    fetchWithRetry('/api/mapa-15k/historico')
-        .then(function (response) {
-            if (!response.ok) {
-                throw new Error('Error HTTP ' + response.status + ' al cargar histórico');
+    searchInput.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter') {
+            ev.preventDefault();
+            const q = searchInput.value.trim();
+            if (q.length > 0) {
+                // Si hay primer resultado, cargarlo
+                const first = searchResults.querySelector('.search-result');
+                if (first) {
+                    const id = first.getAttribute('data-id');
+                    searchInput.value = id;
+                    searchResults.classList.remove('open');
+                    loadRadius(id);
+                } else {
+                    // intentar directo
+                    loadRadius(q);
+                }
             }
-            return response.json();
-        })
-        .then(function (data) {
-            var geojson = data.geojson;
-            var total   = data.total || 0;
-            totalLoaded += total;
-
-            historicoLayer = crearCapaHistorico(geojson);
-            historicoLayer.addTo(map);
-
-            onLayerReady();
-        })
-        .catch(function (err) {
-            console.error('Error cargando capa histórico:', err);
-            alert('Error al cargar la capa histórica: ' + err.message);
-            onLayerReady(); // still unblock the UI
-        });
-
-    // ── Layer toggle controls ─────────────────────────────────────────────────
-    document.getElementById('toggleValidacion').addEventListener('change', function () {
-        if (!validacionLayer) return;
-        if (this.checked) {
-            map.addLayer(validacionLayer);
-        } else {
-            map.removeLayer(validacionLayer);
+        } else if (ev.key === 'Escape') {
+            searchResults.classList.remove('open');
         }
     });
 
-    document.getElementById('toggleHistorico').addEventListener('change', function () {
-        if (!historicoLayer) return;
-        if (this.checked) {
-            map.addLayer(historicoLayer);
-        } else {
-            map.removeLayer(historicoLayer);
+    document.addEventListener('click', (ev) => {
+        if (!ev.target.closest('.search-wrap')) {
+            searchResults.classList.remove('open');
         }
     });
-
-    // ── Filter: load estados on DOMContentLoaded ──────────────────────────────
-    fetchWithRetry('/api/mapa-15k/estados')
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-            var select = document.getElementById('filtro-estado');
-            data.estados.forEach(function (e) {
-                var opt = document.createElement('option');
-                opt.value = e.name;
-                opt.textContent = e.name + ' (' + e.count + ')';
-                select.appendChild(opt);
-            });
-            // Guardar municipios_por_estado para uso posterior
-            window._municipiosPorEstado = data.municipios_por_estado || {};
-        })
-        .catch(function (err) { console.error('Error cargando estados:', err); });
-
-    // ── Filter: estado change → populate municipios ───────────────────────────
-    document.getElementById('filtro-estado').addEventListener('change', function () {
-        var munSelect = document.getElementById('filtro-municipio');
-        munSelect.innerHTML = '<option value="">Todos los municipios</option>';
-        if (this.value && window._municipiosPorEstado && window._municipiosPorEstado[this.value]) {
-            munSelect.disabled = false;
-            window._municipiosPorEstado[this.value].forEach(function (m) {
-                var opt = document.createElement('option');
-                opt.value = m;
-                opt.textContent = m;
-                munSelect.appendChild(opt);
-            });
-        } else {
-            munSelect.disabled = !this.value;
-            if (!this.value) munSelect.innerHTML = '<option value="">Seleccione estado primero</option>';
-        }
-    });
-
-    // ── Filter: Filtrar button ────────────────────────────────────────────────
-    document.getElementById('btn-aplicar-filtros').addEventListener('click', function () {
-        recargarCapas();
-    });
-
-    // ── Filter: Limpiar button ────────────────────────────────────────────────
-    document.getElementById('btn-limpiar-filtros').addEventListener('click', function () {
-        document.getElementById('filtro-estado').value = '';
-        document.getElementById('filtro-municipio').value = '';
-        document.getElementById('filtro-municipio').disabled = true;
-        document.getElementById('filtro-municipio').innerHTML = '<option value="">Seleccione estado primero</option>';
-        document.getElementById('filtro-id-credito').value = '';
-        document.getElementById('filtro-id-poligono').value = '';
-        recargarCapas();
-    });
-
-}());
+})();
 </script>
 {% endblock %}

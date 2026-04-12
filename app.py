@@ -5732,6 +5732,112 @@ def api_mapa_15k_estados():
         return jsonify({"error": str(e)}), 500
 
 
+# =============================================================================
+# Visor MEGA_CAPA_V3 — lazy, search-driven viewer over data/MEGA_CAPA_V3_VISOR.shp
+# =============================================================================
+
+@app.route("/api/viewer-mega/search")
+@login_required
+@limiter.exempt
+def api_viewer_mega_search():
+    """Autocomplete por ID_POLIGON. Contains-match, hasta 20 resultados.
+    No devuelve geometría — solo id, fuente y centroide para el fitBounds inicial."""
+    q = (request.args.get("q") or "").strip()
+    if len(q) < 2:
+        return jsonify({"results": []})
+    try:
+        gdf = shp_cache.viewer_mega
+        mask = gdf["ID_POLIGON"].astype(str).str.contains(q, case=False, na=False, regex=False)
+        hits = gdf[mask].head(20)
+        results = [
+            {
+                "id_poligon": row["ID_POLIGON"],
+                "id_credito": row.get("ID_CREDITO") or "",
+                "fuente": row.get("FUENTE") or "",
+                "lat": float(row["_centroid_lat"]),
+                "lng": float(row["_centroid_lng"]),
+            }
+            for _, row in hits.iterrows()
+        ]
+        return jsonify({"results": results, "total_matches": int(mask.sum())})
+    except Exception as e:
+        app.logger.error(f"Error en /api/viewer-mega/search: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/viewer-mega/radius")
+@login_required
+@limiter.exempt
+def api_viewer_mega_radius():
+    """Devuelve todas las features del visor cuya geometría cae dentro de un
+    buffer de km kilómetros alrededor del centroide del polígono identificado
+    por `id`. Usa EPSG:6362 (Mexico LCC) para el buffer métrico."""
+    target_id = (request.args.get("id") or "").strip()
+    try:
+        km = float(request.args.get("km") or 1.0)
+    except ValueError:
+        km = 1.0
+    if not target_id:
+        return jsonify({"error": "id requerido"}), 400
+    try:
+        gdf = shp_cache.viewer_mega
+        target = gdf[gdf["ID_POLIGON"].astype(str) == target_id]
+        if target.empty:
+            return jsonify({"error": f"ID_POLIGON '{target_id}' no encontrado"}), 404
+        target_geom = target.iloc[0].geometry
+        # Buffer métrico
+        target_proj = gpd.GeoSeries([target_geom], crs="EPSG:4326").to_crs(6362)
+        buffered = target_proj.buffer(km * 1000.0).to_crs("EPSG:4326").iloc[0]
+        # Bounding-box prefilter via sindex (rápido), luego predicate exacto
+        sindex = gdf.sindex
+        cand_idx = list(sindex.intersection(buffered.bounds))
+        cand = gdf.iloc[cand_idx]
+        mask = cand.geometry.intersects(buffered)
+        hits = cand[mask].copy()
+        # Drop centroid helper columns de la respuesta GeoJSON
+        drop_cols = [c for c in ("_centroid_lat", "_centroid_lng") if c in hits.columns]
+        if drop_cols:
+            hits = hits.drop(columns=drop_cols)
+        geojson = json.loads(hits.to_json())
+        return jsonify(
+            {
+                "geojson": geojson,
+                "total": len(hits),
+                "target_id": target_id,
+                "km": km,
+                "target_centroid": {
+                    "lat": float(target_geom.centroid.y),
+                    "lng": float(target_geom.centroid.x),
+                },
+            }
+        )
+    except Exception as e:
+        app.logger.error(f"Error en /api/viewer-mega/radius: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/viewer-mega/feature")
+@login_required
+@limiter.exempt
+def api_viewer_mega_feature():
+    """Devuelve una única feature (polígono) por ID_POLIGON exacto."""
+    target_id = (request.args.get("id") or "").strip()
+    if not target_id:
+        return jsonify({"error": "id requerido"}), 400
+    try:
+        gdf = shp_cache.viewer_mega
+        target = gdf[gdf["ID_POLIGON"].astype(str) == target_id]
+        if target.empty:
+            return jsonify({"error": f"ID_POLIGON '{target_id}' no encontrado"}), 404
+        drop_cols = [c for c in ("_centroid_lat", "_centroid_lng") if c in target.columns]
+        if drop_cols:
+            target = target.drop(columns=drop_cols)
+        return jsonify({"geojson": json.loads(target.to_json())})
+    except Exception as e:
+        app.logger.error(f"Error en /api/viewer-mega/feature: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 _mega_v2_cache = None
 _mega_v2_lock = threading.Lock()
 
